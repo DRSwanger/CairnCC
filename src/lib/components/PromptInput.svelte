@@ -238,6 +238,7 @@
     lineCount: number;
     charCount: number;
     preview: string;
+    ext?: string;
   }
 
   let inputText = $state("");
@@ -1094,6 +1095,7 @@
               lineCount,
               charCount: text.length,
               preview: file.name,
+              ext: getFileExtension(file.name),
             },
           ];
           dbg("prompt", "converted-file", { name: file.name, lines: lineCount });
@@ -1541,40 +1543,36 @@
         />
       {/each}
       {#each pastedBlocks as block (block.id)}
+        {@const isSpreadsheet = block.ext === "xlsx" || block.ext === "xls" || block.ext === "csv"}
         <span
-          class="inline-flex items-center gap-1.5 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 px-2 py-1 text-xs text-blue-700 dark:text-blue-300"
+          class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs {isSpreadsheet
+            ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/50 text-green-700 dark:text-green-300'
+            : 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'}"
         >
-          <svg
-            class="h-3.5 w-3.5 shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect width="8" height="4" x="8" y="2" rx="1" ry="1" /><path
-              d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
-            />
-          </svg>
+          {#if isSpreadsheet}
+            <!-- Table/spreadsheet icon -->
+            <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M3 9h18" /><path d="M3 15h18" /><path d="M9 3v18" />
+            </svg>
+          {:else}
+            <!-- Clipboard icon for text -->
+            <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="8" height="4" x="8" y="2" rx="1" ry="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+            </svg>
+          {/if}
           <span class="truncate max-w-[200px]">{block.preview}</span>
-          <span class="text-blue-400 dark:text-blue-500"
+          <span class="{isSpreadsheet ? 'text-green-400 dark:text-green-500' : 'text-blue-400 dark:text-blue-500'}"
             >{formatPasteSize(block.lineCount, block.charCount)}</span
           >
           <button
             onclick={() => removePastedBlock(block.id)}
-            class="ml-0.5 rounded hover:bg-blue-200/50 dark:hover:bg-blue-800/50 p-0.5 transition-colors"
+            class="ml-0.5 rounded p-0.5 transition-colors {isSpreadsheet
+              ? 'hover:bg-green-200/50 dark:hover:bg-green-800/50'
+              : 'hover:bg-blue-200/50 dark:hover:bg-blue-800/50'}"
             title={t("prompt_removePaste")}
           >
-            <svg
-              class="h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
+            <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 6 6 18" /><path d="m6 6 12 12" />
             </svg>
           </button>
