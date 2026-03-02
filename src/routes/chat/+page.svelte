@@ -29,9 +29,11 @@
   } from "$lib/types";
   import { PLATFORM_PRESETS, findCredential } from "$lib/utils/platform-presets";
   import { IS_WEBKIT } from "$lib/utils/platform";
+  import { detectBatchGroups } from "$lib/utils/tool-rendering";
   import XTerminal from "$lib/components/XTerminal.svelte";
   import ChatMessage from "$lib/components/ChatMessage.svelte";
   import InlineToolCard from "$lib/components/InlineToolCard.svelte";
+  import BatchProgressBar from "$lib/components/BatchProgressBar.svelte";
   import SessionStatusBar from "$lib/components/SessionStatusBar.svelte";
   import McpStatusPanel from "$lib/components/McpStatusPanel.svelte";
   import PromptInput from "$lib/components/PromptInput.svelte";
@@ -247,6 +249,26 @@
     const ft = filteredTimeline;
     if (renderLimit >= ft.length) return ft;
     return ft.slice(ft.length - renderLimit);
+  });
+
+  // ── Batch groups (consecutive ≥3 Task tools) ──
+  // Skip batch detection when tool filter is active — filtering removes non-Task
+  // entries, causing originally non-consecutive Tasks to merge into false batches.
+  let batchGroups = $derived(
+    toolFilter
+      ? new Map<number, import("$lib/types").BusToolItem[]>()
+      : detectBatchGroups(visibleTimeline),
+  );
+
+  let _lastBatchSig = "";
+  $effect(() => {
+    const size = batchGroups.size;
+    const agents = size > 0 ? [...batchGroups.values()].reduce((s, g) => s + g.length, 0) : 0;
+    const sig = `${size}:${agents}`;
+    if (sig !== _lastBatchSig) {
+      _lastBatchSig = sig;
+      if (size > 0) dbg("chat", "batchGroups", { groupCount: size, totalAgents: agents });
+    }
   });
 
   // ── Auto-context tracking ──
@@ -2575,6 +2597,16 @@
               {/if}
               {#each visibleTimeline as entry, i (entry.id)}
                 <div class:cv-auto={!IS_WEBKIT}>
+                  {#if batchGroups.has(i)}
+                    {@const batch = batchGroups.get(i)}
+                    {#if batch}
+                      <div class="w-full py-1">
+                        <div class="mx-auto max-w-5xl px-8 pl-11">
+                          <BatchProgressBar tools={batch} />
+                        </div>
+                      </div>
+                    {/if}
+                  {/if}
                   {#if usageAnnotations.has(i)}
                     {@const tu = usageAnnotations.get(i)}
                     {#if tu}

@@ -8,6 +8,7 @@
     friendlyToolName,
     planFileName,
     extractTaskToolMeta,
+    shouldShowSubTimeline as _shouldShow,
   } from "$lib/utils/tool-rendering";
   import MarkdownContent from "$lib/components/MarkdownContent.svelte";
   import ToolDetailView from "$lib/components/ToolDetailView.svelte";
@@ -123,6 +124,18 @@
       (tool as Record<string, unknown>)._inputJsonAccum != null,
   );
   let expanded = $derived(userExpanded ?? isInputStreaming);
+
+  // SubTimeline visibility: Task tools auto-collapse on terminal state
+  let showSubTimeline = $derived.by(() => {
+    // Task tools: userExpanded overrides auto behavior
+    if (tool.tool_name === "Task" && userExpanded !== null) return userExpanded;
+    // Non-Task tools: not affected by userExpanded
+    return _shouldShow(tool.tool_name, tool.status, (subTimeline?.length ?? 0) > 0);
+  });
+
+  let subToolCount = $derived(
+    subTimeline ? subTimeline.filter((e) => e.kind === "tool").length : 0,
+  );
 
   let style = $derived(getToolColor(tool.tool_name));
 
@@ -1453,11 +1466,11 @@
         role="button"
         tabindex="0"
         class="w-full text-left rounded-lg border border-border/50 bg-muted/30 px-3 py-2 hover:bg-muted/50 transition-colors group cursor-pointer"
-        onclick={() => (userExpanded = userExpanded === null ? !isInputStreaming : !userExpanded)}
+        onclick={() => (userExpanded = !expanded)}
         onkeydown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            userExpanded = userExpanded === null ? !isInputStreaming : !userExpanded;
+            userExpanded = !expanded;
           }
         }}
       >
@@ -1490,6 +1503,11 @@
               {/if}
               {#if taskMeta.description}
                 <span class="text-xs text-muted-foreground truncate">{taskMeta.description}</span>
+              {/if}
+              {#if subToolCount > 0 && !showSubTimeline}
+                <span class="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">
+                  {t("inline_toolCount", { count: String(subToolCount) })}
+                </span>
               {/if}
             {:else}
               <span class="text-xs font-medium text-foreground">{tool.tool_name}</span>
@@ -1652,7 +1670,7 @@
       </div>
     {/if}
     <!-- Subagent subTimeline: nested entries from child agents -->
-    {#if subTimeline && subTimeline.length > 0}
+    {#if showSubTimeline}
       <div class="mt-2 ml-4 pl-3 border-l-2 border-blue-500/30 space-y-1">
         {#each subTimeline as subEntry (subEntry.id)}
           {#if subEntry.kind === "assistant"}

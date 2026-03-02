@@ -769,6 +769,9 @@
   "inline_alwaysAllow": "始终允许",
   "inline_switchToMode": "切换到 {mode} 模式",
   "inline_addDirectory": "添加目录：{dir}",
+  "inline_toolCount": "{count} 个工具",
+  "batch_status": "{completed}/{total} 已完成 · {running} 执行中",
+  "batch_failed": "{failed} 失败",
 
   "toolbar_planModeTitle": "计划模式：智能体只读不编辑文件",
   "toolbar_planOn": "计划 开",

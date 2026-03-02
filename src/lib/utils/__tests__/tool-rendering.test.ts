@@ -5,6 +5,11 @@ import {
   getLanguageFromPath,
   isImagePath,
   extractTaskToolMeta,
+  isToolTerminal,
+  isToolActive,
+  shouldShowSubTimeline,
+  aggregateBatchStatus,
+  detectBatchGroups,
 } from "../tool-rendering";
 
 // ── extractOutputText ──
@@ -173,5 +178,138 @@ describe("extractTaskToolMeta", () => {
     expect(meta).not.toBeNull();
     expect(meta!.subagentType).toBe("Plan");
     expect(meta!.description).toBe("Design plan");
+  });
+});
+
+// ── isToolTerminal ──
+
+describe("isToolTerminal", () => {
+  it.each(["success", "error", "denied", "permission_denied"] as const)(
+    "returns true for %s",
+    (s) => expect(isToolTerminal(s)).toBe(true),
+  );
+  it.each(["running", "ask_pending", "permission_prompt"] as const)("returns false for %s", (s) =>
+    expect(isToolTerminal(s)).toBe(false),
+  );
+});
+
+// ── isToolActive ──
+
+describe("isToolActive", () => {
+  it.each(["running", "ask_pending", "permission_prompt"] as const)("returns true for %s", (s) =>
+    expect(isToolActive(s)).toBe(true),
+  );
+  it.each(["success", "error", "denied", "permission_denied"] as const)(
+    "returns false for %s",
+    (s) => expect(isToolActive(s)).toBe(false),
+  );
+});
+
+// ── shouldShowSubTimeline ──
+
+describe("shouldShowSubTimeline", () => {
+  it("Task + running → true", () =>
+    expect(shouldShowSubTimeline("Task", "running", true)).toBe(true));
+  it("Task + ask_pending → true", () =>
+    expect(shouldShowSubTimeline("Task", "ask_pending", true)).toBe(true));
+  it("Task + permission_prompt → true", () =>
+    expect(shouldShowSubTimeline("Task", "permission_prompt", true)).toBe(true));
+  it("Task + success → false", () =>
+    expect(shouldShowSubTimeline("Task", "success", true)).toBe(false));
+  it("Task + error → false", () =>
+    expect(shouldShowSubTimeline("Task", "error", true)).toBe(false));
+  it("Task + denied → false", () =>
+    expect(shouldShowSubTimeline("Task", "denied", true)).toBe(false));
+  it("Task + permission_denied → false", () =>
+    expect(shouldShowSubTimeline("Task", "permission_denied", true)).toBe(false));
+  it("Task + no subTimeline → false", () =>
+    expect(shouldShowSubTimeline("Task", "running", false)).toBe(false));
+  it("non-Task + has subTimeline → true", () =>
+    expect(shouldShowSubTimeline("Bash", "success", true)).toBe(true));
+  it("non-Task + no subTimeline → false", () =>
+    expect(shouldShowSubTimeline("Bash", "running", false)).toBe(false));
+});
+
+// ── aggregateBatchStatus ──
+
+describe("aggregateBatchStatus", () => {
+  const tool = (status: string) =>
+    ({ tool_use_id: "", tool_name: "Task", input: {}, status }) as any;
+
+  it("counts all categories correctly", () => {
+    const result = aggregateBatchStatus([
+      tool("success"),
+      tool("success"),
+      tool("error"),
+      tool("permission_denied"),
+      tool("running"),
+      tool("ask_pending"),
+      tool("permission_prompt"),
+    ]);
+    expect(result).toEqual({ completed: 2, failed: 2, running: 3, total: 7 });
+  });
+
+  it("empty array", () => {
+    expect(aggregateBatchStatus([])).toEqual({ completed: 0, failed: 0, running: 0, total: 0 });
+  });
+
+  it("all success", () => {
+    const result = aggregateBatchStatus([tool("success"), tool("success"), tool("success")]);
+    expect(result).toEqual({ completed: 3, failed: 0, running: 0, total: 3 });
+  });
+});
+
+// ── detectBatchGroups ──
+
+describe("detectBatchGroups", () => {
+  const task = (id: string, status = "running") => ({
+    kind: "tool" as const,
+    tool: { tool_use_id: id, tool_name: "Task", input: {}, status } as any,
+  });
+  const other = (id: string) => ({
+    kind: "tool" as const,
+    tool: { tool_use_id: id, tool_name: "Bash", input: {}, status: "success" } as any,
+  });
+  const user = () => ({ kind: "user" as const });
+
+  it("detects ≥3 consecutive Task tools", () => {
+    const tl = [task("1"), task("2"), task("3")];
+    const groups = detectBatchGroups(tl);
+    expect(groups.size).toBe(1);
+    expect(groups.get(0)!.length).toBe(3);
+  });
+
+  it("ignores <3 consecutive Task tools", () => {
+    const tl = [task("1"), task("2")];
+    expect(detectBatchGroups(tl).size).toBe(0);
+  });
+
+  it("non-Task entry breaks the group", () => {
+    const tl = [task("1"), task("2"), other("x"), task("3"), task("4"), task("5")];
+    const groups = detectBatchGroups(tl);
+    expect(groups.size).toBe(1);
+    expect(groups.has(0)).toBe(false);
+    expect(groups.get(3)!.length).toBe(3);
+  });
+
+  it("detects multiple groups", () => {
+    const tl = [
+      task("1"),
+      task("2"),
+      task("3"),
+      user(),
+      task("4"),
+      task("5"),
+      task("6"),
+      task("7"),
+    ];
+    const groups = detectBatchGroups(tl);
+    expect(groups.size).toBe(2);
+    expect(groups.get(0)!.length).toBe(3);
+    expect(groups.get(4)!.length).toBe(4);
+  });
+
+  it("empty timeline", () => {
+    expect(detectBatchGroups([]).size).toBe(0);
   });
 });

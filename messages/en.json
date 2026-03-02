@@ -769,6 +769,9 @@
   "inline_alwaysAllow": "Always Allow",
   "inline_switchToMode": "Switch to {mode} mode",
   "inline_addDirectory": "Add directory: {dir}",
+  "inline_toolCount": "{count} tools",
+  "batch_status": "{completed}/{total} completed · {running} running",
+  "batch_failed": "{failed} failed",
 
   "toolbar_planModeTitle": "Plan mode: agent reads but doesn't edit files",
   "toolbar_planOn": "Plan ON",

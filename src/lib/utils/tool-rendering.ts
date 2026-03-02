@@ -205,6 +205,82 @@ export function extractTaskToolMeta(input: unknown): TaskToolMeta | null {
   };
 }
 
+// ── Batch / subagent status helpers ──
+
+import type { BusToolItem } from "$lib/types";
+
+/** Tool is in a terminal state — no further status changes expected. */
+export function isToolTerminal(status: BusToolItem["status"]): boolean {
+  return (
+    status === "success" ||
+    status === "error" ||
+    status === "denied" ||
+    status === "permission_denied"
+  );
+}
+
+/** Tool is actively working or awaiting interaction. */
+export function isToolActive(status: BusToolItem["status"]): boolean {
+  return status === "running" || status === "ask_pending" || status === "permission_prompt";
+}
+
+/** Whether a Task tool's subTimeline should be visible by default (no user override). */
+export function shouldShowSubTimeline(
+  toolName: string,
+  status: BusToolItem["status"],
+  hasSubTimeline: boolean,
+): boolean {
+  if (!hasSubTimeline) return false;
+  if (toolName === "Task") return !isToolTerminal(status);
+  return true;
+}
+
+/** Aggregate batch tool statuses in a single pass. */
+export function aggregateBatchStatus(tools: BusToolItem[]): {
+  completed: number;
+  failed: number;
+  running: number;
+  total: number;
+} {
+  let completed = 0,
+    failed = 0,
+    running = 0;
+  for (const t of tools) {
+    if (t.status === "success") completed++;
+    else if (isToolTerminal(t.status)) failed++;
+    else if (isToolActive(t.status)) running++;
+  }
+  return { completed, failed, running, total: tools.length };
+}
+
+/** Detect consecutive runs of Task tools (≥3) in a timeline for batch progress display.
+ *  Returns Map<startIndex, BusToolItem[]>. */
+export function detectBatchGroups(
+  timeline: Array<{ kind: string; tool?: BusToolItem }>,
+): Map<number, BusToolItem[]> {
+  const groups = new Map<number, BusToolItem[]>();
+  let i = 0;
+  while (i < timeline.length) {
+    const entry = timeline[i];
+    if (entry.kind === "tool" && entry.tool?.tool_name === "Task") {
+      const start = i;
+      const tools: BusToolItem[] = [];
+      while (
+        i < timeline.length &&
+        timeline[i].kind === "tool" &&
+        timeline[i].tool?.tool_name === "Task"
+      ) {
+        tools.push(timeline[i].tool!);
+        i++;
+      }
+      if (tools.length >= 3) groups.set(start, tools);
+    } else {
+      i++;
+    }
+  }
+  return groups;
+}
+
 /** Copy text to clipboard with legacy fallback for Tauri WebView. */
 export async function copyToClipboard(text: string): Promise<void> {
   if (navigator.clipboard) {
