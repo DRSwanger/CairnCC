@@ -161,6 +161,8 @@ You can re-run the wizard anytime from **Settings > General > Setup Wizard**.
 | Platform | Endpoint |
 |----------|----------|
 | Ollama | `localhost:11434` |
+| [CC Switch](https://github.com/farion1231/cc-switch) | `localhost:15721` |
+| [Claude Code Router](https://github.com/musistudio/claude-code-router) | `localhost:3456` |
 | Custom | Any Anthropic-compatible endpoint |
 
 ## Architecture
@@ -212,7 +214,11 @@ npm run format           # Format
 
 ## Contributing
 
-Contributions are welcome! Please open an [issue](https://github.com/AnyiWang/OpenCovibe/issues) for bug reports or feature requests, and submit pull requests for improvements.
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and PR guidelines.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=AnyiWang/OpenCovibe&type=Date)](https://star-history.com/#AnyiWang/OpenCovibe&Date)
 
 ## License
 
