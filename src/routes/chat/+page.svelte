@@ -2035,6 +2035,16 @@
           }),
         );
       }
+    } else if (action === "rewind") {
+      if (!store.run) {
+        appendCommandOutput(t("rewind_noSession"));
+      } else if (!store.sessionAlive) {
+        appendCommandOutput(t("rewind_sessionEnded"));
+      } else if (store.isRunning) {
+        appendCommandOutput(t("rewind_sessionBusy"));
+      } else {
+        handleRewind();
+      }
     }
   }
 

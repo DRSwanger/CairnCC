@@ -154,6 +154,13 @@ export const VIRTUAL_COMMANDS: CliCommand[] = [
     _enum: true,
     _action: "toggle-fast",
   },
+  {
+    name: "rewind",
+    description: "Rewind files to a previous checkpoint",
+    aliases: ["undo"],
+    _virtual: true,
+    _action: "rewind",
+  },
 ];
 
 /**
