@@ -10,6 +10,7 @@ import {
   shouldShowSubTimeline,
   aggregateBatchStatus,
   detectBatchGroups,
+  detectToolBursts,
   planFileSuffix,
   extractPlanContent,
   applyPlanEditsForward,
@@ -681,5 +682,169 @@ describe("applyPlanEditsForward", () => {
     const tl = [exitPlan("success", { plan: "# Old", filePath: planPath }), write("# Rewritten")];
     const result = applyPlanEditsForward(tl, 0, "# Old", planPath);
     expect(result).toBe("# Rewritten");
+  });
+});
+
+// ── detectToolBursts ──
+
+describe("detectToolBursts", () => {
+  const read = (id: string, status = "running") => ({
+    kind: "tool" as const,
+    tool: { tool_use_id: id, tool_name: "Read", input: {}, status } as any,
+  });
+  const grep = (id: string, status = "success") => ({
+    kind: "tool" as const,
+    tool: { tool_use_id: id, tool_name: "Grep", input: {}, status } as any,
+  });
+  const bash = (id: string, status = "success") => ({
+    kind: "tool" as const,
+    tool: { tool_use_id: id, tool_name: "Bash", input: {}, status } as any,
+  });
+  const task = (id: string) => ({
+    kind: "tool" as const,
+    tool: { tool_use_id: id, tool_name: "Task", input: {}, status: "running" } as any,
+  });
+  const assistant = () => ({ kind: "assistant" as const });
+  const user = () => ({ kind: "user" as const });
+  const askUser = (id: string) => ({
+    kind: "tool" as const,
+    tool: {
+      tool_use_id: id,
+      tool_name: "AskUserQuestion",
+      input: {},
+      status: "ask_pending",
+    } as any,
+  });
+
+  it("4+ mixed tools form a burst", () => {
+    // startIndex > 0 required, so prepend a user entry
+    const tl = [user(), read("r1"), grep("g1", "success"), read("r2"), bash("b1", "success")];
+    const bursts = detectToolBursts(tl);
+    expect(bursts.size).toBe(1);
+    const burst = bursts.get(1)!;
+    expect(burst.tools).toHaveLength(4);
+    expect(burst.summary).toEqual([
+      { toolName: "Read", count: 2 },
+      { toolName: "Grep", count: 1 },
+      { toolName: "Bash", count: 1 },
+    ]);
+  });
+
+  it("3 tools is not enough (minSize=4)", () => {
+    const tl = [user(), read("r1"), grep("g1"), bash("b1")];
+    const bursts = detectToolBursts(tl);
+    expect(bursts.size).toBe(0);
+  });
+
+  it("assistant text breaks a burst", () => {
+    const tl = [
+      user(),
+      read("r1"),
+      grep("g1"),
+      assistant(),
+      read("r2"),
+      bash("b1"),
+      grep("g2"),
+      read("r3"),
+    ];
+    const bursts = detectToolBursts(tl);
+    // First segment: 2 tools (too few). Second segment: 4 tools (burst)
+    expect(bursts.size).toBe(1);
+    expect(bursts.has(4)).toBe(true);
+    expect(bursts.get(4)!.tools).toHaveLength(4);
+  });
+
+  it("Task tools are excluded", () => {
+    const tl = [
+      user(),
+      task("t1"),
+      task("t2"),
+      task("t3"),
+      read("r1"),
+      grep("g1"),
+      bash("b1"),
+      read("r2"),
+    ];
+    const bursts = detectToolBursts(tl);
+    // Tasks excluded from burst scanning, remaining 4 tools form a burst
+    expect(bursts.size).toBe(1);
+    expect(bursts.get(4)!.tools).toHaveLength(4);
+    // Verify no Task tools in the burst
+    expect(bursts.get(4)!.tools.every((t) => t.tool_name !== "Task")).toBe(true);
+  });
+
+  it("AskUserQuestion breaks a burst", () => {
+    const tl = [user(), read("r1"), grep("g1"), askUser("a1"), bash("b1"), read("r2")];
+    const bursts = detectToolBursts(tl);
+    // Split into 2+2, neither reaches minSize
+    expect(bursts.size).toBe(0);
+  });
+
+  it("stats are computed correctly", () => {
+    const tl = [
+      user(),
+      read("r1", "success"),
+      grep("g1", "success"),
+      bash("b1", "error"),
+      read("r2", "running"),
+    ];
+    const bursts = detectToolBursts(tl);
+    expect(bursts.size).toBe(1);
+    const burst = bursts.get(1)!;
+    expect(burst.stats).toEqual({ completed: 2, failed: 1, running: 1, total: 4 });
+  });
+
+  it("summary is ordered by first appearance", () => {
+    const tl = [user(), grep("g1"), read("r1"), grep("g2"), read("r2")];
+    const bursts = detectToolBursts(tl);
+    expect(bursts.size).toBe(1);
+    expect(bursts.get(1)!.summary).toEqual([
+      { toolName: "Grep", count: 2 },
+      { toolName: "Read", count: 2 },
+    ]);
+  });
+
+  it("multiple bursts in one timeline", () => {
+    const tl = [
+      user(),
+      read("r1"),
+      read("r2"),
+      read("r3"),
+      read("r4"),
+      assistant(),
+      grep("g1"),
+      grep("g2"),
+      grep("g3"),
+      grep("g4"),
+    ];
+    const bursts = detectToolBursts(tl);
+    expect(bursts.size).toBe(2);
+    expect(bursts.get(1)!.tools).toHaveLength(4);
+    expect(bursts.get(6)!.tools).toHaveLength(4);
+  });
+
+  it("stable key = first tool's tool_use_id", () => {
+    const tl = [user(), read("first-tool-id"), grep("g1"), bash("b1"), read("r2")];
+    const bursts = detectToolBursts(tl);
+    expect(bursts.get(1)!.key).toBe("first-tool-id");
+  });
+
+  it("key is stable when timeline shifts (prepend entry)", () => {
+    const tools = [user(), read("stable-key"), grep("g1"), bash("b1"), read("r2")];
+    const bursts1 = detectToolBursts(tools);
+    expect(bursts1.get(1)!.key).toBe("stable-key");
+
+    // Prepend a user entry — startIndex shifts but key stays the same
+    const shifted = [user(), ...tools];
+    const bursts2 = detectToolBursts(shifted);
+    // startIndex is now 2 (shifted by 1)
+    expect(bursts2.get(2)!.key).toBe("stable-key");
+  });
+
+  it("skips burst at startIndex 0", () => {
+    // No user entry before tools — startIndex would be 0
+    const tl = [read("r1"), grep("g1"), bash("b1"), read("r2")];
+    const bursts = detectToolBursts(tl);
+    expect(bursts.size).toBe(0);
   });
 });

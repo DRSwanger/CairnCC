@@ -32,16 +32,20 @@
   import { IS_WEBKIT } from "$lib/utils/platform";
   import {
     detectBatchGroups,
+    detectToolBursts,
     isPlanFilePath,
     planFileName,
     extractPlanContent,
   } from "$lib/utils/tool-rendering";
+  import type { ToolBurst } from "$lib/utils/tool-rendering";
 
   const EMPTY_BATCH_MAP = new Map();
+  const EMPTY_BURST_MAP = new Map() as Map<number, ToolBurst>;
   import XTerminal from "$lib/components/XTerminal.svelte";
   import ChatMessage from "$lib/components/ChatMessage.svelte";
   import InlineToolCard from "$lib/components/InlineToolCard.svelte";
   import BatchProgressBar from "$lib/components/BatchProgressBar.svelte";
+  import ToolBurstHeader from "$lib/components/ToolBurstHeader.svelte";
   import SessionStatusBar from "$lib/components/SessionStatusBar.svelte";
   import McpStatusPanel from "$lib/components/McpStatusPanel.svelte";
   import PromptInput from "$lib/components/PromptInput.svelte";
@@ -281,6 +285,71 @@
     }
   });
 
+  // ── Tool burst groups (excludes Task — handled by BatchProgressBar) ──
+  let toolBursts = $derived(toolFilter ? EMPTY_BURST_MAP : detectToolBursts(visibleTimeline));
+
+  // Layer 1: Auto-collapse — completed + no interaction needed → collapsed (derived, pure)
+  let autoCollapsed = $derived.by(() => {
+    const keys = new Set<string>();
+    for (const [, burst] of toolBursts) {
+      const needsInteraction = burst.tools.some(
+        (t) => t.status === "permission_prompt" || t.status === "ask_pending",
+      );
+      if (burst.stats.running === 0 && burst.stats.total > 0 && !needsInteraction) {
+        keys.add(burst.key);
+      }
+    }
+    return keys;
+  });
+
+  // Layer 2: Manual overrides — user explicitly toggled (state, survives re-renders)
+  // true = user forced expand, false = user forced collapse, absent = follow auto
+  let manualOverrides = $state(new Map<string, boolean>());
+
+  function toggleBurst(key: string) {
+    const next = new Map(manualOverrides);
+    const currentlyCollapsed = effectiveCollapsed.has(key);
+    next.set(key, currentlyCollapsed); // if collapsed → override to expanded (true), vice versa
+    manualOverrides = next;
+  }
+
+  // Layer 3: Effective collapsed set — merge auto + manual (derived)
+  // Priority: needsInteraction (force expand) > manual > auto
+  let effectiveCollapsed = $derived.by(() => {
+    const result = new Set<string>();
+    for (const [, burst] of toolBursts) {
+      // Highest priority: interaction needed → always expand, ignore everything else
+      const needsInteraction = burst.tools.some(
+        (t) => t.status === "permission_prompt" || t.status === "ask_pending",
+      );
+      if (needsInteraction) continue;
+
+      const manual = manualOverrides.get(burst.key);
+      if (manual === true) continue; // user forced expand → skip
+      if (manual === false) {
+        // user forced collapse → add
+        result.add(burst.key);
+        continue;
+      }
+      if (autoCollapsed.has(burst.key)) {
+        // no override → follow auto
+        result.add(burst.key);
+      }
+    }
+    return result;
+  });
+
+  // Indices hidden by collapsed bursts (for skipping render)
+  let burstHiddenIndices = $derived.by(() => {
+    const hidden = new Set<number>();
+    for (const [, burst] of toolBursts) {
+      if (effectiveCollapsed.has(burst.key)) {
+        for (let j = burst.startIndex; j <= burst.endIndex; j++) hidden.add(j);
+      }
+    }
+    return hidden;
+  });
+
   // ── Auto-context tracking ──
   // Map<runId, snapshots> — persists across run switches within the session
   let contextHistoryMap = $state<Map<string, ContextSnapshot[]>>(new Map());
@@ -445,6 +514,8 @@
   let isExpandingTimeline = $derived(false);
 
   let welcomeVisible = $derived(store.timeline.length === 0 && !store.streamingText && !store.run);
+
+  let inputBlockedByPermission = $derived(store.hasPendingPermission);
 
   /** Skill info for SkillSelector: merge preloaded details with session skill names. */
   let skillItems = $derived.by(() => {
@@ -1221,6 +1292,30 @@
       isChatAutoScroll = true;
     }
   }
+
+  // ── Permission pending auto-scroll ──
+  let prevPermissionRunId = "";
+  let prevHadPermission = false;
+
+  $effect(() => {
+    const runId = store.run?.id ?? "";
+    const has = store.hasPendingPermission;
+
+    if (runId !== prevPermissionRunId) {
+      prevPermissionRunId = runId;
+      prevHadPermission = false;
+    }
+
+    if (has && !prevHadPermission) {
+      if (!chatAreaRef) return;
+      requestAnimationFrame(() => {
+        scrollChatToBottom();
+      });
+      dbg("chat", "permission pending -> autoscroll", { runId });
+    }
+
+    prevHadPermission = has;
+  });
 
   // ── Send message ──
 
@@ -2707,125 +2802,144 @@
                 </div>
               {/if}
               {#each visibleTimeline as entry, i (entry.id)}
-                <div class:cv-auto={!IS_WEBKIT}>
-                  {#if batchGroups.has(i)}
-                    {@const batch = batchGroups.get(i)}
-                    {#if batch}
-                      <div class="w-full py-1">
+                {#if !(burstHiddenIndices.has(i) && !toolBursts.has(i))}
+                  <div class:cv-auto={!IS_WEBKIT}>
+                    {#if batchGroups.has(i)}
+                      {@const batch = batchGroups.get(i)}
+                      {#if batch}
+                        <div class="w-full py-1">
+                          <div class="mx-auto max-w-5xl px-8 pl-11">
+                            <BatchProgressBar tools={batch} />
+                          </div>
+                        </div>
+                      {/if}
+                    {/if}
+                    {#if toolBursts.has(i)}
+                      {@const burst = toolBursts.get(i)}
+                      {#if burst}
+                        <div class="w-full py-1">
+                          <div class="mx-auto max-w-5xl px-8 pl-11">
+                            <ToolBurstHeader
+                              {burst}
+                              collapsed={effectiveCollapsed.has(burst.key)}
+                              onToggle={() => toggleBurst(burst.key)}
+                            />
+                          </div>
+                        </div>
+                      {/if}
+                    {/if}
+                    {#if usageAnnotations.has(i)}
+                      {@const tu = usageAnnotations.get(i)}
+                      {#if tu}
+                        <div class="w-full py-1.5">
+                          <div class="mx-auto max-w-5xl px-8">
+                            <div class="flex items-center gap-3">
+                              <div class="h-px flex-1 bg-border/40"></div>
+                              <span class="text-[10px] tabular-nums text-muted-foreground/50">
+                                {formatTokens(tu.inputTokens)}
+                                {t("chat_usageIn")} · {formatTokens(tu.outputTokens)}
+                                {t("chat_usageOut")}
+                                {#if tu.cacheReadTokens > 0 || tu.cacheWriteTokens > 0}
+                                  · {t("chat_usageCache", {
+                                    read: formatTokens(tu.cacheReadTokens),
+                                    write: formatTokens(tu.cacheWriteTokens),
+                                  })}
+                                {/if}
+                              </span>
+                              <div class="h-px flex-1 bg-border/40"></div>
+                            </div>
+                          </div>
+                        </div>
+                      {/if}
+                    {/if}
+                    {#if entry.kind === "user"}
+                      <ChatMessage
+                        message={{
+                          id: entry.id,
+                          role: "user",
+                          content: entry.content,
+                          timestamp: entry.ts,
+                        }}
+                        attachments={entry.attachments}
+                      />
+                    {:else if entry.kind === "assistant"}
+                      <ChatMessage
+                        message={{
+                          id: entry.id,
+                          role: "assistant",
+                          content: entry.content,
+                          timestamp: entry.ts,
+                        }}
+                      />
+                    {:else if entry.kind === "tool"}
+                      {#if !burstHiddenIndices.has(i)}
+                        <div class="w-full py-1" id="tool-{entry.tool.tool_use_id}">
+                          <div class="mx-auto max-w-5xl px-8 pl-11">
+                            <InlineToolCard
+                              tool={entry.tool}
+                              subTimeline={entry.subTimeline}
+                              runId={store.run?.id ?? ""}
+                              {fetchToolResult}
+                              onAnswer={entry.tool.tool_name === "AskUserQuestion" &&
+                              (entry.tool.status === "running" ||
+                                entry.tool.status === "ask_pending")
+                                ? (answer) => handleToolAnswer(entry.tool.tool_use_id, answer)
+                                : undefined}
+                              onApprove={handleToolApprove}
+                              onPermissionRespond={handlePermissionRespond}
+                              onExitPlanClearContext={handleExitPlanClearContext}
+                              taskNotifications={store.taskNotifications}
+                              planContent={entry.tool.tool_name === "ExitPlanMode" &&
+                              (entry.tool.status === "permission_prompt" ||
+                                entry.tool.status === "success")
+                                ? getPlanContentForExitPlan(entry.id)
+                                : undefined}
+                              latestPlanTool={entry.kind === "tool" &&
+                                entry.tool.tool_use_id === latestPlanToolId}
+                            />
+                          </div>
+                        </div>
+                      {/if}
+                    {:else if entry.kind === "command_output"}
+                      <div class="w-full py-2">
                         <div class="mx-auto max-w-5xl px-8 pl-11">
-                          <BatchProgressBar tools={batch} />
+                          <div
+                            class="command-output rounded-lg border border-border/40 bg-[#1a1b26] px-4 py-3 text-sm overflow-x-auto"
+                          >
+                            {#if entry.content.includes("## Context Usage")}
+                              <ContextUsageGrid text={entry.content} />
+                            {:else if entry.content.includes("Total cost:") && entry.content.includes("Total duration")}
+                              <CostSummaryView text={entry.content} />
+                            {:else if entry.content
+                              .trimStart()
+                              .startsWith("Version ") && entry.content.includes("•")}
+                              <ReleaseNotesCard text={entry.content} />
+                            {:else if hasAnsiCodes(entry.content)}
+                              <pre
+                                class="whitespace-pre font-mono text-xs leading-relaxed text-[#c0caf5] m-0">{@html ansiToHtml(
+                                  entry.content,
+                                )}</pre>
+                            {:else}
+                              <MarkdownContent text={entry.content} />
+                            {/if}
+                          </div>
                         </div>
                       </div>
-                    {/if}
-                  {/if}
-                  {#if usageAnnotations.has(i)}
-                    {@const tu = usageAnnotations.get(i)}
-                    {#if tu}
-                      <div class="w-full py-1.5">
+                    {:else if entry.kind === "separator"}
+                      <div class="w-full py-3">
                         <div class="mx-auto max-w-5xl px-8">
                           <div class="flex items-center gap-3">
-                            <div class="h-px flex-1 bg-border/40"></div>
-                            <span class="text-[10px] tabular-nums text-muted-foreground/50">
-                              {formatTokens(tu.inputTokens)}
-                              {t("chat_usageIn")} · {formatTokens(tu.outputTokens)}
-                              {t("chat_usageOut")}
-                              {#if tu.cacheReadTokens > 0 || tu.cacheWriteTokens > 0}
-                                · {t("chat_usageCache", {
-                                  read: formatTokens(tu.cacheReadTokens),
-                                  write: formatTokens(tu.cacheWriteTokens),
-                                })}
-                              {/if}
+                            <div class="h-px flex-1 bg-amber-500/20"></div>
+                            <span class="text-xs text-amber-500/70 font-medium whitespace-nowrap">
+                              {entry.content}
                             </span>
-                            <div class="h-px flex-1 bg-border/40"></div>
+                            <div class="h-px flex-1 bg-amber-500/20"></div>
                           </div>
                         </div>
                       </div>
                     {/if}
-                  {/if}
-                  {#if entry.kind === "user"}
-                    <ChatMessage
-                      message={{
-                        id: entry.id,
-                        role: "user",
-                        content: entry.content,
-                        timestamp: entry.ts,
-                      }}
-                      attachments={entry.attachments}
-                    />
-                  {:else if entry.kind === "assistant"}
-                    <ChatMessage
-                      message={{
-                        id: entry.id,
-                        role: "assistant",
-                        content: entry.content,
-                        timestamp: entry.ts,
-                      }}
-                    />
-                  {:else if entry.kind === "tool"}
-                    <div class="w-full py-1" id="tool-{entry.tool.tool_use_id}">
-                      <div class="mx-auto max-w-5xl px-8 pl-11">
-                        <InlineToolCard
-                          tool={entry.tool}
-                          subTimeline={entry.subTimeline}
-                          runId={store.run?.id ?? ""}
-                          {fetchToolResult}
-                          onAnswer={entry.tool.tool_name === "AskUserQuestion" &&
-                          (entry.tool.status === "running" || entry.tool.status === "ask_pending")
-                            ? (answer) => handleToolAnswer(entry.tool.tool_use_id, answer)
-                            : undefined}
-                          onApprove={handleToolApprove}
-                          onPermissionRespond={handlePermissionRespond}
-                          onExitPlanClearContext={handleExitPlanClearContext}
-                          taskNotifications={store.taskNotifications}
-                          planContent={entry.tool.tool_name === "ExitPlanMode" &&
-                          (entry.tool.status === "permission_prompt" ||
-                            entry.tool.status === "success")
-                            ? getPlanContentForExitPlan(entry.id)
-                            : undefined}
-                          latestPlanTool={entry.kind === "tool" &&
-                            entry.tool.tool_use_id === latestPlanToolId}
-                        />
-                      </div>
-                    </div>
-                  {:else if entry.kind === "command_output"}
-                    <div class="w-full py-2">
-                      <div class="mx-auto max-w-5xl px-8 pl-11">
-                        <div
-                          class="command-output rounded-lg border border-border/40 bg-[#1a1b26] px-4 py-3 text-sm overflow-x-auto"
-                        >
-                          {#if entry.content.includes("## Context Usage")}
-                            <ContextUsageGrid text={entry.content} />
-                          {:else if entry.content.includes("Total cost:") && entry.content.includes("Total duration")}
-                            <CostSummaryView text={entry.content} />
-                          {:else if entry.content
-                            .trimStart()
-                            .startsWith("Version ") && entry.content.includes("•")}
-                            <ReleaseNotesCard text={entry.content} />
-                          {:else if hasAnsiCodes(entry.content)}
-                            <pre
-                              class="whitespace-pre font-mono text-xs leading-relaxed text-[#c0caf5] m-0">{@html ansiToHtml(
-                                entry.content,
-                              )}</pre>
-                          {:else}
-                            <MarkdownContent text={entry.content} />
-                          {/if}
-                        </div>
-                      </div>
-                    </div>
-                  {:else if entry.kind === "separator"}
-                    <div class="w-full py-3">
-                      <div class="mx-auto max-w-5xl px-8">
-                        <div class="flex items-center gap-3">
-                          <div class="h-px flex-1 bg-amber-500/20"></div>
-                          <span class="text-xs text-amber-500/70 font-medium whitespace-nowrap">
-                            {entry.content}
-                          </span>
-                          <div class="h-px flex-1 bg-amber-500/20"></div>
-                        </div>
-                      </div>
-                    </div>
-                  {/if}
-                </div>
+                  </div>
+                {/if}
               {/each}
 
               <!-- Last turn usage annotation (after all entries) -->
@@ -3253,6 +3367,8 @@
         bind:this={promptRef}
         agent={store.agent}
         running={store.isActivelyRunning}
+        disabled={inputBlockedByPermission}
+        pendingPermission={inputBlockedByPermission}
         hasRun={!!store.run}
         sessionAlive={store.sessionAlive}
         canResume={!store.sessionAlive && !!store.run?.session_id && store.useStreamSession}

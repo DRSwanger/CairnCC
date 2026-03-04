@@ -281,6 +281,69 @@ export function detectBatchGroups(
   return groups;
 }
 
+// ── Tool Burst Collapse ──
+
+export interface ToolBurst {
+  /** Stable key: first tool's tool_use_id (survives timeline index shifts). */
+  key: string;
+  startIndex: number;
+  endIndex: number; // inclusive
+  tools: BusToolItem[];
+  /** Per-tool_name count summary, ordered by first appearance. */
+  summary: Array<{ toolName: string; count: number }>;
+  stats: { completed: number; failed: number; running: number; total: number };
+}
+
+const BURST_EXCLUDE = new Set(["Task", "AskUserQuestion", "ExitPlanMode", "EnterPlanMode"]);
+
+/**
+ * Detect "tool burst" segments: consecutive tool entries (regardless of tool_name)
+ * in the timeline, excluding Task (handled by BatchProgressBar) and interactive tools.
+ * Returns Map<startIndex, ToolBurst>.
+ */
+export function detectToolBursts(
+  timeline: Array<{ kind: string; tool?: BusToolItem }>,
+  minSize = 4,
+): Map<number, ToolBurst> {
+  const bursts = new Map<number, ToolBurst>();
+  let i = 0;
+  while (i < timeline.length) {
+    const entry = timeline[i];
+    if (entry.kind === "tool" && entry.tool && !BURST_EXCLUDE.has(entry.tool.tool_name)) {
+      const start = i;
+      const tools: BusToolItem[] = [];
+      while (
+        i < timeline.length &&
+        timeline[i].kind === "tool" &&
+        timeline[i].tool &&
+        !BURST_EXCLUDE.has(timeline[i].tool!.tool_name)
+      ) {
+        tools.push(timeline[i].tool!);
+        i++;
+      }
+      // Skip burst at index 0 — may be truncated by renderLimit, key would be unstable
+      if (tools.length >= minSize && start > 0) {
+        const seen = new Map<string, number>();
+        for (const t of tools) {
+          seen.set(t.tool_name, (seen.get(t.tool_name) ?? 0) + 1);
+        }
+        const summary = Array.from(seen, ([toolName, count]) => ({ toolName, count }));
+        bursts.set(start, {
+          key: tools[0].tool_use_id,
+          startIndex: start,
+          endIndex: start + tools.length - 1,
+          tools,
+          summary,
+          stats: aggregateBatchStatus(tools),
+        });
+      }
+    } else {
+      i++;
+    }
+  }
+  return bursts;
+}
+
 /** Extract the /.claude/plans/<name>.md suffix from a plan file path.
  *  Returns null if not a plan file. Works for both absolute and relative paths. */
 export function planFileSuffix(filePath: string): string | null {

@@ -94,6 +94,7 @@
     availableSkills = [],
     skillItems = [],
     showAuthBadge = true,
+    pendingPermission = false,
     hasStash = false,
     onRestoreStash,
     onShortcutHelp,
@@ -131,12 +132,21 @@
     availableSkills?: string[];
     skillItems?: { name: string; description: string }[];
     showAuthBadge?: boolean; // TODO: remove unused auth props after hero migration
+    pendingPermission?: boolean;
     hasStash?: boolean;
     onRestoreStash?: () => void;
     onShortcutHelp?: () => void;
     userHistory?: string[];
     runId?: string;
   } = $props();
+
+  let effectivePlaceholder = $derived(
+    pendingPermission
+      ? t("prompt_pendingPermission")
+      : hasRun
+        ? t("prompt_hasRunPlaceholder")
+        : t("prompt_newPlaceholder"),
+  );
 
   // ── Permission mode selector ──
   const PERMISSION_MODES = [
@@ -1618,6 +1628,29 @@
     class="rounded-xl border bg-background shadow-sm transition-colors {currentMode.borderCls ||
       'border-border focus-within:border-ring/50 focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.15)]'}"
   >
+    {#if pendingPermission}
+      <div
+        role="status"
+        aria-live="polite"
+        class="flex items-center gap-2 px-4 pt-2.5 pb-0.5 text-xs text-amber-500"
+      >
+        <svg
+          class="h-3.5 w-3.5 shrink-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <span>{t("prompt_pendingPermission")}</span>
+      </div>
+    {/if}
+
     <!-- Textarea -->
     <textarea
       bind:this={textareaEl}
@@ -1625,7 +1658,7 @@
       onkeydown={handleKeydown}
       oninput={handleInput}
       onpaste={handlePaste}
-      placeholder={hasRun ? t("prompt_hasRunPlaceholder") : t("prompt_newPlaceholder")}
+      placeholder={effectivePlaceholder}
       rows={1}
       {disabled}
       class="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none disabled:opacity-50"

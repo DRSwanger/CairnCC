@@ -279,6 +279,7 @@
   "prompt_permDontAskLabel": "不询问",
   "prompt_permDontAskShort": "免问",
   "prompt_permDontAskDesc": "自动拒绝需要授权的工具",
+  "prompt_pendingPermission": "请先处理上方的待确认项...",
   "prompt_dropFiles": "将文件拖放到此处",
   "prompt_hasRunPlaceholder": "发送消息...",
   "prompt_newPlaceholder": "输入消息以开始...",
@@ -782,6 +783,10 @@
   "inline_toolCount": "{count} 个工具",
   "batch_status": "{completed}/{total} 已完成 · {running} 执行中",
   "batch_failed": "{failed} 失败",
+
+  "toolBurst_calls": "{total} 个工具调用",
+  "toolBurst_completed": "{completed}/{total} 已完成",
+  "toolBurst_failed": "{failed} 失败",
 
   "toolbar_planModeTitle": "计划模式：智能体只读不编辑文件",
   "toolbar_planOn": "计划 开",

@@ -279,6 +279,7 @@
   "prompt_permDontAskLabel": "Don't Ask",
   "prompt_permDontAskShort": "No-Ask",
   "prompt_permDontAskDesc": "Denies tools needing permission",
+  "prompt_pendingPermission": "Handle the pending approval above first...",
   "prompt_dropFiles": "Drop files here",
   "prompt_hasRunPlaceholder": "Send a message...",
   "prompt_newPlaceholder": "Type a message to start...",
@@ -782,6 +783,10 @@
   "inline_toolCount": "{count} tools",
   "batch_status": "{completed}/{total} completed · {running} running",
   "batch_failed": "{failed} failed",
+
+  "toolBurst_calls": "{total} tool calls",
+  "toolBurst_completed": "{completed}/{total} completed",
+  "toolBurst_failed": "{failed} failed",
 
   "toolbar_planModeTitle": "Plan mode: agent reads but doesn't edit files",
   "toolbar_planOn": "Plan ON",
