@@ -14,6 +14,7 @@ const KNOWN_COMMAND_DESCRIPTIONS: Record<string, string> = {
   copy: "Copy Claude's last response to clipboard as markdown",
   cost: "Show the total cost and duration of the current session",
   diff: "View uncommitted changes (git diff HEAD)",
+  fast: "Toggle fast mode on or off",
   doctor: "Diagnose and verify your installation and settings",
   feedback: "Submit feedback about Claude Code",
   files: "List all files currently in context",
@@ -144,6 +145,14 @@ export const VIRTUAL_COMMANDS: CliCommand[] = [
     aliases: [],
     _virtual: true,
     _action: "add-dir",
+  },
+  {
+    name: "fast",
+    description: "Toggle fast mode on or off",
+    aliases: [],
+    _virtual: true,
+    _enum: true,
+    _action: "toggle-fast",
   },
 ];
 
@@ -309,6 +318,7 @@ const COMMAND_CATEGORY_MAP: Record<string, SlashCategory> = {
   resume: "session",
   fork: "session",
   copy: "session",
+  fast: "session",
   files: "session",
   // Coding
   model: "coding",

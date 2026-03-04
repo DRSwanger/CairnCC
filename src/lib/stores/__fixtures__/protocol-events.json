@@ -1,5 +1,10 @@
 [
-  { "type": "user_message", "run_id": "run-1", "text": "Test protocol events" },
+  {
+    "type": "user_message",
+    "run_id": "run-1",
+    "text": "Test protocol events",
+    "uuid": "test-uuid-001"
+  },
   { "type": "run_state", "run_id": "run-1", "state": "spawning", "error": null, "exit_code": null },
   {
     "type": "session_init",

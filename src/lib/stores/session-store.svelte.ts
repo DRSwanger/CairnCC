@@ -2017,14 +2017,35 @@ export class SessionStore {
         // (replayOnly=true), every event from events.jsonl is authoritative —
         // the user may legitimately send the same text twice in different turns.
         if (!replayOnly) {
-          const lastUser = tl.findLast((e) => e.kind === "user");
-          if (lastUser && lastUser.kind === "user" && lastUser.content === ev.text) break;
+          // Find the most recent user entry with matching text that hasn't been UUID-confirmed yet.
+          // Using backward search (findLast) avoids matching old replayed entries from before
+          // Phase 1 (which also lack cliUuid). For rapid-fire identical messages, UUID assignment
+          // order is reversed (LIFO), but this is functionally correct — each entry still gets a
+          // unique UUID for checkpoint identification.
+          const match = tl.findLast(
+            (e) => e.kind === "user" && e.content === ev.text && !e.cliUuid,
+          );
+          if (match && match.kind === "user") {
+            // Merge cliUuid from the confirmed backend event into the optimistic entry
+            if (ev.uuid) {
+              const idx = tl.indexOf(match);
+              const updated = { ...match, cliUuid: ev.uuid };
+              if (ctx) ctx.tl[idx] = updated;
+              else {
+                const u = [...this.timeline];
+                u[idx] = updated;
+                this.timeline = u;
+              }
+            }
+            break;
+          }
         }
         const entry: TimelineEntry = {
           kind: "user",
           id: crypto.randomUUID(),
           content: ev.text,
           ts: eventTs(ev),
+          ...(ev.uuid ? { cliUuid: ev.uuid } : {}),
         };
         if (ctx) {
           ctx.tl.push(entry);

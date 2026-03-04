@@ -545,8 +545,15 @@ export async function toggleMcpServerConfig(
   });
 }
 
-export async function rewindFiles(runId: string, files?: string[]) {
-  return sendSessionControl(runId, "rewind_files", files ? { files } : undefined);
+export async function rewindFiles(
+  runId: string,
+  opts: { userMessageId: string; dryRun?: boolean; files?: string[] },
+) {
+  return sendSessionControl(runId, "rewind_files", {
+    user_message_id: opts.userMessageId,
+    ...(opts.dryRun ? { dry_run: true } : {}),
+    ...(opts.files ? { files: opts.files } : {}),
+  });
 }
 
 export async function cancelControlRequest(runId: string, requestId: string) {

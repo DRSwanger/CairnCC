@@ -81,6 +81,8 @@
     onModelSwitch,
     onPermissionModeChange,
     onVirtualCommand,
+    fastModeState = "",
+    onFastModeSwitch,
     cwd = "/",
     authMode = "cli",
     platformId = "anthropic",
@@ -119,6 +121,8 @@
     onModelSwitch?: (model: string) => void;
     onPermissionModeChange?: (mode: string) => void;
     onVirtualCommand?: (action: string, args: string) => void;
+    fastModeState?: string;
+    onFastModeSwitch?: (mode: "on" | "off") => void;
     cwd?: string;
     authMode?: string;
     platformId?: string;
@@ -301,7 +305,7 @@
   // ── Slash menu state ──
   let slashMenuOpen = $state(false);
   let slashSelectedIndex = $state(0);
-  let slashPhase: "commands" | "sub-model" = $state("commands");
+  let slashPhase: "commands" | "sub-model" | "sub-fast" = $state("commands");
   let slashSubSelectedIndex = $state(0);
   let activeSlashCmd: CliCommand | null = $state(null);
 
@@ -548,8 +552,13 @@
       case "enum":
         activeSlashCmd = cmd;
         inputText = `/${cmd.name} `;
-        slashPhase = "sub-model";
-        slashSubSelectedIndex = 0;
+        if (cmd.name === "fast") {
+          slashPhase = "sub-fast";
+          slashSubSelectedIndex = fastModeState === "on" ? 1 : 0;
+        } else {
+          slashPhase = "sub-model";
+          slashSubSelectedIndex = 0;
+        }
         moveCursorToEnd();
         break;
     }
@@ -573,6 +582,15 @@
     inputText = restoreText; // restore user draft
     if (textareaEl) textareaEl.style.height = "auto";
     onModelSwitch?.(model.value);
+  }
+
+  function handleFastModeSelect(mode: "on" | "off") {
+    dbg("slash", "fast-select", { mode });
+    const restoreText = savedInputForSlash;
+    closeSlashMenu("sub-select");
+    inputText = restoreText;
+    if (textareaEl) textareaEl.style.height = "auto";
+    onFastModeSwitch?.(mode);
   }
 
   function moveCursorToEnd() {
@@ -610,14 +628,19 @@
     const interaction = getCommandInteraction(cmd);
 
     if (interaction === "enum") {
-      // e.g., model: close other menus → save input → open sub-model selection
+      // e.g., model/fast: close other menus → save input → open sub-view
       if (atMenuOpen) closeAtMenu("quick-action");
       if (modeDropdownOpen) modeDropdownOpen = false;
       savedInputForSlash = inputText;
       inputText = `/${cmd.name} `;
       activeSlashCmd = cmd;
-      slashPhase = "sub-model";
-      slashSubSelectedIndex = 0;
+      if (cmd.name === "fast") {
+        slashPhase = "sub-fast";
+        slashSubSelectedIndex = fastModeState === "on" ? 1 : 0;
+      } else {
+        slashPhase = "sub-model";
+        slashSubSelectedIndex = 0;
+      }
       slashMenuOpen = true;
       moveCursorToEnd();
       return;
@@ -666,7 +689,7 @@
       return;
     }
 
-    if (slashPhase === "sub-model") {
+    if (slashPhase === "sub-model" || slashPhase === "sub-fast") {
       // Close sub-view if input no longer matches /activeCmdName
       if (activeSlashCmd && !isSubViewInputValid(inputText, activeSlashCmd.name)) {
         closeSlashMenu("sub-invalid-input");
@@ -757,6 +780,42 @@
         }
       }
       // Let other keys through for typing in sub-view
+      return;
+    }
+
+    // ── Sub-fast phase ──
+    if (slashMenuOpen && slashPhase === "sub-fast") {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        goBackToCommands();
+        return;
+      }
+      if (e.key === "Backspace") {
+        if (
+          shouldBackFromSubView(inputText, textareaEl?.selectionStart ?? 0, activeSlashCmd?.name)
+        ) {
+          e.preventDefault();
+          goBackToCommands();
+          return;
+        }
+        return;
+      }
+      const FAST_OPTIONS = 2;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        slashSubSelectedIndex = Math.min(slashSubSelectedIndex + 1, FAST_OPTIONS - 1);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        slashSubSelectedIndex = Math.max(slashSubSelectedIndex - 1, 0);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        handleFastModeSelect(slashSubSelectedIndex === 0 ? "off" : "on");
+        return;
+      }
       return;
     }
 
@@ -1691,10 +1750,12 @@
         subSelectedIndex={slashSubSelectedIndex}
         {hintText}
         inputDisplay={inputText}
+        {fastModeState}
         onSelect={(cmd) => selectSlashCommand(cmd, "enter")}
         onHover={(i) => (slashSelectedIndex = i)}
         onSubHover={(i) => (slashSubSelectedIndex = i)}
         onSubSelect={handleSubModelSelect}
+        onFastSelect={handleFastModeSelect}
         onBack={goBackToCommands}
         onDismiss={() => closeSlashMenu("click-outside")}
       />

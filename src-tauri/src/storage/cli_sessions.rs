@@ -448,6 +448,10 @@ impl TranscriptImporter {
                     candidates.push(BusEvent::UserMessage {
                         run_id: self.run_id.clone(),
                         text: text.to_string(),
+                        uuid: normalized
+                            .get("uuid")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     });
                 }
             } else {
@@ -1870,6 +1874,7 @@ mod tests {
         let replayable = BusEvent::UserMessage {
             run_id: "r".into(),
             text: "hi".into(),
+            uuid: None,
         };
         assert!(is_replayable(&replayable));
 
@@ -1879,5 +1884,60 @@ mod tests {
             data: json!({}),
         };
         assert!(!is_replayable(&not_replayable));
+    }
+
+    /// Verify normalize_transcript_line preserves user message uuid field
+    #[test]
+    fn test_normalize_user_preserves_uuid() {
+        let raw = json!({
+            "type": "user",
+            "uuid": "test-uuid-abc",
+            "message": { "role": "user", "content": "hello" }
+        });
+        let normalized = normalize_transcript_line(&raw).unwrap();
+        assert_eq!(normalized["uuid"], "test-uuid-abc");
+        assert_eq!(normalized["type"], "user");
+    }
+
+    /// Verify old user messages without uuid still parse correctly
+    #[test]
+    fn test_normalize_user_without_uuid() {
+        let raw = json!({
+            "type": "user",
+            "message": { "role": "user", "content": "hello" }
+        });
+        let normalized = normalize_transcript_line(&raw).unwrap();
+        assert!(normalized.get("uuid").is_none());
+    }
+
+    /// BusEvent::UserMessage with uuid serializes/deserializes correctly
+    #[test]
+    fn test_user_message_with_uuid_serde() {
+        let ev = BusEvent::UserMessage {
+            run_id: "r".into(),
+            text: "hi".into(),
+            uuid: Some("test-uuid-123".into()),
+        };
+        let json = serde_json::to_value(&ev).unwrap();
+        assert_eq!(json["uuid"], "test-uuid-123");
+
+        let back: BusEvent = serde_json::from_value(json).unwrap();
+        match back {
+            BusEvent::UserMessage { uuid, .. } => {
+                assert_eq!(uuid.as_deref(), Some("test-uuid-123"))
+            }
+            _ => panic!("expected UserMessage"),
+        }
+    }
+
+    /// BusEvent::UserMessage without uuid deserializes (backward compat with old events.jsonl)
+    #[test]
+    fn test_user_message_without_uuid_serde() {
+        let json = json!({ "type": "user_message", "run_id": "r", "text": "hi" });
+        let ev: BusEvent = serde_json::from_value(json).unwrap();
+        match ev {
+            BusEvent::UserMessage { uuid, .. } => assert!(uuid.is_none()),
+            _ => panic!("expected UserMessage"),
+        }
     }
 }

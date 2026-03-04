@@ -460,19 +460,24 @@ impl SessionActor {
         }
 
         // Write to stdin
-        if let Err(e) = self
+        let user_uuid = match self
             .write_user_to_stdin(&ticket.text, &ticket.attachments)
             .await
         {
-            log::warn!("[turn] start_user: stdin write failed: {}", e);
-            let _ = ticket.reply.send(Err(e));
-            return;
-        }
+            Ok(uuid) => uuid,
+            Err(e) => {
+                log::warn!("[turn] start_user: stdin write failed: {}", e);
+                let _ = ticket.reply.send(Err(e));
+                return;
+            }
+        };
+        log::debug!("[turn] user_message_uuid={}", user_uuid);
 
         // Emit UserMessage + RunState(running)
         self.persist_and_emit(&BusEvent::UserMessage {
             run_id: self.run_id.clone(),
             text: ticket.text.clone(),
+            uuid: Some(user_uuid),
         });
         self.emit_state("running", None, None, false);
 
@@ -688,24 +693,25 @@ impl SessionActor {
         }
     }
 
-    /// Write a user-format message to CLI stdin.
+    /// Write a user-format message to CLI stdin. Returns the UUID embedded in the payload.
     async fn write_user_to_stdin(
         &mut self,
         text: &str,
         attachments: &[AttachmentData],
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         let stdin = self
             .stdin
             .as_mut()
             .ok_or_else(|| "stdin closed".to_string())?;
-        let payload = build_user_payload(text, attachments, &self.run_id);
+        let (payload, user_uuid) = build_user_payload(text, attachments, &self.run_id);
         let mut line = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
         line.push('\n');
         log::debug!(
-            "[turn] write_user_to_stdin: run_id={}, len={}, attachments={}",
+            "[turn] write_user_to_stdin: run_id={}, len={}, attachments={}, uuid={}",
             self.run_id,
             text.len(),
-            attachments.len()
+            attachments.len(),
+            user_uuid
         );
         stdin
             .write_all(line.as_bytes())
@@ -715,7 +721,7 @@ impl SessionActor {
             .flush()
             .await
             .map_err(|e| format!("stdin flush failed: {}", e))?;
-        Ok(())
+        Ok(user_uuid)
     }
 
     /// Persist a BusEvent to JSONL and emit to frontend. (HC #32)
@@ -1835,7 +1841,7 @@ pub fn build_user_payload(
     text: &str,
     attachments: &[AttachmentData],
     run_id: &str,
-) -> serde_json::Value {
+) -> (serde_json::Value, String) {
     let content = if attachments.is_empty() {
         serde_json::json!(text)
     } else {
@@ -1905,14 +1911,16 @@ pub fn build_user_payload(
         serde_json::json!(parts)
     };
 
-    serde_json::json!({
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let payload = serde_json::json!({
         "type": "user",
-        "uuid": uuid::Uuid::new_v4().to_string(),
+        "uuid": &uuid,
         "message": {
             "role": "user",
             "content": content,
         }
-    })
+    });
+    (payload, uuid)
 }
 
 #[cfg(test)]
@@ -2002,5 +2010,14 @@ mod tests {
         let oversized_b64 = "A".repeat(28_000_000); // ~21MB raw → exceeds 20MB limit
         let parts = build_content_parts("hello", &[("application/pdf", &oversized_b64)]);
         assert_eq!(parts.len(), 1); // Only text part, oversized PDF skipped
+    }
+
+    #[test]
+    fn build_user_payload_returns_uuid() {
+        use super::build_user_payload;
+        let (payload, uuid) = build_user_payload("hello", &[], "run-test");
+        assert_eq!(payload["type"], "user");
+        assert_eq!(payload["uuid"], uuid);
+        assert!(uuid::Uuid::parse_str(&uuid).is_ok());
     }
 }

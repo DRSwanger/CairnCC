@@ -854,6 +854,57 @@ describe("/add-dir virtual command", () => {
   });
 });
 
+// ── /fast virtual command ──
+
+describe("/fast virtual command", () => {
+  it("is defined in VIRTUAL_COMMANDS with _enum: true", () => {
+    const fastCmd = VIRTUAL_COMMANDS.find((c) => c.name === "fast");
+    expect(fastCmd).toBeDefined();
+    expect(fastCmd!["_enum"]).toBe(true);
+    expect(fastCmd!["_action"]).toBe("toggle-fast");
+  });
+
+  it("mergeWithVirtual preserves _enum: true even when CLI does not return fast", () => {
+    const cli: CliCommand[] = [{ name: "compact", description: "Compact", aliases: [] }];
+    const merged = mergeWithVirtual(cli);
+    const fastCmd = merged.find((c) => c.name === "fast");
+    expect(fastCmd).toBeDefined();
+    expect(fastCmd!["_enum"]).toBe(true);
+  });
+
+  it('getCommandInteraction returns "enum" for /fast', () => {
+    const fastCmd = VIRTUAL_COMMANDS.find((c) => c.name === "fast")!;
+    expect(getCommandInteraction(fastCmd)).toBe("enum");
+  });
+
+  it('getCommandCategory returns "session" for fast', () => {
+    expect(getCommandCategory("fast")).toBe("session");
+  });
+
+  it("groupSlashCommands places /fast in session group", () => {
+    const cmds: CliCommand[] = [
+      { name: "fast", description: "Toggle fast mode", aliases: [], _virtual: true, _enum: true },
+      { name: "compact", description: "Compact", aliases: [] },
+    ];
+    const result = groupSlashCommands(cmds);
+    const sessionGroup = result.groups.find((g) => g.category === "session");
+    expect(sessionGroup).toBeDefined();
+    expect(sessionGroup!.commands.map((c) => c.name)).toContain("fast");
+  });
+
+  it("parseVirtualAction recognizes /fast", () => {
+    expect(parseVirtualAction("/fast")).toEqual({ name: "fast", args: "" });
+  });
+
+  it("parseVirtualAction recognizes /fast on", () => {
+    expect(parseVirtualAction("/fast on")).toEqual({ name: "fast", args: "on" });
+  });
+
+  it("parseVirtualAction recognizes /fast off", () => {
+    expect(parseVirtualAction("/fast off")).toEqual({ name: "fast", args: "off" });
+  });
+});
+
 // ── quoteCliArg ──
 
 describe("quoteCliArg", () => {

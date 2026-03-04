@@ -815,7 +815,7 @@ export type BusEvent =
       /** Structured tool result metadata from CLI verbose mode */
       tool_use_result?: Record<string, unknown>;
     }
-  | { type: "user_message"; run_id: string; text: string }
+  | { type: "user_message"; run_id: string; text: string; uuid?: string }
   | { type: "run_state"; run_id: string; state: string; exit_code?: number; error?: string }
   | {
       type: "usage_update";
@@ -959,7 +959,14 @@ export interface BusToolItem {
 }
 
 export type TimelineEntry =
-  | { kind: "user"; id: string; content: string; ts: string; attachments?: Attachment[] }
+  | {
+      kind: "user";
+      id: string;
+      content: string;
+      ts: string;
+      attachments?: Attachment[];
+      cliUuid?: string;
+    }
   | {
       kind: "assistant";
       id: string;

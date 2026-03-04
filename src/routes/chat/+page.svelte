@@ -72,6 +72,8 @@
   import { mergeWithVirtual, buildHelpText } from "$lib/utils/slash-commands";
   import { executeAddDir } from "$lib/utils/add-dir";
   import { buildDoctorReport } from "$lib/utils/doctor";
+  import type { RewindCandidate } from "$lib/utils/rewind";
+  import RewindModal from "$lib/components/RewindModal.svelte";
 
   // ── Helpers ──
 
@@ -143,6 +145,30 @@
   // ── Task notification banner ──
   let notificationVisible = $state(false);
   let latestNotification = $state<{ task_id: string; status: string } | null>(null);
+
+  // ── Rewind modal ──
+  let rewindModalOpen = $state(false);
+  let rewindCandidates = $derived(
+    store.timeline
+      .map((e, i) => ({ entry: e, idx: i }))
+      .filter(
+        (
+          x,
+        ): x is {
+          entry: Extract<TimelineEntry, { kind: "user" }> & { cliUuid: string };
+          idx: number;
+        } => x.entry.kind === "user" && !!x.entry.cliUuid,
+      )
+      .reverse()
+      .map(
+        ({ entry, idx }): RewindCandidate => ({
+          cliUuid: entry.cliUuid,
+          content: entry.content,
+          ts: entry.ts,
+          timelineIndex: idx,
+        }),
+      ),
+  );
 
   // ── Shortcut help panel ──
   let shortcutHelpOpen = $state(false);
@@ -1647,6 +1673,24 @@
     }
   });
 
+  async function handleFastModeSwitch(mode: "on" | "off") {
+    const enabling = mode === "on";
+    const current = store.fastModeState === "on";
+    if (enabling === current) {
+      appendCommandOutput(t(enabling ? "fast_alreadyOn" : "fast_alreadyOff"));
+      return;
+    }
+    try {
+      await api.updateCliConfig({ fastMode: enabling });
+      store.fastModeState = enabling ? "on" : "";
+      dbg("chat", "fastMode set", { mode });
+      showChatToast(t(enabling ? "toast_fastModeOn" : "toast_fastModeOff"));
+      appendCommandOutput(t(enabling ? "fast_enabled" : "fast_disabled"));
+    } catch (e) {
+      dbgWarn("chat", "fastMode set failed:", e);
+    }
+  }
+
   async function handleVirtualCommand(action: string, args: string) {
     dbg("chat", "virtualCommand", { action, args });
     if (action === "copy-last") {
@@ -1937,6 +1981,16 @@
           appendCommandOutput(`${t("slashTasks_ambiguous", { id: args })}\n${list}`);
         }
       }
+    } else if (action === "toggle-fast") {
+      const arg = args.toLowerCase();
+      if (arg === "on" || arg === "off") {
+        await handleFastModeSwitch(arg);
+      } else if (arg === "") {
+        const enabling = store.fastModeState !== "on";
+        await handleFastModeSwitch(enabling ? "on" : "off");
+      } else {
+        appendCommandOutput(t("fast_usage"));
+      }
     } else if (action === "add-dir") {
       try {
         await executeAddDir(
@@ -2166,16 +2220,9 @@
     await store.answerToolQuestion(toolUseId, answer);
   }
 
-  async function handleRewind() {
-    if (!store.run || !store.sessionAlive) return;
-    try {
-      await api.rewindFiles(store.run.id);
-      dbg("chat", "rewind triggered");
-      showChatToast(t("toast_rewindSuccess"));
-    } catch (e) {
-      dbgWarn("chat", "rewind failed:", e);
-      store.error = String(e);
-    }
+  function handleRewind() {
+    if (!store.run || !store.sessionAlive || store.isRunning) return;
+    rewindModalOpen = true;
   }
 
   async function handleToolApprove(toolName: string) {
@@ -3390,6 +3437,8 @@
         onModelSwitch={handleModelChange}
         onPermissionModeChange={store.agent === "claude" ? handlePermissionModeChange : undefined}
         onVirtualCommand={handleVirtualCommand}
+        fastModeState={store.fastModeState}
+        onFastModeSwitch={handleFastModeSwitch}
         onPlatformChange={handlePlatformChange}
         {authOverview}
         authSourceLabel={store.authSourceLabel}
@@ -3442,6 +3491,13 @@
       }}
     />
   {/if}
+
+  <RewindModal
+    bind:open={rewindModalOpen}
+    runId={store.run?.id ?? ""}
+    candidates={rewindCandidates}
+    onSuccess={() => showChatToast(t("toast_rewindSuccess"))}
+  />
 
   <ShortcutHelpPanel bind:open={shortcutHelpOpen} />
 

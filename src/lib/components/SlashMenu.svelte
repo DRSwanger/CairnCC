@@ -28,10 +28,12 @@
     subSelectedIndex,
     hintText,
     inputDisplay,
+    fastModeState = "",
     onSelect,
     onHover,
     onSubHover,
     onSubSelect,
+    onFastSelect,
     onBack,
     onDismiss,
   }: {
@@ -40,16 +42,18 @@
     selectedIndex: number;
     anchorEl: HTMLElement | undefined;
     triggerEl?: HTMLElement;
-    phase: "commands" | "sub-model";
+    phase: "commands" | "sub-model" | "sub-fast";
     models: CliModelInfo[];
     currentModel: string;
     subSelectedIndex: number;
     hintText: string;
     inputDisplay: string;
+    fastModeState?: string;
     onSelect: (cmd: CliCommand) => void;
     onHover: (index: number) => void;
     onSubHover: (index: number) => void;
     onSubSelect: (model: CliModelInfo) => void;
+    onFastSelect?: (mode: "on" | "off") => void;
     onBack: () => void;
     onDismiss: () => void;
   } = $props();
@@ -77,9 +81,9 @@
     }
   });
 
-  // Scroll selected item into view (sub-model phase)
+  // Scroll selected item into view (sub-model / sub-fast phase)
   $effect(() => {
-    if (phase !== "sub-model") return;
+    if (phase !== "sub-model" && phase !== "sub-fast") return;
     const idx = subSelectedIndex;
     if (menuEl) {
       const item = menuEl.querySelector(`[data-sub-index="${idx}"]`);
@@ -273,5 +277,76 @@
         <span class="text-xs text-muted-foreground/50">No models available</span>
       </div>
     {/if}
+  {:else if phase === "sub-fast"}
+    <!-- Sub-view header -->
+    <div class="flex items-center gap-2 px-3 py-2 border-b border-border">
+      <button
+        class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        onclick={onBack}
+        title={t("slashMenu_backToCommands")}
+      >
+        <svg
+          class="h-3.5 w-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+      </button>
+      <span class="text-xs font-mono text-muted-foreground">{inputDisplay}</span>
+    </div>
+
+    <!-- Description -->
+    <div class="px-3 py-2 border-b border-border">
+      <p class="text-xs font-medium text-foreground">{t("slashMenu_fastTitle")}</p>
+      <p class="text-xs text-muted-foreground mt-0.5">{t("slashMenu_fastDesc")}</p>
+    </div>
+
+    <!-- Options -->
+    <div class="max-h-[240px] overflow-y-auto">
+      <!-- OFF option -->
+      <button
+        data-sub-index={0}
+        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors {0 ===
+        subSelectedIndex
+          ? 'bg-accent text-foreground'
+          : 'text-muted-foreground hover:bg-accent/50'}"
+        onmouseenter={() => onSubHover(0)}
+        onclick={() => onFastSelect?.("off")}
+      >
+        <span
+          class="w-4 shrink-0 text-xs {fastModeState !== 'on'
+            ? 'text-primary'
+            : 'text-transparent'}"
+        >
+          {fastModeState !== "on" ? "✓" : ""}
+        </span>
+        <span class="font-medium text-xs text-foreground">{t("slashMenu_fastOff")}</span>
+      </button>
+      <!-- ON option -->
+      <button
+        data-sub-index={1}
+        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors {1 ===
+        subSelectedIndex
+          ? 'bg-accent text-foreground'
+          : 'text-muted-foreground hover:bg-accent/50'}"
+        onmouseenter={() => onSubHover(1)}
+        onclick={() => onFastSelect?.("on")}
+      >
+        <span
+          class="w-4 shrink-0 text-xs {fastModeState === 'on'
+            ? 'text-primary'
+            : 'text-transparent'}"
+        >
+          {fastModeState === "on" ? "✓" : ""}
+        </span>
+        <span class="font-medium text-xs text-foreground">{t("slashMenu_fastOn")}</span>
+        <span class="flex-1 min-w-0 truncate text-xs opacity-70">{t("slashMenu_fastPricing")}</span>
+      </button>
+    </div>
   {/if}
 </div>

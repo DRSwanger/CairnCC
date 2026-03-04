@@ -2,20 +2,37 @@
   let {
     open = $bindable(false),
     title = "",
+    closeable = true,
     children,
   }: {
     open?: boolean;
     title?: string;
+    closeable?: boolean;
     children?: import("svelte").Snippet;
   } = $props();
 
+  let dialogEl: HTMLDivElement | undefined = $state();
+
+  // Auto-focus dialog container when opened so Escape hits onkeydown here
+  $effect(() => {
+    if (open) {
+      dialogEl?.focus();
+    }
+  });
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
+      if (!closeable) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       open = false;
     }
   }
 
   function handleBackdropClick() {
+    if (!closeable) return;
     open = false;
   }
 </script>
@@ -26,6 +43,7 @@
     role="dialog"
     aria-modal="true"
     tabindex="-1"
+    bind:this={dialogEl}
     onkeydown={handleKeydown}
   >
     <!-- Backdrop -->

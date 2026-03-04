@@ -936,6 +936,8 @@ pub enum BusEvent {
     UserMessage {
         run_id: String,
         text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        uuid: Option<String>,
     },
     RunState {
         run_id: String,
@@ -1123,16 +1125,10 @@ pub enum BusEvent {
         data: Value,
     },
     /// CLI cancelled a pending control_request (e.g. cancelled permission prompt).
-    ControlCancelled {
-        run_id: String,
-        request_id: String,
-    },
+    ControlCancelled { run_id: String, request_id: String },
     /// Output from a CLI slash command (e.g. /context, /cost).
     /// Extracted from `<local-command-stdout>` tags in user messages.
-    CommandOutput {
-        run_id: String,
-        content: String,
-    },
+    CommandOutput { run_id: String, content: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

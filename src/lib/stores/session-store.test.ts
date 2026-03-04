@@ -361,6 +361,66 @@ describe("SessionStore reducer", () => {
     });
   });
 
+  // ── user_message UUID tracking ──
+
+  describe("user_message UUID tracking", () => {
+    it("stores cliUuid on timeline entry during replay", () => {
+      store.run = makeRun("run-uuid");
+      store.phase = "running";
+      const ev: BusEvent = {
+        type: "user_message",
+        run_id: "run-uuid",
+        text: "Hello",
+        uuid: "cli-uuid-abc",
+      };
+      store.applyEventBatch([ev]);
+      const userEntry = store.timeline.find((e) => e.kind === "user");
+      expect(userEntry).toBeDefined();
+      expect(userEntry!.kind).toBe("user");
+      if (userEntry!.kind === "user") {
+        expect(userEntry!.cliUuid).toBe("cli-uuid-abc");
+      }
+    });
+
+    it("user_message without uuid has no cliUuid (backward compat)", () => {
+      store.run = makeRun("run-uuid2");
+      store.phase = "running";
+      const ev: BusEvent = {
+        type: "user_message",
+        run_id: "run-uuid2",
+        text: "Hello old",
+      };
+      store.applyEventBatch([ev]);
+      const userEntry = store.timeline.find((e) => e.kind === "user");
+      expect(userEntry).toBeDefined();
+      if (userEntry!.kind === "user") {
+        expect(userEntry!.cliUuid).toBeUndefined();
+      }
+    });
+
+    it("merges cliUuid into existing optimistic entry (live dedup)", () => {
+      store.run = makeRun("run-uuid3");
+      store.phase = "running";
+      // Simulate optimistic entry (no cliUuid)
+      store.timeline = [
+        { kind: "user", id: "opt-1", content: "Hello", ts: new Date().toISOString() },
+      ];
+      // Live event arrives with uuid
+      const ev: BusEvent = {
+        type: "user_message",
+        run_id: "run-uuid3",
+        text: "Hello",
+        uuid: "cli-uuid-merge",
+      };
+      store.applyEvent(ev);
+      expect(store.timeline).toHaveLength(1); // Still deduped
+      const userEntry = store.timeline[0];
+      if (userEntry.kind === "user") {
+        expect(userEntry.cliUuid).toBe("cli-uuid-merge");
+      }
+    });
+  });
+
   // ── applyEvent (single live event) ──
 
   describe("applyEvent (single live event)", () => {
