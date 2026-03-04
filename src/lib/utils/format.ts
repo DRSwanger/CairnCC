@@ -20,7 +20,7 @@ export { fmtRelative as relativeTime } from "$lib/i18n/format";
 
 export function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen) + "...";
+  return text.slice(0, maxLen) + "\u2026";
 }
 
 export function formatBytes(bytes: number): string {

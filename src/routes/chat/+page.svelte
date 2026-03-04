@@ -73,6 +73,7 @@
   import { executeAddDir } from "$lib/utils/add-dir";
   import { buildDoctorReport } from "$lib/utils/doctor";
   import type { RewindCandidate, RewindMarker } from "$lib/utils/rewind";
+  import { truncate } from "$lib/utils/format";
   import RewindModal from "$lib/components/RewindModal.svelte";
 
   // ── Helpers ──
@@ -156,10 +157,14 @@
     if (!rewindModalOpen) rewindDirectTarget = null;
   });
 
-  // Clear markers on run switch
+  // Clear markers on run switch (explicit prev-value check)
+  let prevRewindRunId = "";
   $effect(() => {
-    const _ = store.run?.id;
-    rewindMarkers = [];
+    const id = store.run?.id ?? "";
+    if (id !== prevRewindRunId) {
+      prevRewindRunId = id;
+      rewindMarkers = [];
+    }
   });
 
   let rewindCandidates = $derived(
@@ -3614,7 +3619,7 @@
         {
           id: crypto.randomUUID(),
           ts: new Date().toISOString(),
-          targetContent: info.targetContent.slice(0, 80),
+          targetContent: truncate(info.targetContent, 80),
           filesReverted: info.filesReverted,
         },
       ];

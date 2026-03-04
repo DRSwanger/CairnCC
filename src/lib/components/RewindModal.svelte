@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { fmtTime } from "$lib/i18n/format";
   import * as api from "$lib/api";
   import { dbg, dbgWarn } from "$lib/utils/debug";
+  import { truncate } from "$lib/utils/format";
   import {
     type RewindCandidate,
     type RewindDryRunResult,
@@ -42,13 +44,13 @@
   let executeError = $state<string | null>(null);
   let requestSeq = $state(0); // race-condition guard: incrementing sequence number
   let selectedFiles = $state<Set<string>>(new Set());
-  let degradedToFull = $state(false); // true = degraded to full rewind (CLI doesn't support files param)
   let lastAutoSelectKey = ""; // one-shot guard: prevent initialCandidate prop bounce
+  let hasFiles = $derived((dryRunResult?.filesChanged?.length ?? 0) > 0);
 
   // ── Reset on close ──
   $effect(() => {
     if (!open) {
-      requestSeq++; // invalidate in-flight requests
+      requestSeq = untrack(() => requestSeq) + 1; // invalidate in-flight requests (untrack to avoid re-triggering this effect)
       phase = "select";
       selected = null;
       dryRunLoading = false;
@@ -56,7 +58,6 @@
       dryRunSkipped = false;
       executeError = null;
       selectedFiles = new Set();
-      degradedToFull = false;
       lastAutoSelectKey = "";
     }
   });
@@ -82,7 +83,6 @@
     dryRunSkipped = false;
     executeError = null;
     selectedFiles = new Set();
-    degradedToFull = false;
     dbg("rewind-modal", "selectCheckpoint", { uuid: c.cliUuid, seq });
 
     try {
@@ -128,7 +128,7 @@
     const selectedAtExec = selected;
     phase = "executing";
     executeError = null;
-    degradedToFull = false;
+    let degradedToFull = false;
 
     const allFiles = dryRunResult?.filesChanged;
     const isSelective = allFiles && selectedFiles.size < allFiles.length && selectedFiles.size > 0;
@@ -240,12 +240,6 @@
     dryRunSkipped = false;
     executeError = null;
     selectedFiles = new Set();
-    degradedToFull = false;
-  }
-
-  function truncateContent(text: string, max = 80): string {
-    if (text.length <= max) return text;
-    return text.slice(0, max) + "\u2026";
   }
 </script>
 
@@ -282,7 +276,7 @@
             onclick={() => selectCheckpoint(c)}
           >
             <div class="flex items-baseline justify-between gap-2">
-              <span class="min-w-0 flex-1 truncate text-sm">{truncateContent(c.content)}</span>
+              <span class="min-w-0 flex-1 truncate text-sm">{truncate(c.content, 80)}</span>
               <span class="shrink-0 text-xs text-muted-foreground">{fmtTime(c.ts)}</span>
             </div>
           </button>
@@ -303,7 +297,7 @@
       <!-- Successful dryRun preview -->
       {#if selected}
         <div class="mb-3 rounded-md bg-muted/50 px-3 py-2 text-sm">
-          {truncateContent(selected.content)}
+          {truncate(selected.content, 80)}
         </div>
       {/if}
 
@@ -313,7 +307,7 @@
         </div>
       {/if}
 
-      {#if dryRunResult.filesChanged && dryRunResult.filesChanged.length > 0}
+      {#if hasFiles}
         <div class="mb-2 flex items-center justify-between">
           <p class="text-sm text-muted-foreground">{t("rewind_previewDesc")}</p>
           <button
@@ -356,7 +350,7 @@
 
       <div class="flex items-center justify-between">
         <span class="text-xs text-muted-foreground/60">
-          {#if dryRunResult.filesChanged && dryRunResult.filesChanged.length > 0}
+          {#if hasFiles}
             {t("rewind_selectedCount", {
               selected: String(selectedFiles.size),
               total: String(dryRunResult.filesChanged.length),
@@ -376,9 +370,7 @@
             class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90
               disabled:opacity-50 disabled:cursor-not-allowed"
             onclick={executeRewind}
-            disabled={dryRunResult.filesChanged &&
-              dryRunResult.filesChanged.length > 0 &&
-              selectedFiles.size === 0}
+            disabled={hasFiles && selectedFiles.size === 0}
           >
             {t("rewind_confirm")}
           </button>
@@ -388,7 +380,7 @@
       <!-- CLI doesn't support dry_run — allow execute without preview -->
       {#if selected}
         <div class="mb-3 rounded-md bg-muted/50 px-3 py-2 text-sm">
-          {truncateContent(selected.content)}
+          {truncate(selected.content, 80)}
         </div>
       {/if}
 
