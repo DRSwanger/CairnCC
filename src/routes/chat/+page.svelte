@@ -72,7 +72,7 @@
   import { mergeWithVirtual, buildHelpText } from "$lib/utils/slash-commands";
   import { executeAddDir } from "$lib/utils/add-dir";
   import { buildDoctorReport } from "$lib/utils/doctor";
-  import type { RewindCandidate } from "$lib/utils/rewind";
+  import type { RewindCandidate, RewindMarker } from "$lib/utils/rewind";
   import RewindModal from "$lib/components/RewindModal.svelte";
 
   // ── Helpers ──
@@ -148,6 +148,20 @@
 
   // ── Rewind modal ──
   let rewindModalOpen = $state(false);
+  let rewindDirectTarget = $state<RewindCandidate | null>(null);
+  let rewindMarkers = $state<RewindMarker[]>([]);
+
+  // Clear direct target on modal close
+  $effect(() => {
+    if (!rewindModalOpen) rewindDirectTarget = null;
+  });
+
+  // Clear markers on run switch
+  $effect(() => {
+    const _ = store.run?.id;
+    rewindMarkers = [];
+  });
+
   let rewindCandidates = $derived(
     store.timeline
       .map((e, i) => ({ entry: e, idx: i }))
@@ -2225,6 +2239,19 @@
     rewindModalOpen = true;
   }
 
+  function handleRewindToMessage(entry: { cliUuid: string; content: string; ts: string }) {
+    if (!store.run || !store.sessionAlive || store.isRunning) return;
+    rewindDirectTarget = {
+      cliUuid: entry.cliUuid,
+      content: entry.content,
+      ts: entry.ts,
+      timelineIndex: store.timeline.findIndex(
+        (e) => e.kind === "user" && e.cliUuid === entry.cliUuid,
+      ),
+    };
+    rewindModalOpen = true;
+  }
+
   async function handleToolApprove(toolName: string) {
     if (!store.run) return;
     approving = true;
@@ -2850,7 +2877,7 @@
               {/if}
               {#each visibleTimeline as entry, i (entry.id)}
                 {#if !(burstHiddenIndices.has(i) && !toolBursts.has(i))}
-                  <div class:cv-auto={!IS_WEBKIT}>
+                  <div class:cv-auto={!IS_WEBKIT} class="group/msg">
                     {#if batchGroups.has(i)}
                       {@const batch = batchGroups.get(i)}
                       {#if batch}
@@ -2909,6 +2936,33 @@
                         }}
                         attachments={entry.attachments}
                       />
+                      {#if entry.cliUuid && store.sessionAlive && !store.isRunning}
+                        <div class="relative mx-auto max-w-5xl px-8 pl-11 h-0">
+                          <button
+                            type="button"
+                            class="absolute top-0 flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]
+                              opacity-0 pointer-events-none transition-all
+                              group-hover/msg:opacity-100 group-hover/msg:pointer-events-auto
+                              text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50"
+                            onclick={() => handleRewindToMessage(entry)}
+                            title={t("rewind_toHere")}
+                          >
+                            <svg
+                              class="h-3 w-3"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                            >
+                              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                              <path d="M3 3v5h5" />
+                            </svg>
+                            {t("rewind_toHere")}
+                          </button>
+                        </div>
+                      {/if}
                     {:else if entry.kind === "assistant"}
                       <ChatMessage
                         message={{
@@ -2987,6 +3041,61 @@
                     {/if}
                   </div>
                 {/if}
+              {/each}
+
+              <!-- Rewind markers (independent array, not in store.timeline) -->
+              {#each rewindMarkers as marker, mi (marker.id)}
+                <div
+                  class="w-full py-3"
+                  id={mi === rewindMarkers.length - 1 ? "rewind-marker-latest" : undefined}
+                >
+                  <div class="mx-auto max-w-5xl px-8">
+                    <div class="flex items-center gap-3">
+                      <div class="h-px flex-1 bg-violet-500/20"></div>
+                      <div class="flex items-center gap-2 text-xs text-violet-500/80 font-medium">
+                        <svg
+                          class="h-3.5 w-3.5"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                          <path d="M3 3v5h5" />
+                        </svg>
+                        <span
+                          >{t("rewind_separatorLabel", {
+                            count: String(marker.filesReverted.length),
+                          })}</span
+                        >
+                      </div>
+                      <div class="h-px flex-1 bg-violet-500/20"></div>
+                    </div>
+                    <div class="mt-1 ml-8 text-[11px] text-muted-foreground/60 truncate">
+                      &ldquo;{marker.targetContent}&rdquo;
+                    </div>
+                    {#if marker.filesReverted.length > 0}
+                      <details class="mt-1 ml-8">
+                        <summary
+                          class="cursor-pointer text-[10px] text-violet-500/50 hover:text-violet-500/80"
+                        >
+                          {t("rewind_separatorFiles", {
+                            count: String(marker.filesReverted.length),
+                          })}
+                        </summary>
+                        <div class="mt-1 rounded bg-muted/30 px-2 py-1">
+                          {#each marker.filesReverted as file}
+                            <div class="truncate font-mono text-[10px] text-muted-foreground">
+                              {file}
+                            </div>
+                          {/each}
+                        </div>
+                      </details>
+                    {/if}
+                  </div>
+                </div>
               {/each}
 
               <!-- Last turn usage annotation (after all entries) -->
@@ -3496,7 +3605,30 @@
     bind:open={rewindModalOpen}
     runId={store.run?.id ?? ""}
     candidates={rewindCandidates}
-    onSuccess={() => showChatToast(t("toast_rewindSuccess"))}
+    initialCandidate={rewindDirectTarget}
+    onSuccess={(info) => {
+      // Run-id debounce: discard if run changed while modal was open
+      if (info.runId !== store.run?.id) return;
+      rewindMarkers = [
+        ...rewindMarkers,
+        {
+          id: crypto.randomUUID(),
+          ts: new Date().toISOString(),
+          targetContent: info.targetContent.slice(0, 80),
+          filesReverted: info.filesReverted,
+        },
+      ];
+      if (info.degraded) {
+        showChatToast(t("rewind_degradedToFull"));
+      } else {
+        showChatToast(t("toast_rewindSuccess"));
+      }
+      tick().then(() => {
+        document
+          .getElementById("rewind-marker-latest")
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }}
   />
 
   <ShortcutHelpPanel bind:open={shortcutHelpOpen} />

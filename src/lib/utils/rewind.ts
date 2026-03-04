@@ -15,6 +15,13 @@ export interface RewindDryRunResult {
   error?: string;
 }
 
+export interface RewindMarker {
+  id: string;
+  ts: string;
+  targetContent: string; // truncated target message text
+  filesReverted: string[];
+}
+
 // ── Parsing helpers ──
 
 /** Extract the business payload from a control response envelope. */
@@ -108,4 +115,20 @@ function parseRewindResponse(raw: unknown, strict: boolean): RewindDryRunResult 
 export function isDryRunUnsupported(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "";
   return /unsupported control subtype|unknown.*subtype|unknown.*command|dry.?run/i.test(msg);
+}
+
+/** Check if an execute error indicates the CLI doesn't support the `files` parameter (can degrade to full rewind).
+ *  Compatible with string / Error / { error: string } / { response: { error: string } }. */
+export function isFilesParamUnsupported(err: unknown): boolean {
+  const pattern =
+    /unknown.*(field|argument|option).*files|unsupported.*files|unexpected.*files|files.*not.*supported|invalid.*option.*files/i;
+  if (typeof err === "string") return pattern.test(err);
+  if (err instanceof Error) return pattern.test(err.message);
+  if (err && typeof err === "object") {
+    const r = err as Record<string, unknown>;
+    const errMsg = (r.error ??
+      (unwrapControlPayload(r) as Record<string, unknown> | null)?.error) as string | undefined;
+    if (typeof errMsg === "string") return pattern.test(errMsg);
+  }
+  return false;
 }

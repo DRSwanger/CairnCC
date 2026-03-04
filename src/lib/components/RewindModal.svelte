@@ -9,6 +9,7 @@
     parseDryRunResult,
     parseExecuteResult,
     isDryRunUnsupported,
+    isFilesParamUnsupported,
   } from "$lib/utils/rewind";
   import Modal from "./Modal.svelte";
 
@@ -16,12 +17,20 @@
     open = $bindable(false),
     runId = "",
     candidates = [] as RewindCandidate[],
+    initialCandidate = null as RewindCandidate | null,
     onSuccess,
   }: {
     open: boolean;
     runId: string;
     candidates: RewindCandidate[];
-    onSuccess?: () => void;
+    initialCandidate?: RewindCandidate | null;
+    onSuccess?: (info: {
+      runId: string;
+      targetContent: string;
+      targetUuid: string;
+      filesReverted: string[];
+      degraded: boolean;
+    }) => void;
   } = $props();
 
   // ── Internal state ──
@@ -32,6 +41,9 @@
   let dryRunSkipped = $state(false); // true = CLI doesn't support dry_run, allow execute without preview
   let executeError = $state<string | null>(null);
   let requestSeq = $state(0); // race-condition guard: incrementing sequence number
+  let selectedFiles = $state<Set<string>>(new Set());
+  let degradedToFull = $state(false); // true = degraded to full rewind (CLI doesn't support files param)
+  let lastAutoSelectKey = ""; // one-shot guard: prevent initialCandidate prop bounce
 
   // ── Reset on close ──
   $effect(() => {
@@ -43,6 +55,20 @@
       dryRunResult = null;
       dryRunSkipped = false;
       executeError = null;
+      selectedFiles = new Set();
+      degradedToFull = false;
+      lastAutoSelectKey = "";
+    }
+  });
+
+  // ── Auto-select from initialCandidate (one-shot) ──
+  $effect(() => {
+    if (open && initialCandidate) {
+      const key = initialCandidate.cliUuid;
+      if (key !== lastAutoSelectKey) {
+        lastAutoSelectKey = key;
+        selectCheckpoint(initialCandidate);
+      }
     }
   });
 
@@ -55,6 +81,8 @@
     dryRunResult = null;
     dryRunSkipped = false;
     executeError = null;
+    selectedFiles = new Set();
+    degradedToFull = false;
     dbg("rewind-modal", "selectCheckpoint", { uuid: c.cliUuid, seq });
 
     try {
@@ -71,6 +99,10 @@
         dryRunSkipped = true;
       } else {
         dryRunResult = result;
+        // Initialize selectedFiles with all files checked
+        if (result.canRewind && result.filesChanged) {
+          selectedFiles = new Set(result.filesChanged);
+        }
       }
     } catch (e) {
       if (seq !== requestSeq || !open) return; // stale or modal closed
@@ -91,19 +123,75 @@
   async function executeRewind() {
     if (!selected) return;
     const seq = ++requestSeq;
+    // Freeze current values to prevent async prop drift
+    const runIdAtExec = runId;
+    const selectedAtExec = selected;
     phase = "executing";
     executeError = null;
-    dbg("rewind-modal", "executeRewind", { uuid: selected.cliUuid, seq });
+    degradedToFull = false;
+
+    const allFiles = dryRunResult?.filesChanged;
+    const isSelective = allFiles && selectedFiles.size < allFiles.length && selectedFiles.size > 0;
+    let filesToRewind = isSelective ? [...selectedFiles] : undefined;
+
+    dbg("rewind-modal", "executeRewind", {
+      uuid: selectedAtExec.cliUuid,
+      runId: runIdAtExec,
+      selective: isSelective,
+      fileCount: filesToRewind?.length,
+    });
 
     try {
-      const raw = await api.rewindFiles(runId, { userMessageId: selected.cliUuid });
+      let raw = await api.rewindFiles(runIdAtExec, {
+        userMessageId: selectedAtExec.cliUuid,
+        files: filesToRewind,
+      });
       if (seq !== requestSeq || !open) return;
-      dbg("rewind-modal", "execute response", { raw });
 
-      const result = parseExecuteResult(raw);
+      let result = parseExecuteResult(raw);
+
+      // Degrade: if files param failed with "files unsupported", retry without files
+      if (
+        !result.canRewind &&
+        filesToRewind &&
+        result.error &&
+        isFilesParamUnsupported(result.error)
+      ) {
+        dbg("rewind-modal", "files param unsupported, degrading to full rewind");
+        raw = await api.rewindFiles(runIdAtExec, {
+          userMessageId: selectedAtExec.cliUuid,
+        });
+        if (seq !== requestSeq || !open) return;
+        result = parseExecuteResult(raw);
+        filesToRewind = undefined;
+        degradedToFull = true;
+      }
+
       if (result.canRewind) {
-        dbg("rewind-modal", "execute success");
-        onSuccess?.();
+        // Authoritative file list: prefer execute response's filesChanged
+        const actualFiles = result.filesChanged ?? dryRunResult?.filesChanged ?? [];
+        // Silent full-rewind detection: user selected subset but CLI reverted all
+        if (filesToRewind && actualFiles.length > 0) {
+          const selectedSet = new Set(filesToRewind);
+          const allSelected =
+            actualFiles.every((f: string) => selectedSet.has(f)) &&
+            actualFiles.length <= filesToRewind.length;
+          if (!allSelected) {
+            degradedToFull = true;
+            dbg("rewind-modal", "silent full rewind detected", {
+              selected: filesToRewind.length,
+              actual: actualFiles.length,
+            });
+          }
+        }
+        dbg("rewind-modal", "execute success", { degraded: degradedToFull });
+        onSuccess?.({
+          runId: runIdAtExec,
+          targetContent: selectedAtExec.content,
+          targetUuid: selectedAtExec.cliUuid,
+          filesReverted: actualFiles,
+          degraded: degradedToFull,
+        });
         open = false;
       } else {
         dbgWarn("rewind-modal", "execute failed", { error: result.error });
@@ -112,8 +200,34 @@
       }
     } catch (e) {
       if (seq !== requestSeq || !open) return;
-      dbgWarn("rewind-modal", "execute exception", e);
-      executeError = String(e);
+      // Degrade: exception path
+      if (filesToRewind && isFilesParamUnsupported(e)) {
+        dbg("rewind-modal", "files param unsupported (exception), degrading to full rewind");
+        try {
+          const raw = await api.rewindFiles(runIdAtExec, {
+            userMessageId: selectedAtExec.cliUuid,
+          });
+          if (seq !== requestSeq || !open) return;
+          const result = parseExecuteResult(raw);
+          if (result.canRewind) {
+            degradedToFull = true;
+            onSuccess?.({
+              runId: runIdAtExec,
+              targetContent: selectedAtExec.content,
+              targetUuid: selectedAtExec.cliUuid,
+              filesReverted: result.filesChanged ?? dryRunResult?.filesChanged ?? [],
+              degraded: true,
+            });
+            open = false;
+            return;
+          }
+          executeError = result.error ?? t("rewind_checkpointUnavailable");
+        } catch (e2) {
+          executeError = String(e2);
+        }
+      } else {
+        executeError = String(e);
+      }
       phase = "preview";
     }
   }
@@ -125,11 +239,13 @@
     dryRunResult = null;
     dryRunSkipped = false;
     executeError = null;
+    selectedFiles = new Set();
+    degradedToFull = false;
   }
 
   function truncateContent(text: string, max = 80): string {
     if (text.length <= max) return text;
-    return text.slice(0, max) + "…";
+    return text.slice(0, max) + "\u2026";
   }
 </script>
 
@@ -198,31 +314,75 @@
       {/if}
 
       {#if dryRunResult.filesChanged && dryRunResult.filesChanged.length > 0}
-        <p class="mb-2 text-sm text-muted-foreground">{t("rewind_previewDesc")}</p>
+        <div class="mb-2 flex items-center justify-between">
+          <p class="text-sm text-muted-foreground">{t("rewind_previewDesc")}</p>
+          <button
+            type="button"
+            class="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onclick={() => {
+              if (selectedFiles.size === dryRunResult!.filesChanged!.length)
+                selectedFiles = new Set();
+              else selectedFiles = new Set(dryRunResult!.filesChanged!);
+            }}
+          >
+            {selectedFiles.size === dryRunResult!.filesChanged!.length
+              ? t("rewind_deselectAll")
+              : t("rewind_selectAll")}
+          </button>
+        </div>
         <div class="mb-4 max-h-[30vh] overflow-y-auto rounded-md border bg-muted/30 p-2">
           {#each dryRunResult.filesChanged as file}
-            <div class="truncate px-1 py-0.5 font-mono text-xs">{file}</div>
+            <label
+              class="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-muted/50 cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                checked={selectedFiles.has(file)}
+                onchange={() => {
+                  const next = new Set(selectedFiles);
+                  if (next.has(file)) next.delete(file);
+                  else next.add(file);
+                  selectedFiles = next;
+                }}
+                class="rounded border-border"
+              />
+              <span class="truncate font-mono text-xs">{file}</span>
+            </label>
           {/each}
         </div>
       {:else}
         <p class="mb-4 text-sm text-muted-foreground">{t("rewind_noFilesChanged")}</p>
       {/if}
 
-      <div class="flex justify-end gap-2">
-        <button
-          type="button"
-          class="rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
-          onclick={goBack}
-        >
-          {t("rewind_back")}
-        </button>
-        <button
-          type="button"
-          class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
-          onclick={executeRewind}
-        >
-          {t("rewind_confirm")}
-        </button>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-muted-foreground/60">
+          {#if dryRunResult.filesChanged && dryRunResult.filesChanged.length > 0}
+            {t("rewind_selectedCount", {
+              selected: String(selectedFiles.size),
+              total: String(dryRunResult.filesChanged.length),
+            })}
+          {/if}
+        </span>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
+            onclick={goBack}
+          >
+            {t("rewind_back")}
+          </button>
+          <button
+            type="button"
+            class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90
+              disabled:opacity-50 disabled:cursor-not-allowed"
+            onclick={executeRewind}
+            disabled={dryRunResult.filesChanged &&
+              dryRunResult.filesChanged.length > 0 &&
+              selectedFiles.size === 0}
+          >
+            {t("rewind_confirm")}
+          </button>
+        </div>
       </div>
     {:else if dryRunSkipped}
       <!-- CLI doesn't support dry_run — allow execute without preview -->

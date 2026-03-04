@@ -5,6 +5,7 @@ import {
   parseDryRunResult,
   parseExecuteResult,
   isDryRunUnsupported,
+  isFilesParamUnsupported,
 } from "../rewind";
 
 describe("unwrapControlPayload", () => {
@@ -173,6 +174,40 @@ describe("isDryRunUnsupported", () => {
     expect(isDryRunUnsupported("Actor dead")).toBe(false);
     expect(isDryRunUnsupported("Timeout waiting for control response")).toBe(false);
     expect(isDryRunUnsupported(new Error("session not found"))).toBe(false);
+  });
+});
+
+describe("isFilesParamUnsupported", () => {
+  it("detects string errors with files keyword", () => {
+    expect(isFilesParamUnsupported("unknown field: files")).toBe(true);
+    expect(isFilesParamUnsupported("unsupported parameter: files")).toBe(true);
+    expect(isFilesParamUnsupported("files not supported in this version")).toBe(true);
+    expect(isFilesParamUnsupported("unknown argument: files")).toBe(true);
+    expect(isFilesParamUnsupported("invalid option: files")).toBe(true);
+  });
+
+  it("detects Error objects", () => {
+    expect(isFilesParamUnsupported(new Error("unexpected field: files"))).toBe(true);
+  });
+
+  it("detects object error body (Tauri IPC)", () => {
+    expect(isFilesParamUnsupported({ error: "unknown field: files" })).toBe(true);
+  });
+
+  it("detects nested response.error (control response envelope)", () => {
+    expect(
+      isFilesParamUnsupported({
+        subtype: "error",
+        response: { error: "unsupported files param" },
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false for unrelated errors", () => {
+    expect(isFilesParamUnsupported("Actor dead")).toBe(false);
+    expect(isFilesParamUnsupported("session not found")).toBe(false);
+    expect(isFilesParamUnsupported("No checkpoint found")).toBe(false);
+    expect(isFilesParamUnsupported({ error: "permission denied" })).toBe(false);
   });
 });
 
