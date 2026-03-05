@@ -41,6 +41,31 @@ struct ProviderDefaults {
     base_url: Option<&'static str>,
     models: Option<Vec<String>>,
     extra_env: Option<std::collections::HashMap<String, String>>,
+    key_optional: bool,
+    auth_env_var: Option<&'static str>,
+}
+
+/// Known provider defaults exposed for auth resolution fallback.
+pub(crate) struct ProviderInfo {
+    pub base_url: Option<String>,
+    pub models: Option<Vec<String>>,
+    pub extra_env: Option<std::collections::HashMap<String, String>>,
+    pub key_optional: bool,
+    pub auth_env_var: Option<String>,
+}
+
+pub(crate) fn is_key_optional_platform(pid: &str) -> bool {
+    known_provider_defaults(pid).is_some_and(|d| d.key_optional)
+}
+
+pub(crate) fn get_provider_info(pid: &str) -> Option<ProviderInfo> {
+    known_provider_defaults(pid).map(|d| ProviderInfo {
+        base_url: d.base_url.map(|s| s.to_string()),
+        models: d.models,
+        extra_env: d.extra_env,
+        key_optional: d.key_optional,
+        auth_env_var: d.auth_env_var.map(|s| s.to_string()),
+    })
 }
 
 fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
@@ -53,16 +78,22 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
                 "API_TIMEOUT_MS".to_string(),
                 "600000".to_string(),
             )])),
+            key_optional: false,
+            auth_env_var: None,
         }),
         "kimi" => Some(ProviderDefaults {
             base_url: Some("https://api.moonshot.cn/anthropic"),
             models: Some(vec!["kimi-k2.5".to_string(), "kimi-k2".to_string()]),
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "kimi-coding" => Some(ProviderDefaults {
             base_url: Some("https://api.kimi.com/coding/"),
             models: None,
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "zhipu" => Some(ProviderDefaults {
             base_url: Some("https://open.bigmodel.cn/api/anthropic"),
@@ -72,9 +103,11 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
                 "glm-4.5-flash".to_string(),
             ]),
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "bailian" => Some(ProviderDefaults {
-            base_url: Some("https://dashscope.aliyuncs.com/apps/anthropic"),
+            base_url: Some("https://coding.dashscope.aliyuncs.com/apps/anthropic"),
             models: Some(vec![
                 "qwen3-max".to_string(),
                 "qwen3.5-plus".to_string(),
@@ -82,11 +115,15 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
                 "qwen-flash".to_string(),
             ]),
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "doubao" => Some(ProviderDefaults {
             base_url: Some("https://ark.cn-beijing.volces.com/api/coding"),
             models: Some(vec!["doubao-seed-code-preview-latest".to_string()]),
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "minimax" => Some(ProviderDefaults {
             base_url: Some("https://api.minimax.io/anthropic"),
@@ -95,6 +132,8 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
                 "MiniMax-M2.5-highspeed".to_string(),
             ]),
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "minimax-cn" => Some(ProviderDefaults {
             base_url: Some("https://api.minimaxi.com/anthropic"),
@@ -103,31 +142,57 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
                 "MiniMax-M2.5-highspeed".to_string(),
             ]),
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "mimo" => Some(ProviderDefaults {
             base_url: Some("https://api.xiaomimimo.com/anthropic"),
             models: Some(vec!["mimo-v2-flash".to_string()]),
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "openrouter" => Some(ProviderDefaults {
             base_url: Some("https://openrouter.ai/api"),
             models: None,
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "aihubmix" => Some(ProviderDefaults {
             base_url: Some("https://aihubmix.com"),
             models: None,
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
         }),
         "vercel" => Some(ProviderDefaults {
             base_url: Some("https://ai-gateway.vercel.sh"),
             models: None,
             extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
+        }),
+        "ccswitch" => Some(ProviderDefaults {
+            base_url: Some("http://127.0.0.1:15721"),
+            models: None,
+            extra_env: None,
+            key_optional: true,
+            auth_env_var: Some("ANTHROPIC_AUTH_TOKEN"),
+        }),
+        "ccr" => Some(ProviderDefaults {
+            base_url: Some("http://127.0.0.1:3456"),
+            models: Some(vec!["claude-sonnet-4-6".to_string()]),
+            extra_env: None,
+            key_optional: true,
+            auth_env_var: Some("ANTHROPIC_AUTH_TOKEN"),
         }),
         "ollama" => Some(ProviderDefaults {
             base_url: Some("http://localhost:11434"),
             models: None,
             extra_env: None,
+            key_optional: true,
+            auth_env_var: Some("ANTHROPIC_AUTH_TOKEN"),
         }),
         _ => None,
     }
@@ -141,13 +206,15 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
 /// - Missing models/extra_env on existing credentials (needed for ANTHROPIC_MODEL injection)
 fn migrate_platform_credentials(settings: &mut AllSettings) -> bool {
     let auth_fixes: &[(&str, &str)] = &[
-        ("deepseek", "ANTHROPIC_API_KEY"),
-        ("zhipu", "ANTHROPIC_API_KEY"),
-        ("doubao", "ANTHROPIC_API_KEY"),
-        ("minimax", "ANTHROPIC_API_KEY"),
-        ("minimax-cn", "ANTHROPIC_API_KEY"),
-        ("mimo", "ANTHROPIC_API_KEY"),
+        ("deepseek", "ANTHROPIC_AUTH_TOKEN"),
+        ("zhipu", "ANTHROPIC_AUTH_TOKEN"),
+        ("doubao", "ANTHROPIC_AUTH_TOKEN"),
+        ("minimax", "ANTHROPIC_AUTH_TOKEN"),
+        ("minimax-cn", "ANTHROPIC_AUTH_TOKEN"),
+        ("mimo", "ANTHROPIC_AUTH_TOKEN"),
+        ("bailian", "ANTHROPIC_AUTH_TOKEN"),
         ("kimi-coding", "ANTHROPIC_AUTH_TOKEN"),
+        ("aihubmix", "ANTHROPIC_AUTH_TOKEN"),
     ];
     let mut changed = false;
 
@@ -183,7 +250,7 @@ fn migrate_platform_credentials(settings: &mut AllSettings) -> bool {
         // base_url is CRITICAL — without it, ANTHROPIC_BASE_URL is not set and
         // requests go to Anthropic's default endpoint instead of the third-party provider.
         if let Some(defaults) = known_provider_defaults(&cred.platform_id) {
-            if cred.base_url.is_none() {
+            if cred.base_url.as_ref().is_none_or(|s| s.is_empty()) {
                 if let Some(url) = defaults.base_url {
                     log::info!(
                         "[storage/settings] migrating base_url for '{}': {}",
@@ -486,4 +553,71 @@ pub fn update_agent_settings(
     all.agents.insert(agent.to_string(), settings.clone());
     save(&all)?;
     Ok(settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{AllSettings, PlatformCredential};
+
+    fn make_settings_with_cred(cred: PlatformCredential) -> AllSettings {
+        let mut s = AllSettings::default();
+        s.user.platform_credentials.push(cred);
+        s
+    }
+
+    #[test]
+    fn migrate_empty_base_url_fills_from_defaults() {
+        // Credential has base_url = "" (empty string), known defaults have a base_url.
+        // Migration should populate the empty base_url from defaults.
+        let cred = PlatformCredential {
+            platform_id: "ollama".to_string(),
+            api_key: None,
+            base_url: Some(String::new()), // empty string
+            auth_env_var: None,
+            name: None,
+            models: None,
+            extra_env: None,
+        };
+        let mut settings = make_settings_with_cred(cred);
+        let changed = migrate_platform_credentials(&mut settings);
+
+        assert!(changed, "migration should have made changes");
+        assert_eq!(
+            settings.user.platform_credentials[0].base_url.as_deref(),
+            Some("http://localhost:11434"),
+            "empty base_url should be filled from defaults"
+        );
+    }
+
+    #[test]
+    fn provider_info_ccswitch() {
+        let info = get_provider_info("ccswitch").expect("ccswitch should have provider info");
+        assert!(info.key_optional);
+        assert_eq!(info.base_url.as_deref(), Some("http://127.0.0.1:15721"));
+        assert_eq!(info.auth_env_var.as_deref(), Some("ANTHROPIC_AUTH_TOKEN"));
+    }
+
+    #[test]
+    fn provider_info_ccr() {
+        let info = get_provider_info("ccr").expect("ccr should have provider info");
+        assert!(info.key_optional);
+        assert_eq!(info.base_url.as_deref(), Some("http://127.0.0.1:3456"));
+        assert_eq!(
+            info.models
+                .as_ref()
+                .and_then(|m| m.first())
+                .map(|s| s.as_str()),
+            Some("claude-sonnet-4-6")
+        );
+    }
+
+    #[test]
+    fn is_key_optional_known_platforms() {
+        assert!(is_key_optional_platform("ccswitch"));
+        assert!(is_key_optional_platform("ccr"));
+        assert!(is_key_optional_platform("ollama"));
+        assert!(!is_key_optional_platform("deepseek"));
+        assert!(!is_key_optional_platform("unknown-platform"));
+    }
 }

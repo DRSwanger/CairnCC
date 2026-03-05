@@ -164,10 +164,39 @@ fn resolve_auth_env(remote: &Option<RemoteHost>, settings: &UserSettings) -> Res
     }
 }
 
+/// Build ResolvedAuth with PROXY_MANAGED placeholder token for keyless local proxies.
+fn make_placeholder_auth(
+    use_bearer: bool,
+    base_url: Option<String>,
+    default_model: Option<String>,
+    extra_env: Option<std::collections::HashMap<String, String>>,
+) -> ResolvedAuth {
+    if use_bearer {
+        ResolvedAuth {
+            api_key: None,
+            auth_token: Some("PROXY_MANAGED".to_string()),
+            base_url,
+            default_model,
+            extra_env,
+        }
+    } else {
+        ResolvedAuth {
+            api_key: Some("PROXY_MANAGED".to_string()),
+            auth_token: None,
+            base_url,
+            default_model,
+            extra_env,
+        }
+    }
+}
+
 /// Resolve auth env using per-session platform_id.
 /// Looks up the credential from `settings.platform_credentials` by platform_id,
 /// then returns ResolvedAuth matching the credential's auth_env_var.
 /// Falls back to global `resolve_auth_env()` if platform_id is None or credential not found.
+///
+/// For keyless local proxies (ccswitch, ccr, ollama): uses PROXY_MANAGED placeholder token
+/// with known defaults for base_url and auth_env_var.
 ///
 /// For SSH remote sessions:
 /// - `forward_api_key=true`: resolve credentials normally (platform-aware) and forward them
@@ -232,12 +261,64 @@ fn resolve_auth_env_for_platform(
                     }
                 };
             }
-            // Credential found but no API key — fallback to global
+            // Credential found but no API key — check if key_optional platform
+            if storage::settings::is_key_optional_platform(pid) {
+                let info = storage::settings::get_provider_info(pid);
+
+                // auth_env_var: known defaults take priority over credential (prevents dirty data)
+                let effective_auth = info
+                    .as_ref()
+                    .and_then(|i| i.auth_env_var.clone())
+                    .or_else(|| cred.auth_env_var.clone());
+                let effective_bearer = effective_auth.as_deref() == Some("ANTHROPIC_AUTH_TOKEN");
+
+                // base_url fallback: credential → known defaults
+                let effective_url =
+                    base_url.or_else(|| info.as_ref().and_then(|i| i.base_url.clone()));
+
+                // default_model / extra_env fallback: credential → defaults
+                let effective_model = default_model.or_else(|| {
+                    info.as_ref()
+                        .and_then(|i| i.models.as_ref().and_then(|m| m.first()).cloned())
+                });
+                let effective_extra =
+                    extra_env.or_else(|| info.as_ref().and_then(|i| i.extra_env.clone()));
+
+                log::info!(
+                    "[session] platform '{}': key_optional, credential config with placeholder (base_url={:?})",
+                    pid,
+                    effective_url
+                );
+                return make_placeholder_auth(
+                    effective_bearer,
+                    effective_url,
+                    effective_model,
+                    effective_extra,
+                );
+            }
             log::warn!(
                 "[session] resolve_auth_env_for_platform: credential for platform '{}' has no api_key, falling back to global",
                 pid
             );
         } else {
+            // No credential entry — check if key_optional platform with known defaults
+            if let Some(info) = storage::settings::get_provider_info(pid) {
+                if info.key_optional {
+                    let use_bearer = info.auth_env_var.as_deref() == Some("ANTHROPIC_AUTH_TOKEN");
+                    let default_model = info.models.as_ref().and_then(|m| m.first()).cloned();
+                    log::info!(
+                        "[session] platform '{}': no credential, using known defaults (key_optional, base_url={:?})",
+                        pid,
+                        info.base_url
+                    );
+                    return make_placeholder_auth(
+                        use_bearer,
+                        info.base_url,
+                        default_model,
+                        info.extra_env,
+                    );
+                }
+            }
             log::warn!(
                 "[session] resolve_auth_env_for_platform: no credential found for platform '{}', falling back to global",
                 pid
@@ -1226,4 +1307,146 @@ async fn spawn_cli_process(
     // This ensures ALL user messages go through the Turn Transaction Engine.
 
     Ok((child, stdin, stdout, stderr))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::PlatformCredential;
+
+    fn default_user_settings() -> UserSettings {
+        UserSettings {
+            auth_mode: "api".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn make_cred(
+        pid: &str,
+        key: Option<&str>,
+        base_url: Option<&str>,
+        auth_env_var: Option<&str>,
+    ) -> PlatformCredential {
+        PlatformCredential {
+            platform_id: pid.to_string(),
+            api_key: key.map(|s| s.to_string()),
+            base_url: base_url.map(|s| s.to_string()),
+            auth_env_var: auth_env_var.map(|s| s.to_string()),
+            name: None,
+            models: None,
+            extra_env: None,
+        }
+    }
+
+    #[test]
+    fn key_optional_no_credential_uses_defaults() {
+        let settings = default_user_settings();
+        let resolved = resolve_auth_env_for_platform(&None, &settings, Some("ccswitch"));
+
+        assert_eq!(resolved.auth_token.as_deref(), Some("PROXY_MANAGED"));
+        assert!(resolved.api_key.is_none());
+        assert_eq!(resolved.base_url.as_deref(), Some("http://127.0.0.1:15721"));
+    }
+
+    #[test]
+    fn key_optional_credential_empty_key_with_base_url() {
+        let mut settings = default_user_settings();
+        settings.platform_credentials.push(make_cred(
+            "ccswitch",
+            None,
+            Some("http://custom:15721"),
+            Some("ANTHROPIC_AUTH_TOKEN"),
+        ));
+
+        let resolved = resolve_auth_env_for_platform(&None, &settings, Some("ccswitch"));
+
+        assert_eq!(resolved.auth_token.as_deref(), Some("PROXY_MANAGED"));
+        assert_eq!(resolved.base_url.as_deref(), Some("http://custom:15721"));
+    }
+
+    #[test]
+    fn key_optional_credential_has_key_uses_key() {
+        let mut settings = default_user_settings();
+        settings.platform_credentials.push(make_cred(
+            "ccswitch",
+            Some("real-key-123"),
+            Some("http://127.0.0.1:15721"),
+            Some("ANTHROPIC_AUTH_TOKEN"),
+        ));
+
+        let resolved = resolve_auth_env_for_platform(&None, &settings, Some("ccswitch"));
+
+        assert_eq!(resolved.auth_token.as_deref(), Some("real-key-123"));
+        assert!(resolved.api_key.is_none());
+    }
+
+    #[test]
+    fn non_key_optional_empty_key_falls_back_global() {
+        let mut settings = default_user_settings();
+        settings.anthropic_api_key = Some("global-key".to_string());
+        settings.platform_credentials.push(make_cred(
+            "deepseek",
+            None,
+            Some("https://api.deepseek.com/anthropic"),
+            None,
+        ));
+
+        let resolved = resolve_auth_env_for_platform(&None, &settings, Some("deepseek"));
+
+        assert_eq!(resolved.api_key.as_deref(), Some("global-key"));
+        assert!(resolved.auth_token.is_none());
+    }
+
+    #[test]
+    fn unknown_platform_no_credential_falls_back_global() {
+        let mut settings = default_user_settings();
+        settings.anthropic_api_key = Some("global-key".to_string());
+
+        let resolved =
+            resolve_auth_env_for_platform(&None, &settings, Some("unknown-platform-xyz"));
+
+        assert_eq!(resolved.api_key.as_deref(), Some("global-key"));
+    }
+
+    #[test]
+    fn key_optional_missing_auth_env_var_uses_defaults() {
+        let mut settings = default_user_settings();
+        settings.platform_credentials.push(make_cred(
+            "ccswitch",
+            None,
+            Some("http://127.0.0.1:15721"),
+            None, // auth_env_var missing
+        ));
+
+        let resolved = resolve_auth_env_for_platform(&None, &settings, Some("ccswitch"));
+
+        assert_eq!(resolved.auth_token.as_deref(), Some("PROXY_MANAGED"));
+        assert!(resolved.api_key.is_none());
+    }
+
+    #[test]
+    fn key_optional_wrong_auth_env_var_overridden_by_defaults() {
+        let mut settings = default_user_settings();
+        settings.platform_credentials.push(make_cred(
+            "ccswitch",
+            None,
+            Some("http://127.0.0.1:15721"),
+            Some("ANTHROPIC_API_KEY"), // wrong — defaults should override
+        ));
+
+        let resolved = resolve_auth_env_for_platform(&None, &settings, Some("ccswitch"));
+
+        assert_eq!(resolved.auth_token.as_deref(), Some("PROXY_MANAGED"));
+        assert!(resolved.api_key.is_none());
+    }
+
+    #[test]
+    fn ccr_no_credential_includes_default_model() {
+        let settings = default_user_settings();
+        let resolved = resolve_auth_env_for_platform(&None, &settings, Some("ccr"));
+
+        assert_eq!(resolved.auth_token.as_deref(), Some("PROXY_MANAGED"));
+        assert_eq!(resolved.base_url.as_deref(), Some("http://127.0.0.1:3456"));
+        assert_eq!(resolved.default_model.as_deref(), Some("claude-sonnet-4-6"));
+    }
 }
