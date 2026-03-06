@@ -2,6 +2,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalProxyStatus {
+    pub proxy_id: String,
+    pub running: bool,
+    pub needs_auth: bool,
+    pub base_url: String,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MemoryFileCandidate {
     pub path: String,

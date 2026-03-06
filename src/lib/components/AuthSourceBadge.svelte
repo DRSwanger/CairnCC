@@ -21,6 +21,7 @@
     onAuthModeChange,
     onPlatformChange,
     variant = "default",
+    localProxyStatuses = {} as Record<string, { running: boolean; needsAuth: boolean }>,
   }: {
     authOverview?: AuthOverview | null;
     authSourceLabel?: string;
@@ -33,6 +34,7 @@
     onAuthModeChange?: (mode: string) => void;
     onPlatformChange?: (platformId: string) => void;
     variant?: "default" | "hero";
+    localProxyStatuses?: Record<string, { running: boolean; needsAuth: boolean }>;
   } = $props();
 
   let dropdownOpen = $state(false);
@@ -83,7 +85,14 @@
         ? "bg-emerald-500"
         : "bg-amber-500";
     }
-    // For api mode: check actual credential for selected platform (responds immediately to switch)
+    // For api mode: local platforms use running status, others use API key
+    const selectedPreset = platforms.find((p) => p.id === platformId);
+    if (selectedPreset?.category === "local") {
+      const ps = localProxyStatuses?.[platformId];
+      if (ps?.running && !ps.needsAuth) return "bg-emerald-500";
+      if (ps?.running && ps.needsAuth) return "bg-amber-500";
+      return "bg-muted-foreground/30";
+    }
     const hasCred = !!findCredential(platformCredentials, platformId)?.api_key;
     return hasCred ? "bg-emerald-500" : "bg-amber-500";
   });
@@ -331,6 +340,8 @@
                     {group.label}
                   </p>
                   {#each group.items as platform}
+                    {@const isLocal = platform.category === "local"}
+                    {@const lps = isLocal ? localProxyStatuses?.[platform.id] : undefined}
                     {@const hasCred = !!findCredential(platformCredentials, platform.id)?.api_key}
                     {@const isSelected = platform.id === platformId}
                     <button
@@ -338,9 +349,15 @@
                       onclick={() => selectPlatform(platform.id)}
                     >
                       <span
-                        class="inline-block h-1 w-1 rounded-full shrink-0 {hasCred
-                          ? 'bg-emerald-500'
-                          : 'bg-muted-foreground/30'}"
+                        class="inline-block h-1 w-1 rounded-full shrink-0 {isLocal
+                          ? lps?.running && !lps.needsAuth
+                            ? 'bg-emerald-500'
+                            : lps?.running && lps.needsAuth
+                              ? 'bg-amber-500'
+                              : 'bg-muted-foreground/30'
+                          : hasCred
+                            ? 'bg-emerald-500'
+                            : 'bg-muted-foreground/30'}"
                       ></span>
                       <span
                         class="flex-1 min-w-0 text-left truncate {isSelected

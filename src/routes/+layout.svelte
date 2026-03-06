@@ -560,6 +560,46 @@
     }
     window.addEventListener("ocv:cwd-changed", handleCwdChanged);
 
+    // ── External link interceptor ──
+    // Prevent webview from navigating away to external URLs.
+    // Opens them in the system browser instead.
+    function handleExternalLink(e: MouseEvent) {
+      // Only intercept plain left-click (no modifier keys)
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+      const anchor = (e.target as HTMLElement)?.closest?.("a");
+      if (!anchor) return;
+
+      const href = anchor.getAttribute("href");
+      if (!href) return;
+
+      // Parse URL — handles protocol-relative (//example.com), case-insensitive schemes
+      let url: URL;
+      try {
+        url = new URL(href, window.location.origin);
+      } catch {
+        return;
+      }
+
+      // Only intercept http/https
+      if (url.protocol !== "http:" && url.protocol !== "https:") return;
+      // Skip internal SvelteKit routes (same origin)
+      if (url.origin === window.location.origin) return;
+
+      // Prevent webview navigation, don't stopPropagation (let other listeners see it)
+      e.preventDefault();
+
+      dbg("layout", "external-link: opening in system browser", { href });
+      import("@tauri-apps/plugin-shell")
+        .then(({ open }) => open(href))
+        .catch((err) => {
+          dbgWarn("layout", "external-link: plugin-shell failed, fallback to window.open", err);
+          window.open(href, "_blank");
+        });
+    }
+    document.addEventListener("click", handleExternalLink, true);
+    dbg("layout", "external-link interceptor mounted");
+
     return () => {
       clearInterval(interval);
       clearInterval(teamPollInterval);
@@ -578,6 +618,7 @@
       window.removeEventListener("ocv:cwd-changed", handleCwdChanged);
       window.removeEventListener("ocv:memory-file-selected", onMemoryFileSelected);
       window.removeEventListener("ocv:memory-file-saved", onMemoryFileSaved);
+      document.removeEventListener("click", handleExternalLink, true);
     };
   });
 

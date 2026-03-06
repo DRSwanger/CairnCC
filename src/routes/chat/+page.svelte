@@ -112,6 +112,8 @@
   let authOverview = $state<import("$lib/types").AuthOverview | null>(null);
   /** Preloaded skill details from filesystem (has descriptions). */
   let preloadedSkills = $state<import("$lib/types").StandaloneSkill[]>([]);
+  /** Local proxy running statuses for AuthSourceBadge. */
+  let localProxyStatuses = $state<Record<string, { running: boolean; needsAuth: boolean }>>({});
 
   // ── Model contamination helpers ──
 
@@ -822,6 +824,8 @@
         .getAuthOverview()
         .then((ov) => (authOverview = ov))
         .catch(() => {});
+      // Detect local proxy statuses for AuthSourceBadge
+      checkAllLocalProxies();
     } catch (e) {
       dbgWarn("chat", "failed to load settings:", e);
     }
@@ -1675,6 +1679,27 @@
     }
   }
 
+  async function checkAllLocalProxies() {
+    const localPresets = PLATFORM_PRESETS.filter((p) => p.category === "local");
+    const results = await Promise.allSettled(
+      localPresets.map((p) => {
+        const cred = findCredential(settings?.platform_credentials ?? [], p.id);
+        const url = cred?.base_url || p.base_url;
+        return api.detectLocalProxy(p.id, url);
+      }),
+    );
+    const statuses: Record<string, { running: boolean; needsAuth: boolean }> = {};
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        statuses[localPresets[i].id] = { running: r.value.running, needsAuth: r.value.needsAuth };
+      } else {
+        statuses[localPresets[i].id] = { running: false, needsAuth: false };
+      }
+    });
+    localProxyStatuses = statuses;
+    dbg("chat", "checkAllLocalProxies", statuses);
+  }
+
   async function handlePlatformChange(platformId: string) {
     dbg("chat", "platform change", { from: store.platformId, to: platformId });
     store.platformId = platformId;
@@ -1712,6 +1737,8 @@
     } catch (e) {
       dbgWarn("chat", "failed to persist platform change", e);
     }
+    // Refresh local proxy statuses after platform switch
+    checkAllLocalProxies();
   }
 
   function appendCommandOutput(text: string) {
@@ -2864,6 +2891,7 @@
                     platformId={store.platformId ?? "anthropic"}
                     onAuthModeChange={handleAuthModeChange}
                     onPlatformChange={handlePlatformChange}
+                    {localProxyStatuses}
                     variant="hero"
                   />
                   <span class="text-muted-foreground/30">·</span>
@@ -3629,6 +3657,7 @@
         authSourceCategory={store.authSourceCategory}
         apiKeySource={store.apiKeySource}
         onAuthModeChange={handleAuthModeChange}
+        {localProxyStatuses}
         showAuthBadge={!welcomeVisible}
         onShortcutHelp={() => (shortcutHelpOpen = !shortcutHelpOpen)}
         availableSkills={store.availableSkills}

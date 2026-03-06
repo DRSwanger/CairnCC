@@ -172,6 +172,7 @@ export const PLATFORM_PRESETS: PlatformPreset[] = [
     key_placeholder: "(leave empty)",
     category: "local",
     docs_url: "https://github.com/farion1231/cc-switch",
+    setup_hint: "settings_local_setupHint_ccswitch",
   },
   {
     id: "ccr",
@@ -182,6 +183,8 @@ export const PLATFORM_PRESETS: PlatformPreset[] = [
     key_placeholder: "(leave empty)",
     models: ["claude-sonnet-4-6"],
     category: "local",
+    docs_url: "https://github.com/musistudio/claude-code-router",
+    setup_hint: "settings_local_setupHint_ccr",
   },
 
   // ── Local Inference ──
@@ -193,6 +196,7 @@ export const PLATFORM_PRESETS: PlatformPreset[] = [
     description: "Local LLM (no key needed)",
     key_placeholder: "(leave empty for local)",
     category: "local",
+    setup_hint: "settings_local_setupHint_ollama",
   },
 
   // ── Custom ──

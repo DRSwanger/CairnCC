@@ -2,8 +2,8 @@ use crate::agent::claude_stream::augmented_path;
 use crate::agent::ssh::{expand_local_tilde, shell_escape};
 use crate::models::{
     AuthDiagnostics, ClaudeMdInfo, CliCheckResult, CliDiagnostics, CliDistTags, ConfigDiagnostics,
-    ConfigIssue, DiagnosticsReport, ProjectDiagnostics, ProjectInitStatus, RemoteTestResult,
-    ServicesDiagnostics, SshKeyInfo, SystemDiagnostics,
+    ConfigIssue, DiagnosticsReport, LocalProxyStatus, ProjectDiagnostics, ProjectInitStatus,
+    RemoteTestResult, ServicesDiagnostics, SshKeyInfo, SystemDiagnostics,
 };
 use std::path::Path;
 use std::process::Command;
@@ -55,6 +55,80 @@ pub async fn check_agent_cli(agent: String) -> Result<CliCheckResult, String> {
         path,
         version,
     })
+}
+
+// ── Local proxy detection ──
+
+async fn detect_proxy_inner(proxy_id: &str, base_url: &str) -> LocalProxyStatus {
+    log::debug!(
+        "[diagnostics] detect_local_proxy: proxy_id={}, base_url={}",
+        proxy_id,
+        base_url
+    );
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .no_proxy() // Local services must be reached directly, never via system proxy
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::debug!(
+                "[diagnostics] detect_local_proxy: client build failed: {}",
+                e
+            );
+            return LocalProxyStatus {
+                proxy_id: proxy_id.to_string(),
+                running: false,
+                needs_auth: false,
+                base_url: base_url.to_string(),
+                error: Some(format!("HTTP client build failed: {}", e)),
+            };
+        }
+    };
+    let url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            // Any HTTP response = service is running (connection succeeded).
+            // 401/403 = running but needs auth. All others = running normally.
+            let needs_auth = status == 401 || status == 403;
+            log::debug!(
+                "[diagnostics] detect_local_proxy result: proxy_id={}, running=true, status={}, needs_auth={}",
+                proxy_id,
+                status,
+                needs_auth
+            );
+            LocalProxyStatus {
+                proxy_id: proxy_id.to_string(),
+                running: true,
+                needs_auth,
+                base_url: base_url.to_string(),
+                error: None,
+            }
+        }
+        Err(e) => {
+            log::debug!(
+                "[diagnostics] detect_local_proxy result: proxy_id={}, running=false, err={}",
+                proxy_id,
+                e
+            );
+            LocalProxyStatus {
+                proxy_id: proxy_id.to_string(),
+                running: false,
+                needs_auth: false,
+                base_url: base_url.to_string(),
+                error: Some(e.to_string()),
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn detect_local_proxy(
+    proxy_id: String,
+    base_url: String,
+) -> Result<LocalProxyStatus, String> {
+    Ok(detect_proxy_inner(&proxy_id, &base_url).await)
 }
 
 /// Platform-aware message for missing SSH binaries.
@@ -981,6 +1055,73 @@ mod tests {
         .unwrap();
         let issues = validate_mcp_configs_at(home, "/nonexistent", false);
         assert!(issues.is_empty(), "Expected no issues, got: {:?}", issues);
+    }
+
+    // ── detect_local_proxy tests ──
+
+    #[tokio::test]
+    async fn test_detect_proxy_not_running() {
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            // Use a non-routable address to guarantee connection failure
+            let url = "http://192.0.2.1:1";
+            let result = detect_proxy_inner("test-proxy", url).await;
+            assert!(
+                !result.running,
+                "expected not running, error={:?}",
+                result.error
+            );
+            assert!(!result.needs_auth);
+            assert!(result.error.is_some());
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_detect_proxy_running_200() {
+        use tokio::io::AsyncWriteExt;
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            // Spawn a minimal HTTP server that returns 200
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 1024];
+                    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]";
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            let result = detect_proxy_inner("test-proxy", &url).await;
+            assert!(result.running);
+            assert!(!result.needs_auth);
+            assert!(result.error.is_none());
+        });
+        timeout.await.expect("test timed out");
+    }
+
+    #[tokio::test]
+    async fn test_detect_proxy_running_401_needs_auth() {
+        use tokio::io::AsyncWriteExt;
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            // Spawn a minimal HTTP server that returns 401
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = [0u8; 1024];
+                    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let resp = "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            });
+            let url = format!("http://127.0.0.1:{}", port);
+            let result = detect_proxy_inner("test-proxy", &url).await;
+            assert!(result.running);
+            assert!(result.needs_auth);
+            assert!(result.error.is_none());
+        });
+        timeout.await.expect("test timed out");
     }
 }
 

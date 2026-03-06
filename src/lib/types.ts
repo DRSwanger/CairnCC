@@ -271,6 +271,14 @@ export interface CliDistTags {
   stable?: string;
 }
 
+export interface LocalProxyStatus {
+  proxyId: string;
+  running: boolean;
+  needsAuth: boolean;
+  baseUrl: string;
+  error?: string;
+}
+
 export interface ModelUsageSummary {
   inputTokens: number;
   outputTokens: number;
@@ -1125,6 +1133,7 @@ export interface PlatformPreset {
   models?: string[];
   extra_env?: Record<string, string>;
   docs_url?: string;
+  setup_hint?: string;
 }
 
 /** Snapshot of PromptInput state for stash/restore. */

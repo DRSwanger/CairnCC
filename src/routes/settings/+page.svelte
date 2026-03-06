@@ -108,6 +108,13 @@
   let customFormAuthEnvVar = $state<"ANTHROPIC_API_KEY" | "ANTHROPIC_AUTH_TOKEN">(
     "ANTHROPIC_AUTH_TOKEN",
   );
+  // ── Local proxy detection state ──
+  let localProxyStatus = $state<import("$lib/types").LocalProxyStatus | null>(null);
+  let localProxyChecking = $state(false);
+  let localProxyRequestId = $state(0);
+  let localAdvancedOpen = $state(false);
+  let localProxyStatuses = $state<Record<string, { running: boolean; needsAuth: boolean }>>({});
+
   let debugOn = $state(isDebugMode());
   let logCopied = $state(false);
   let debugFilter = $state(getDebugFilter() || "1");
@@ -821,16 +828,91 @@
     if (selectedPlatformId) syncAndSave(selectedPlatformId);
   }
 
+  // ── Local proxy detection ──
+
+  async function checkLocalProxy() {
+    if (!selectedPlatform || selectedPlatform.category !== "local" || !selectedPlatformId) return;
+    localProxyChecking = true;
+    localProxyStatus = null;
+    const myRequestId = ++localProxyRequestId;
+    const myPlatformId = selectedPlatformId;
+    const urlToCheck = anthropicBaseUrl;
+    dbg("settings", "checkLocalProxy start", {
+      id: myPlatformId,
+      url: urlToCheck,
+      reqId: myRequestId,
+    });
+    try {
+      const result = await api.detectLocalProxy(myPlatformId, urlToCheck);
+      if (myRequestId !== localProxyRequestId) return;
+      if (myPlatformId !== selectedPlatformId) return;
+      localProxyStatus = result;
+      localProxyStatuses = {
+        ...localProxyStatuses,
+        [myPlatformId]: { running: result.running, needsAuth: result.needsAuth },
+      };
+      dbg("settings", "checkLocalProxy result", result);
+    } catch (e) {
+      if (myRequestId !== localProxyRequestId || myPlatformId !== selectedPlatformId) return;
+      localProxyStatus = {
+        proxyId: myPlatformId,
+        running: false,
+        needsAuth: false,
+        baseUrl: urlToCheck,
+        error: String(e),
+      };
+      localProxyStatuses = {
+        ...localProxyStatuses,
+        [myPlatformId]: { running: false, needsAuth: false },
+      };
+      dbgWarn("settings", "checkLocalProxy error", e);
+    } finally {
+      if (myRequestId === localProxyRequestId) localProxyChecking = false;
+    }
+  }
+
+  async function checkAllLocalProxies() {
+    const localPresets = PLATFORM_PRESETS.filter((p) => p.category === "local");
+    const results = await Promise.allSettled(
+      localPresets.map((p) => {
+        const cred = findCredential(platformCredentials, p.id);
+        const url = cred?.base_url || p.base_url;
+        return api.detectLocalProxy(p.id, url);
+      }),
+    );
+    const statuses: Record<string, { running: boolean; needsAuth: boolean }> = {};
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        statuses[localPresets[i].id] = { running: r.value.running, needsAuth: r.value.needsAuth };
+      } else {
+        statuses[localPresets[i].id] = { running: false, needsAuth: false };
+      }
+    });
+    localProxyStatuses = statuses;
+    dbg("settings", "checkAllLocalProxies", statuses);
+  }
+
+  function openPlatformPicker() {
+    showPlatformPicker = true;
+    checkAllLocalProxies();
+  }
+
   function applyPlatformPreset(preset: PlatformPreset) {
     // 1. Save current platform's data to credentials (if modified)
     saveCurrentToCredential();
     // 2. Switch to new platform
     selectedPlatformId = preset.id;
     showPlatformPicker = false;
+    localAdvancedOpen = false;
+    localProxyStatus = null;
     // 3. Load new platform's data from credentials
     loadFieldsFromCredential(preset.id);
     // 4. Sync global fields + persist
     syncAndSave(preset.id);
+    // 5. Auto-detect if local proxy
+    if (preset.category === "local") {
+      checkLocalProxy();
+    }
   }
 
   /** Upsert a credential in the local platformCredentials array. */
@@ -906,6 +988,11 @@
         dbgWarn("settings", "failed to load auth overview", e);
       });
     loadCliInfo();
+    // Auto-detect local proxies
+    checkAllLocalProxies();
+    if (selectedPlatform?.category === "local") {
+      checkLocalProxy();
+    }
     // Detect current username + CLI keybindings source
     import("@tauri-apps/api/path")
       .then(async (p) => {
@@ -1237,8 +1324,7 @@
                     >
                     <button
                       class="ml-auto text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      onclick={() => (showPlatformPicker = true)}
-                      >{t("settings_general_changePlatform")}</button
+                      onclick={openPlatformPicker}>{t("settings_general_changePlatform")}</button
                     >
                   </div>
                 {:else}
@@ -1298,7 +1384,22 @@
                                     >
                                   </span>
                                 {/if}
-                                {#if findCredential(platformCredentials, preset.id)?.api_key}
+                                {#if preset.category === "local"}
+                                  {@const ps = localProxyStatuses[preset.id]}
+                                  <span
+                                    class="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full {ps?.running &&
+                                    !ps.needsAuth
+                                      ? 'bg-green-500'
+                                      : ps?.running && ps.needsAuth
+                                        ? 'bg-amber-500'
+                                        : 'bg-muted-foreground/30'}"
+                                    title={ps?.running && !ps.needsAuth
+                                      ? t("settings_local_running")
+                                      : ps?.running && ps.needsAuth
+                                        ? t("settings_local_needsAuth")
+                                        : t("settings_local_notDetected")}
+                                  ></span>
+                                {:else if findCredential(platformCredentials, preset.id)?.api_key}
                                   <span
                                     class="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-green-500"
                                     title="Key saved"
@@ -1372,149 +1473,203 @@
                 {/if}
               </div>
 
-              <!-- API Key input -->
-              <div>
-                <label class="text-sm font-medium mb-1.5 block" for="api-key"
-                  >{t("settings_general_apiKey")}</label
-                >
-                <div class="mt-1 flex gap-2">
-                  <div class="flex-1 relative">
-                    <Input
-                      bind:value={anthropicApiKey}
-                      placeholder={selectedPlatform?.key_placeholder ?? "<your-api-key>"}
-                      type={showApiKey ? "text" : "password"}
-                      class="font-mono text-xs"
-                      onblur={() => persistCurrentPlatform()}
-                    />
-                  </div>
-                  <button
-                    class="rounded-md border px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
-                    onclick={() => (showApiKey = !showApiKey)}
-                  >
-                    {showApiKey ? t("settings_general_hide") : t("settings_general_show")}
-                  </button>
-                </div>
-                {#if selectedPlatform?.id === "ollama"}
-                  <p class="mt-1 text-xs text-muted-foreground">{t("setup_noKeyNeeded")}</p>
-                {:else}
-                  <p class="mt-1 text-xs text-muted-foreground">
-                    {t("settings_general_apiKeyStored")}
-                  </p>
-                {/if}
-              </div>
-
-              <!-- Base URL (only show for custom or direct editing) -->
-              <div>
-                <label class="text-sm font-medium mb-1.5 block" for="base-url"
-                  >{t("settings_general_baseUrl")}</label
-                >
-                <Input
-                  bind:value={anthropicBaseUrl}
-                  placeholder="https://api.anthropic.com"
-                  class="mt-1 font-mono text-xs"
-                  disabled={selectedPlatformId !== null &&
-                    selectedPlatformId !== "anthropic" &&
-                    selectedPlatform?.category !== "local" &&
-                    !isCustomPlatform(selectedPlatformId ?? "")}
-                  onblur={() => persistCurrentPlatform()}
-                />
-                <p class="mt-1 text-xs text-muted-foreground">
-                  {#if selectedPlatform && selectedPlatform.auth_env_var === "ANTHROPIC_AUTH_TOKEN"}
-                    {t("setup_authTypeBearer")}
-                  {:else if selectedPlatform && selectedPlatform.auth_env_var === "ANTHROPIC_API_KEY"}
-                    {t("setup_authTypeApiKey")}
-                  {:else}
-                    {t("settings_general_baseUrlHelp")}
-                  {/if}
-                </p>
-              </div>
-
-              <!-- Models -->
-              <div>
-                <label class="text-sm font-medium mb-1.5 block" for="platform-models"
-                  >{t("settings_general_models")}</label
-                >
-                <Input
-                  bind:value={platformModels}
-                  placeholder={selectedPlatform?.models?.join(", ") ||
-                    t("settings_general_modelsPlaceholder")}
-                  class="mt-1 font-mono text-xs"
-                  onblur={() => persistCurrentPlatform()}
-                />
-                <p class="mt-1 text-xs text-muted-foreground">
-                  {t("settings_general_modelsHelp")}
-                </p>
-              </div>
-
-              <!-- Extra Environment Variables -->
-              <div>
-                <label class="text-sm font-medium mb-1.5 block">
-                  {t("settings_general_extraEnv")}
-                </label>
-                {#each platformExtraEnv as envVar, i}
-                  <div class="flex gap-1.5 mt-1.5">
-                    <Input
-                      bind:value={envVar.key}
-                      placeholder={t("settings_general_envKeyPlaceholder")}
-                      class="flex-1 font-mono text-xs"
-                      oninput={() => markExtraEnvTouched()}
-                      onblur={() => persistCurrentPlatform()}
-                      onpaste={(e: ClipboardEvent) => handleEnvKeyPaste(e, i)}
-                    />
-                    <Input
-                      bind:value={envVar.value}
-                      placeholder={t("settings_general_envValuePlaceholder")}
-                      class="flex-1 font-mono text-xs"
-                      oninput={() => markExtraEnvTouched()}
-                      onblur={() => persistCurrentPlatform()}
-                    />
+              {#if selectedPlatform?.category === "local"}
+                <!-- Local proxy status card -->
+                <div class="rounded-lg border p-4 space-y-3">
+                  <div class="flex items-center gap-2">
+                    {#if localProxyChecking}
+                      <span class="h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>
+                      <span class="text-sm">{t("settings_local_checking")}</span>
+                    {:else if localProxyStatus?.running && !localProxyStatus.needsAuth}
+                      <span class="h-2 w-2 rounded-full bg-green-500"></span>
+                      <span class="text-sm font-medium">{t("settings_local_running")}</span>
+                    {:else if localProxyStatus?.running && localProxyStatus.needsAuth}
+                      <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+                      <span class="text-sm font-medium">{t("settings_local_needsAuth")}</span>
+                    {:else}
+                      <span class="h-2 w-2 rounded-full bg-muted-foreground/30"></span>
+                      <span class="text-sm">{t("settings_local_notDetected")}</span>
+                    {/if}
                     <button
-                      class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                      onclick={() => {
-                        platformExtraEnv = platformExtraEnv.filter((_, idx) => idx !== i);
-                        markExtraEnvTouched();
-                        persistCurrentPlatform();
-                      }}
+                      class="ml-auto rounded-md border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                      onclick={checkLocalProxy}>{t("settings_local_refresh")}</button
                     >
-                      <svg
-                        class="h-3.5 w-3.5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-                      </svg>
+                  </div>
+                  <p class="text-xs text-muted-foreground font-mono">{anthropicBaseUrl}</p>
+                  {#if localProxyStatus && !localProxyStatus.running}
+                    <p class="text-xs text-amber-500">
+                      {selectedPlatform.setup_hint
+                        ? t(selectedPlatform.setup_hint)
+                        : t("settings_local_startHint", { name: selectedPlatform.name })}
+                    </p>
+                  {/if}
+                  {#if selectedPlatform.docs_url}
+                    <a
+                      href={selectedPlatform.docs_url}
+                      target="_blank"
+                      class="text-xs text-primary hover:underline"
+                    >
+                      {t("settings_local_viewDocs")} →
+                    </a>
+                  {/if}
+                </div>
+
+                <!-- Advanced settings toggle -->
+                <button
+                  class="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onclick={() => (localAdvancedOpen = !localAdvancedOpen)}
+                >
+                  {localAdvancedOpen ? "▾" : "▸"}
+                  {t("settings_local_advanced")}
+                </button>
+              {/if}
+
+              {#if selectedPlatform?.category !== "local" || localAdvancedOpen}
+                <!-- API Key input -->
+                <div>
+                  <label class="text-sm font-medium mb-1.5 block" for="api-key"
+                    >{t("settings_general_apiKey")}</label
+                  >
+                  <div class="mt-1 flex gap-2">
+                    <div class="flex-1 relative">
+                      <Input
+                        bind:value={anthropicApiKey}
+                        placeholder={selectedPlatform?.key_placeholder ?? "<your-api-key>"}
+                        type={showApiKey ? "text" : "password"}
+                        class="font-mono text-xs"
+                        onblur={() => persistCurrentPlatform()}
+                      />
+                    </div>
+                    <button
+                      class="rounded-md border px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
+                      onclick={() => (showApiKey = !showApiKey)}
+                    >
+                      {showApiKey ? t("settings_general_hide") : t("settings_general_show")}
                     </button>
                   </div>
-                {/each}
-                <button
-                  class="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  onclick={() => {
-                    platformExtraEnv = [...platformExtraEnv, { key: "", value: "" }];
-                    // Don't markExtraEnvTouched(): empty row isn't an edit, avoids baking preset defaults.
-                    // touched is marked on onblur (actual value entry) or row deletion.
-                  }}
-                >
-                  <svg
-                    class="h-3 w-3"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
+                  {#if selectedPlatform?.id === "ollama"}
+                    <p class="mt-1 text-xs text-muted-foreground">{t("setup_noKeyNeeded")}</p>
+                  {:else}
+                    <p class="mt-1 text-xs text-muted-foreground">
+                      {t("settings_general_apiKeyStored")}
+                    </p>
+                  {/if}
+                </div>
+
+                <!-- Base URL (only show for custom or direct editing) -->
+                <div>
+                  <label class="text-sm font-medium mb-1.5 block" for="base-url"
+                    >{t("settings_general_baseUrl")}</label
                   >
-                    <path d="M12 5v14" /><path d="M5 12h14" />
-                  </svg>
-                  {t("settings_general_addEnvVar")}
-                </button>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  {t("settings_general_extraEnvHelp")}
-                </p>
-              </div>
+                  <Input
+                    bind:value={anthropicBaseUrl}
+                    placeholder="https://api.anthropic.com"
+                    class="mt-1 font-mono text-xs"
+                    disabled={selectedPlatformId !== null &&
+                      selectedPlatformId !== "anthropic" &&
+                      selectedPlatform?.category !== "local" &&
+                      !isCustomPlatform(selectedPlatformId ?? "")}
+                    onblur={() => persistCurrentPlatform()}
+                  />
+                  <p class="mt-1 text-xs text-muted-foreground">
+                    {#if selectedPlatform && selectedPlatform.auth_env_var === "ANTHROPIC_AUTH_TOKEN"}
+                      {t("setup_authTypeBearer")}
+                    {:else if selectedPlatform && selectedPlatform.auth_env_var === "ANTHROPIC_API_KEY"}
+                      {t("setup_authTypeApiKey")}
+                    {:else}
+                      {t("settings_general_baseUrlHelp")}
+                    {/if}
+                  </p>
+                </div>
+
+                <!-- Models -->
+                <div>
+                  <label class="text-sm font-medium mb-1.5 block" for="platform-models"
+                    >{t("settings_general_models")}</label
+                  >
+                  <Input
+                    bind:value={platformModels}
+                    placeholder={selectedPlatform?.models?.join(", ") ||
+                      t("settings_general_modelsPlaceholder")}
+                    class="mt-1 font-mono text-xs"
+                    onblur={() => persistCurrentPlatform()}
+                  />
+                  <p class="mt-1 text-xs text-muted-foreground">
+                    {t("settings_general_modelsHelp")}
+                  </p>
+                </div>
+
+                <!-- Extra Environment Variables -->
+                <div>
+                  <label class="text-sm font-medium mb-1.5 block" for="extra-env-section">
+                    {t("settings_general_extraEnv")}
+                  </label>
+                  {#each platformExtraEnv as envVar, i}
+                    <div class="flex gap-1.5 mt-1.5">
+                      <Input
+                        bind:value={envVar.key}
+                        placeholder={t("settings_general_envKeyPlaceholder")}
+                        class="flex-1 font-mono text-xs"
+                        oninput={() => markExtraEnvTouched()}
+                        onblur={() => persistCurrentPlatform()}
+                        onpaste={(e: ClipboardEvent) => handleEnvKeyPaste(e, i)}
+                      />
+                      <Input
+                        bind:value={envVar.value}
+                        placeholder={t("settings_general_envValuePlaceholder")}
+                        class="flex-1 font-mono text-xs"
+                        oninput={() => markExtraEnvTouched()}
+                        onblur={() => persistCurrentPlatform()}
+                      />
+                      <button
+                        class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        aria-label={t("settings_remote_delete")}
+                        onclick={() => {
+                          platformExtraEnv = platformExtraEnv.filter((_, idx) => idx !== i);
+                          markExtraEnvTouched();
+                          persistCurrentPlatform();
+                        }}
+                      >
+                        <svg
+                          class="h-3.5 w-3.5"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  {/each}
+                  <button
+                    class="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    onclick={() => {
+                      platformExtraEnv = [...platformExtraEnv, { key: "", value: "" }];
+                      // Don't markExtraEnvTouched(): empty row isn't an edit, avoids baking preset defaults.
+                      // touched is marked on onblur (actual value entry) or row deletion.
+                    }}
+                  >
+                    <svg
+                      class="h-3 w-3"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M12 5v14" /><path d="M5 12h14" />
+                    </svg>
+                    {t("settings_general_addEnvVar")}
+                  </button>
+                  <p class="mt-1 text-xs text-muted-foreground">
+                    {t("settings_general_extraEnvHelp")}
+                  </p>
+                </div>
+              {/if}
             </div>
           {/if}
         </Card>

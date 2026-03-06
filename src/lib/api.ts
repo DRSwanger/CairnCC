@@ -305,6 +305,14 @@ export async function generateSshKey(): Promise<SshKeyInfo> {
   return invoke<SshKeyInfo>("generate_ssh_key");
 }
 
+export async function detectLocalProxy(
+  proxyId: string,
+  baseUrl: string,
+): Promise<import("./types").LocalProxyStatus> {
+  dbg("api", "detectLocalProxy", { proxyId, baseUrl });
+  return invoke<import("./types").LocalProxyStatus>("detect_local_proxy", { proxyId, baseUrl });
+}
+
 export async function runDiagnostics(cwd: string): Promise<DiagnosticsReport> {
   dbg("api", "runDiagnostics", { cwd });
   return invoke<DiagnosticsReport>("run_diagnostics", { cwd });

@@ -94,6 +94,7 @@
     authSourceCategory = "unknown",
     apiKeySource = "",
     onAuthModeChange,
+    localProxyStatuses = {} as Record<string, { running: boolean; needsAuth: boolean }>,
     availableSkills = [],
     skillItems = [],
     showAuthBadge = true,
@@ -134,6 +135,7 @@
     authSourceCategory?: string;
     apiKeySource?: string;
     onAuthModeChange?: (mode: string) => void;
+    localProxyStatuses?: Record<string, { running: boolean; needsAuth: boolean }>;
     availableSkills?: string[];
     skillItems?: { name: string; description: string }[];
     showAuthBadge?: boolean; // TODO: remove unused auth props after hero migration
@@ -1836,6 +1838,7 @@
             {platformId}
             {onAuthModeChange}
             {onPlatformChange}
+            {localProxyStatuses}
           />
         {/if}
         <SkillSelector

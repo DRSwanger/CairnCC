@@ -97,6 +97,7 @@ pub fn run() {
             commands::diagnostics::check_ssh_key,
             commands::diagnostics::generate_ssh_key,
             commands::diagnostics::run_diagnostics,
+            commands::diagnostics::detect_local_proxy,
             commands::pty::spawn_pty,
             commands::pty::write_pty,
             commands::pty::resize_pty,
