@@ -368,14 +368,12 @@
   async function loadSettings() {
     try {
       settings = await getUserSettings();
-      if (settings.working_directory) {
-        const normalizedWd = normalizeCwd(settings.working_directory);
-        if (normalizedWd) {
-          localStorage.setItem("ocv:settings-cwd", normalizedWd);
-          if (!projectCwd) projectCwd = normalizedWd;
-        } else {
-          localStorage.removeItem("ocv:settings-cwd");
-        }
+      const normalizedWd = normalizeCwd(settings.working_directory);
+      if (normalizedWd) {
+        localStorage.setItem("ocv:settings-cwd", normalizedWd);
+        if (!projectCwd) projectCwd = normalizedWd;
+      } else {
+        localStorage.removeItem("ocv:settings-cwd");
       }
       // Show setup wizard if onboarding not completed
       if (!settings.onboarding_completed) {
