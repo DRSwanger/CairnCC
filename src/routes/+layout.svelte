@@ -373,6 +373,8 @@
         if (normalizedWd) {
           localStorage.setItem("ocv:settings-cwd", normalizedWd);
           if (!projectCwd) projectCwd = normalizedWd;
+        } else {
+          localStorage.removeItem("ocv:settings-cwd");
         }
       }
       // Show setup wizard if onboarding not completed
@@ -829,20 +831,21 @@
   });
 
   // Auto-expand folder containing selected run (chats tab only)
-  // Track runId + total conversation count (not folder count — pinned cwds
-  // create empty folders before runs load, so folder count may not change).
+  // Track runId + runs.length as change signals. runs.length is the most
+  // reliable: it changes on any new run (including resume into existing
+  // session where conversationCount stays the same).
   // Don't track expandedProjects itself (otherwise collapsing re-expands).
   let _prevAutoExpandRunId = "";
-  let _prevAutoExpandConvTotal = 0;
+  let _prevAutoExpandRunsLen = 0;
   $effect(() => {
     if (!isChatPage || panelTab !== "chats") return;
     const runId = selectedRunId;
-    const convTotal = projectFolders.reduce((s, f) => s + f.conversationCount, 0);
+    const runsLen = runs.length;
     const runChanged = runId !== _prevAutoExpandRunId;
-    const convsChanged = convTotal !== _prevAutoExpandConvTotal;
-    if (!runChanged && !convsChanged) return; // early-return avoids tracking expandedProjects
+    const runsChanged = runsLen !== _prevAutoExpandRunsLen;
+    if (!runChanged && !runsChanged) return; // early-return avoids tracking expandedProjects
     _prevAutoExpandRunId = runId;
-    _prevAutoExpandConvTotal = convTotal;
+    _prevAutoExpandRunsLen = runsLen;
     if (!runId) return;
     const next = autoExpandForRun(runId, projectFolders, expandedProjects);
     if (next) {
