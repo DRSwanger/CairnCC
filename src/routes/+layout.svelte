@@ -10,8 +10,8 @@
     searchPrompts,
     listMemoryFiles,
   } from "$lib/api";
-  import RunListItem from "$lib/components/RunListItem.svelte";
   import ProjectSelector from "$lib/components/ProjectSelector.svelte";
+  import ProjectFolderItem from "$lib/components/ProjectFolderItem.svelte";
   import CommandPalette from "$lib/components/CommandPalette.svelte";
   import SetupWizard from "$lib/components/SetupWizard.svelte";
   import AboutModal from "$lib/components/AboutModal.svelte";
@@ -28,6 +28,12 @@
   } from "$lib/types";
   import { cwdDisplayLabel, truncate, relativeTime } from "$lib/utils/format";
   import { filterVisibleCandidates } from "$lib/utils/memory-helpers";
+  import {
+    buildProjectFolders,
+    autoExpandForRun,
+    expandForProjectChange,
+    normalizeCwd,
+  } from "$lib/utils/sidebar-groups";
   import { page } from "$app/stores";
   import { goto, afterNavigate } from "$app/navigation";
   import { onMount, setContext } from "svelte";
@@ -97,6 +103,10 @@
 
   let panelTab = $state<"chats" | "teams">("chats");
   let runSearchQuery = $state("");
+
+  // ── Folder tree state ──
+  let expandedProjects = $state<Set<string>>(new Set());
+  let runsLoadSucceededOnce = $state(false);
 
   // ── Deep search (backend full-text) ──
   let searchResults = $state<PromptSearchResult[]>([]);
@@ -299,6 +309,7 @@
   async function loadRuns() {
     try {
       runs = await listRuns();
+      runsLoadSucceededOnce = true;
     } catch {
       // Silently fail
     }
@@ -424,7 +435,20 @@
 
     // Load saved CWD and pinned folders from localStorage
     const saved = localStorage.getItem("ocv:project-cwd");
-    if (saved) projectCwd = saved;
+    if (saved) projectCwd = normalizeCwd(saved) || "";
+
+    // Load expanded projects from localStorage (defensive parse)
+    try {
+      const rawExpanded = localStorage.getItem("ocv:expanded-projects");
+      if (rawExpanded) {
+        const parsed = JSON.parse(rawExpanded);
+        if (Array.isArray(parsed) && parsed.every((v: unknown) => typeof v === "string")) {
+          expandedProjects = new Set(parsed as string[]);
+        }
+      }
+    } catch {
+      /* ignore corrupted data, keep empty Set */
+    }
     try {
       const pinned = localStorage.getItem("ocv:pinned-cwds");
       if (pinned) pinnedCwds = JSON.parse(pinned);
@@ -553,8 +577,8 @@
 
     // Sync projectCwd when chat page picks a folder via dialog
     function handleCwdChanged() {
-      const newCwd = localStorage.getItem("ocv:project-cwd");
-      if (newCwd && newCwd !== projectCwd) {
+      const newCwd = normalizeCwd(localStorage.getItem("ocv:project-cwd") ?? "") || "";
+      if (newCwd !== projectCwd) {
         projectCwd = newCwd;
       }
     }
@@ -677,14 +701,14 @@
     return url.searchParams.get("run") ?? "";
   });
 
-  // Derive project list from runs + pinned folders
+  // Derive project list from runs + pinned folders (for ProjectSelector)
   // Runs with empty or "/" cwd are "unscoped" — folded into "All Projects"
   // Pinned folders (from "Open folder..." or previous selections) always appear
   let projects = $derived.by(() => {
     const cwdMap = new Map<string, { count: number; latestAt: string }>();
     for (const run of runs) {
-      const cwd = run.cwd || "";
-      if (!cwd || cwd === "/") continue;
+      const cwd = normalizeCwd(run.cwd);
+      if (!cwd) continue;
       const existing = cwdMap.get(cwd);
       if (!existing || run.started_at > existing.latestAt) {
         cwdMap.set(cwd, { count: (existing?.count ?? 0) + 1, latestAt: run.started_at });
@@ -693,8 +717,9 @@
       }
     }
     // Include pinned cwds not already present from runs
-    for (const cwd of pinnedCwds) {
-      if (cwd && cwd !== "/" && !cwdMap.has(cwd)) {
+    for (const raw of pinnedCwds) {
+      const cwd = normalizeCwd(raw);
+      if (cwd && !cwdMap.has(cwd)) {
         cwdMap.set(cwd, { count: 0, latestAt: "" });
       }
     }
@@ -707,25 +732,8 @@
       }));
   });
 
-  // Filter runs by selected project cwd + text search
-  let filteredRuns = $derived.by(() => {
-    let result = projectCwd ? runs.filter((r) => r.cwd === projectCwd) : runs;
-    if (runSearchQuery.trim()) {
-      const q = runSearchQuery.trim().toLowerCase();
-      result = result.filter(
-        (r) =>
-          r.prompt.toLowerCase().includes(q) ||
-          (r.name && r.name.toLowerCase().includes(q)) ||
-          r.agent.toLowerCase().includes(q) ||
-          r.status.toLowerCase().includes(q),
-      );
-    }
-    return result;
-  });
-
-  // Split sidebar runs into pinned (favorited) and normal
-  let pinnedRuns = $derived(filteredRuns.filter((r) => favoriteRunIds.has(r.id)));
-  let normalRuns = $derived(filteredRuns.filter((r) => !favoriteRunIds.has(r.id)));
+  // Build project folder tree for chats tab
+  let projectFolders = $derived.by(() => buildProjectFolders(runs, favoriteRunIds, pinnedCwds));
 
   // Current page detection
   let currentPath = $derived($page.url.pathname);
@@ -762,17 +770,29 @@
     goto("/chat");
   }
 
-  function handleProjectChange(_cwd: string) {
+  function handleProjectChange(cwd: string) {
     runSearchQuery = "";
-    // Navigate to clean chat when switching projects (clears current run)
-    if (isChatPage) goto("/chat");
+    if (isChatPage && panelTab === "chats") {
+      // Auto-expand the selected project folder, don't navigate away
+      const normalized = normalizeCwd(cwd);
+      const folderKey = normalized ? `cwd:${normalized}` : "";
+      const next = expandForProjectChange(folderKey, expandedProjects);
+      if (next) expandedProjects = next;
+    }
+  }
+
+  function toggleProject(folderKey: string) {
+    const next = new Set(expandedProjects);
+    if (next.has(folderKey)) next.delete(folderKey);
+    else next.add(folderKey);
+    expandedProjects = next;
   }
 
   async function pickFolder() {
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({ directory: true, title: t("layout_selectProjectFolder") });
-      if (selected) projectCwd = selected as string;
+      if (selected) projectCwd = normalizeCwd(selected as string) || "";
     } catch (e) {
       dbgWarn("layout", "failed to open folder dialog:", e);
     }
@@ -795,6 +815,33 @@
   $effect(() => {
     localStorage.setItem("ocv:theme", themeMode);
     document.documentElement.classList.toggle("dark", effectiveDark);
+  });
+
+  // Auto-expand folder containing selected run (chats tab only)
+  // Only trigger on selectedRunId change — not on expandedProjects change
+  // (otherwise collapsing a folder re-expands immediately)
+  let _prevAutoExpandRunId = "";
+  $effect(() => {
+    if (!isChatPage || panelTab !== "chats") return;
+    const runId = selectedRunId;
+    if (runId === _prevAutoExpandRunId) return; // early-return avoids tracking expandedProjects
+    _prevAutoExpandRunId = runId;
+    const next = autoExpandForRun(runId, projectFolders, expandedProjects);
+    if (next) {
+      dbg("layout", "auto-expand for run", { selectedRunId: runId });
+      expandedProjects = next;
+    }
+  });
+
+  // Persist expandedProjects + prune stale keys (only after first successful load)
+  $effect(() => {
+    if (!runsLoadSucceededOnce) return;
+    const validKeys = new Set(projectFolders.map((f) => f.folderKey));
+    const pruned = [...expandedProjects].filter((k) => validKeys.has(k));
+    if (pruned.length !== expandedProjects.size) {
+      expandedProjects = new Set(pruned);
+    }
+    localStorage.setItem("ocv:expanded-projects", JSON.stringify(pruned));
   });
 
   // Note: <html lang> is set by initLocale() and switchLocale() directly.
@@ -1697,42 +1744,25 @@
                 {/if}
               </div>
             {:else}
-              <!-- Run list -->
+              <!-- Project folder tree -->
               <div class="flex-1 overflow-y-auto px-2 py-1">
-                {#if pinnedRuns.length > 0}
-                  <div
-                    class="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider px-3 pt-1 pb-0.5"
-                  >
-                    {t("sidebar_favorites")}
-                  </div>
-                  {#each pinnedRuns as run}
-                    <RunListItem
-                      {run}
-                      selected={run.id === selectedRunId}
-                      isFork={!!run.parent_run_id}
-                      favorite={true}
-                      onclick={() => goto(`/chat?run=${run.id}`)}
-                      onresume={(runId, mode) => goto(`/chat?run=${runId}&resume=${mode}`)}
-                    />
-                  {/each}
-                {/if}
-                {#each normalRuns as run}
-                  <RunListItem
-                    {run}
-                    selected={run.id === selectedRunId}
-                    isFork={!!run.parent_run_id}
-                    onclick={() => goto(`/chat?run=${run.id}`)}
-                    onresume={(runId, mode) => goto(`/chat?run=${runId}&resume=${mode}`)}
+                {#each projectFolders as folder (folder.folderKey)}
+                  <ProjectFolderItem
+                    {folder}
+                    label={folder.isUncategorized
+                      ? t("sidebar_uncategorized")
+                      : cwdDisplayLabel(folder.cwd)}
+                    expanded={expandedProjects.has(folder.folderKey)}
+                    {selectedRunId}
+                    onToggle={() => toggleProject(folder.folderKey)}
+                    onSelectConversation={(runId) => goto(`/chat?run=${runId}`)}
+                    onResume={(runId, mode) => goto(`/chat?run=${runId}&resume=${mode}`)}
                   />
                 {/each}
-                {#if filteredRuns.length === 0}
+                {#if projectFolders.length === 0}
                   <div class="flex flex-col items-center gap-2 px-3 py-6 text-center">
                     <p class="text-xs text-muted-foreground">
-                      {#if projectCwd && runs.length > 0}
-                        {t("sidebar_noConversationsProject")}
-                      {:else}
-                        {t("sidebar_noConversationsYet")}<br />{t("sidebar_startNewChat")}
-                      {/if}
+                      {t("sidebar_noConversationsYet")}<br />{t("sidebar_startNewChat")}
                     </p>
                   </div>
                 {/if}

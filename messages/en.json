@@ -234,6 +234,9 @@
   "sidebar_startTeamHint": "Start a team in Claude Code",
   "sidebar_members": "{count} members",
   "sidebar_tasks": "{count} tasks",
+  "sidebar_uncategorized": "Uncategorized",
+  "sidebar_conversations": "{count} conversations",
+  "sidebar_showMore": "Show {count} more...",
 
   "statusbar_toggleSidebar": "Toggle sidebar (Ctrl+B)",
   "statusbar_contextTitle": "Context usage for the latest turn ({pct}% of {tokens} tokens). The CLI automatically compacts context when approaching the limit.",
