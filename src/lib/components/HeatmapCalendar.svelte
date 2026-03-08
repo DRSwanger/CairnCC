@@ -33,7 +33,7 @@
 <div class="space-y-1">
   <!-- Month labels row -->
   <div
-    class="relative text-[9px] text-muted-foreground select-none"
+    class="relative text-[10px] text-muted-foreground select-none"
     style="height: 14px; margin-left: {DAY_LABEL_W}px;"
   >
     {#each grid.monthLabels as ml}
@@ -47,7 +47,7 @@
   <div class="flex">
     <!-- Day labels -->
     <div
-      class="shrink-0 flex flex-col text-[9px] text-muted-foreground select-none"
+      class="shrink-0 flex flex-col text-[10px] text-muted-foreground select-none"
       style="width: {DAY_LABEL_W}px;"
     >
       {#each DAY_LABELS as label}
@@ -86,7 +86,7 @@
   </div>
 
   <!-- Legend -->
-  <div class="flex items-center gap-1 text-[9px] text-muted-foreground justify-end select-none">
+  <div class="flex items-center gap-1 text-[10px] text-muted-foreground justify-end select-none">
     <span>{t("usage_heatmapLess")}</span>
     <div class="rounded-[2px] bg-muted/30" style="width: {CELL}px; height: {CELL}px;"></div>
     <div class="rounded-[2px] bg-primary/20" style="width: {CELL}px; height: {CELL}px;"></div>

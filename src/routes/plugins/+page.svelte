@@ -769,7 +769,7 @@
     <div class="space-y-4" class:hidden={activeTab !== "skills"}>
       <div>
         <h2 class="text-sm font-semibold text-foreground">{t("plugin_title")}</h2>
-        <p class="text-[11px] text-muted-foreground">
+        <p class="text-xs text-muted-foreground">
           {t("plugin_desc")}
         </p>
       </div>
@@ -818,7 +818,7 @@
           </div>
 
           <div>
-            <label class="block text-[11px] font-medium text-muted-foreground mb-1"
+            <label class="block text-xs font-medium text-muted-foreground mb-1"
               >{t("plugin_editorName")}</label
             >
             <input
@@ -830,7 +830,7 @@
           </div>
 
           <div>
-            <label class="block text-[11px] font-medium text-muted-foreground mb-1"
+            <label class="block text-xs font-medium text-muted-foreground mb-1"
               >{t("plugin_editorDescription")}</label
             >
             <input
@@ -842,7 +842,7 @@
           </div>
 
           <div>
-            <label class="block text-[11px] font-medium text-muted-foreground mb-1"
+            <label class="block text-xs font-medium text-muted-foreground mb-1"
               >{t("plugin_editorScope")}</label
             >
             <select
@@ -858,7 +858,7 @@
           </div>
 
           <div>
-            <label class="block text-[11px] font-medium text-muted-foreground mb-1"
+            <label class="block text-xs font-medium text-muted-foreground mb-1"
               >{t("plugin_editorContent")}</label
             >
             <textarea
@@ -946,14 +946,14 @@
           <!-- Scope selector -->
           <div class="flex rounded-md border border-border p-0.5 shrink-0">
             <button
-              class="rounded px-2 py-1 text-[11px] font-medium transition-colors {communityScope ===
+              class="rounded px-2 py-1 text-xs font-medium transition-colors {communityScope ===
               'user'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'}"
               onclick={() => (communityScope = "user")}>{t("plugin_scopeUser")}</button
             >
             <button
-              class="rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed {communityScope ===
+              class="rounded px-2 py-1 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed {communityScope ===
               'project'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'}"
@@ -967,7 +967,7 @@
         <div class="flex flex-wrap gap-1.5 mb-4">
           {#each ["react", "python", "security", "testing", "devops", "best practices"] as filter}
             <button
-              class="rounded-full border border-border px-2.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors {communityQuery ===
+              class="rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors {communityQuery ===
               filter
                 ? 'bg-primary/10 border-primary/30 text-foreground'
                 : ''}"
@@ -991,7 +991,7 @@
         <!-- Results / Popular -->
         {#if !communitySearching}
           <div>
-            <div class="text-[11px] font-medium text-muted-foreground mb-2">
+            <div class="text-xs font-medium text-muted-foreground mb-2">
               {communityQuery.trim().length >= 2
                 ? t("plugin_nResults", { count: String(communityResults.length) })
                 : t("plugin_popularSkills")}
@@ -1041,17 +1041,17 @@
                           >
                           <div class="flex items-center gap-2 mt-0.5">
                             {#if skill.installs > 0}
-                              <span class="text-[10px] text-muted-foreground"
+                              <span class="text-[11px] text-muted-foreground"
                                 >{formatInstallCount(skill.installs)}</span
                               >
                             {/if}
-                            <span class="text-[10px] text-muted-foreground/50 truncate"
+                            <span class="text-[10px] text-muted-foreground truncate"
                               >{skill.source}</span
                             >
                           </div>
                         </div>
                         <button
-                          class="rounded-md px-2 py-1 text-[10px] font-medium transition-colors disabled:opacity-50 shrink-0 {isInstalled
+                          class="rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 shrink-0 {isInstalled
                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 cursor-default'
                             : 'bg-primary text-primary-foreground hover:bg-primary/90'}"
                           onclick={(e) => {
@@ -1124,7 +1124,7 @@
                             {/if}
                           </div>
                           {#if communityDetail.description}
-                            <p class="text-[11px] text-muted-foreground mt-1.5">
+                            <p class="text-xs text-muted-foreground mt-1.5">
                               {communityDetail.description}
                             </p>
                           {/if}
@@ -1238,13 +1238,13 @@
                       <div class="flex items-center gap-2 mt-0.5">
                         {#if skill.scope}
                           <span
-                            class="rounded-full px-1.5 py-0.5 text-[9px] font-medium {skill.scope ===
+                            class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {skill.scope ===
                             'project'
                               ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
                               : 'bg-muted text-muted-foreground'}">{skill.scope}</span
                           >
                         {/if}
-                        <span class="text-[10px] text-muted-foreground truncate"
+                        <span class="text-[11px] text-muted-foreground truncate"
                           >{skill.description}</span
                         >
                       </div>
@@ -1292,7 +1292,7 @@
                   </div>
 
                   <div>
-                    <label class="block text-[11px] font-medium text-muted-foreground mb-1"
+                    <label class="block text-xs font-medium text-muted-foreground mb-1"
                       >{t("plugin_skillMdContent")}</label
                     >
                     <textarea
@@ -1336,7 +1336,7 @@
     <div class="space-y-4" class:hidden={activeTab !== "mcp"}>
       <div>
         <h2 class="text-sm font-semibold text-foreground">{t("plugin_mcpTitle")}</h2>
-        <p class="text-[11px] text-muted-foreground">
+        <p class="text-xs text-muted-foreground">
           {t("plugin_mcpDesc")}
         </p>
       </div>
@@ -1400,7 +1400,7 @@
     <div class="space-y-4" class:hidden={activeTab !== "plugins"}>
       <div>
         <h2 class="text-sm font-semibold text-foreground">{t("plugin_pluginsTitle")}</h2>
-        <p class="text-[11px] text-muted-foreground">{t("plugin_pluginsDesc")}</p>
+        <p class="text-xs text-muted-foreground">{t("plugin_pluginsDesc")}</p>
       </div>
 
       <!-- Source toggle -->
@@ -1464,21 +1464,21 @@
           </select>
           <div class="flex rounded-md border border-border p-0.5 shrink-0">
             <button
-              class="rounded px-2 py-1 text-[11px] font-medium transition-colors {installScope ===
+              class="rounded px-2 py-1 text-xs font-medium transition-colors {installScope ===
               'user'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'}"
               onclick={() => (installScope = "user")}>{t("plugin_scopeUser")}</button
             >
             <button
-              class="rounded px-2 py-1 text-[11px] font-medium transition-colors {installScope ===
+              class="rounded px-2 py-1 text-xs font-medium transition-colors {installScope ===
               'project'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'}"
               onclick={() => (installScope = "project")}>{t("plugin_scopeProject")}</button
             >
             <button
-              class="rounded px-2 py-1 text-[11px] font-medium transition-colors {installScope ===
+              class="rounded px-2 py-1 text-xs font-medium transition-colors {installScope ===
               'local'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'}"
@@ -1524,19 +1524,19 @@
                       <span class="text-sm font-medium text-foreground truncate">{plugin.name}</span
                       >
                       {#if plugin.version}
-                        <span class="text-[10px] text-muted-foreground shrink-0"
+                        <span class="text-[11px] text-muted-foreground shrink-0"
                           >v{plugin.version}</span
                         >
                       {/if}
                     </div>
                     {#if plugin.author}
-                      <div class="text-[11px] text-muted-foreground/70">{plugin.author.name}</div>
+                      <div class="text-xs text-muted-foreground">{plugin.author.name}</div>
                     {/if}
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
                     <!-- Install button -->
                     <button
-                      class="rounded-md bg-primary px-2 py-1 text-[10px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      class="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                       onclick={() => handleInstall(plugin.name)}
                       disabled={operationLoading === plugin.name}
                     >
@@ -1545,7 +1545,7 @@
                         : t("plugin_install")}
                     </button>
                     {#if plugin.install_count != null && plugin.install_count > 0}
-                      <span class="text-[10px] text-muted-foreground"
+                      <span class="text-[11px] text-muted-foreground"
                         >{formatInstallCount(plugin.install_count)} {t("plugin_installs")}</span
                       >
                     {/if}
@@ -1593,7 +1593,9 @@
                   {/if}
                   {#each componentBadges as badge}
                     {#if hasComponent(plugin.components, badge.key)}
-                      <span class="rounded-full px-1.5 py-0.5 text-[9px] font-medium {badge.color}">
+                      <span
+                        class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {badge.color}"
+                      >
                         {badge.label()}{#if componentCount(plugin.components, badge.key) > 0}
                           ({componentCount(plugin.components, badge.key)}){/if}
                       </span>
@@ -1605,7 +1607,7 @@
                 {#if plugin.tags.length > 0}
                   <div class="flex flex-wrap gap-1">
                     {#each plugin.tags as tag}
-                      <span class="rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground"
+                      <span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
                         >{tag}</span
                       >
                     {/each}
@@ -1654,11 +1656,11 @@
                   <div class="flex items-center gap-2">
                     <span class="text-sm font-medium text-foreground">{plugin.name}</span>
                     {#if plugin.version}
-                      <span class="text-[10px] text-muted-foreground">v{plugin.version}</span>
+                      <span class="text-[11px] text-muted-foreground">v{plugin.version}</span>
                     {/if}
                     {#if plugin.scope}
                       <span
-                        class="rounded-full px-1.5 py-0.5 text-[9px] font-medium bg-muted text-muted-foreground"
+                        class="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground"
                         >{plugin.scope}</span
                       >
                     {/if}
@@ -1676,7 +1678,7 @@
                         {#each componentBadges as badge}
                           {#if hasComponent(mpMatch.components, badge.key)}
                             <span
-                              class="rounded-full px-1.5 py-0.5 text-[9px] font-medium {badge.color}"
+                              class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {badge.color}"
                             >
                               {badge.label()}
                             </span>
@@ -1689,7 +1691,7 @@
                 <div class="flex items-center gap-2 shrink-0">
                   <!-- Enable/Disable toggle -->
                   <button
-                    class="rounded-md border border-border px-2 py-1 text-[10px] {plugin.enabled !==
+                    class="rounded-md border border-border px-2 py-1 text-xs {plugin.enabled !==
                     false
                       ? 'text-green-600 dark:text-green-400 border-green-500/30'
                       : 'text-muted-foreground'} hover:bg-muted transition-colors disabled:opacity-50"
@@ -1700,7 +1702,7 @@
                   </button>
                   <!-- Update button -->
                   <button
-                    class="rounded-md border border-border px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                    class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
                     onclick={() => handleUpdate(plugin.name, (plugin.scope as string) ?? "user")}
                     disabled={operationLoading === plugin.name}
                     title="Update plugin"
@@ -1709,7 +1711,7 @@
                   </button>
                   <!-- Uninstall button -->
                   <button
-                    class="rounded-md border border-destructive/30 px-2 py-1 text-[10px] text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                    class="rounded-md border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
                     onclick={() => handleUninstall(plugin.name, (plugin.scope as string) ?? "user")}
                     disabled={operationLoading === plugin.name}
                   >
@@ -1775,9 +1777,7 @@
                     <div class="flex items-center justify-between">
                       <div>
                         <span class="text-sm font-medium text-foreground">{mp.name}</span>
-                        <div
-                          class="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground"
-                        >
+                        <div class="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
                           <span>{t("plugin_pluginCount", { count: String(mp.plugin_count) })}</span>
                           {#if mp.last_updated}
                             <span
@@ -1790,7 +1790,7 @@
                       </div>
                       <div class="flex items-center gap-2">
                         <button
-                          class="rounded-md border border-border px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                          class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
                           onclick={() => handleUpdateMarketplace(mp.name)}
                           disabled={operationLoading === `__mp_${mp.name}`}
                         >
@@ -1799,7 +1799,7 @@
                             : t("plugin_update")}
                         </button>
                         <button
-                          class="rounded-md border border-destructive/30 px-2 py-1 text-[10px] text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                          class="rounded-md border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
                           onclick={() => handleRemoveMarketplace(mp.name)}
                           disabled={operationLoading === `__mp_${mp.name}`}
                         >

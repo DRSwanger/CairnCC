@@ -138,7 +138,7 @@
       <div class="max-h-[320px] overflow-y-auto">
         {#each slashGroups.groups as group}
           <p
-            class="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50"
+            class="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
           >
             {t(CATEGORY_I18N[group.category])}
           </p>

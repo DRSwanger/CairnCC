@@ -2005,8 +2005,7 @@
               stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg
             >
             {t("settings_shortcuts_cliShortcuts")}
-            <span
-              class="text-[10px] font-normal normal-case tracking-normal text-muted-foreground/50"
+            <span class="text-[10px] font-normal normal-case tracking-normal text-muted-foreground"
               >{t("settings_shortcuts_readOnly")}</span
             >
           </button>

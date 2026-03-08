@@ -551,7 +551,7 @@
             </svg>
             {#if fileEntries.length > 0}
               <span
-                class="absolute -top-0.5 -right-0.5 text-[8px] font-bold leading-none min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-muted-foreground/20 text-muted-foreground"
+                class="absolute -top-0.5 -right-0.5 text-[10px] font-bold leading-none min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-muted-foreground/20 text-muted-foreground"
               >
                 {fileEntries.length > 99 ? "99+" : fileEntries.length}
               </span>
@@ -628,7 +628,7 @@
                   >
                   {#if sa.meta.model}
                     <span
-                      class="text-[9px] px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-medium"
+                      class="text-[10px] px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-medium"
                       >{sa.meta.model}</span
                     >
                   {/if}
@@ -743,7 +743,7 @@
                 </span>
                 <span class="ml-auto flex items-center gap-1.5">
                   {#if tu}
-                    <span class="text-[10px] text-muted-foreground/50"
+                    <span class="text-[10px] text-muted-foreground"
                       >{formatTokens(tu.inputTokens + tu.outputTokens)}</span
                     >
                   {/if}
@@ -963,7 +963,7 @@
       </svg>
     </button>
     {#if totalToolCount > 0}
-      <span class="mt-1 text-[10px] text-muted-foreground/50" style="writing-mode: vertical-rl;"
+      <span class="mt-1 text-[10px] text-muted-foreground" style="writing-mode: vertical-rl;"
         >{totalToolCount}</span
       >
     {/if}

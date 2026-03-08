@@ -467,14 +467,14 @@
           ></span>
         {/if}
         <button
-          class="absolute top-1.5 right-1.5 text-[10px] text-neutral-500 hover:text-neutral-300 opacity-0 group-hover/copy:opacity-100 transition-opacity"
+          class="absolute top-1.5 right-1.5 text-xs text-neutral-500 hover:text-neutral-300 opacity-0 group-hover/copy:opacity-100 transition-opacity"
           onclick={() => handleCopy(`$ ${tool.input?.command}\n${outputText}`)}
           >{copyFeedback ?? t("common_copy")}</button
         >
       </div>
       {#if needsExpand}
         <button
-          class="w-full text-[10px] text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
+          class="w-full text-xs text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
           onclick={() => (outputExpanded = !outputExpanded)}
         >
           {outputExpanded
@@ -494,7 +494,7 @@
           {/if}
           {#if readContent}
             <button
-              class="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+              class="text-xs text-muted-foreground hover:text-foreground transition-colors"
               onclick={() => handleCopy(readContent)}>{copyFeedback ?? t("common_copy")}</button
             >
           {/if}
@@ -532,7 +532,7 @@
       </div>
       {#if countLines(readContent) > 20}
         <button
-          class="w-full text-[10px] text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
+          class="w-full text-xs text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
           onclick={() => (outputExpanded = !outputExpanded)}
         >
           {outputExpanded
@@ -570,7 +570,7 @@
       {@const patchLineCount = adjustedEditHunks.reduce((n, h) => n + h.lines.length, 0)}
       {#if patchLineCount > 20}
         <button
-          class="w-full text-[10px] text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
+          class="w-full text-xs text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
           onclick={() => (outputExpanded = !outputExpanded)}
         >
           {outputExpanded
@@ -604,7 +604,7 @@
       {@const fallbackLineCount = fallbackHunks.reduce((n, h) => n + h.lines.length, 0)}
       {#if fallbackLineCount > 20}
         <button
-          class="w-full text-[10px] text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
+          class="w-full text-xs text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
           onclick={() => (outputExpanded = !outputExpanded)}
         >
           {outputExpanded
@@ -641,7 +641,7 @@
       </div>
       {#if countLines(planText) > 20}
         <button
-          class="w-full text-[10px] text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
+          class="w-full text-xs text-muted-foreground/60 hover:text-muted-foreground py-1 transition-colors"
           onclick={() => (outputExpanded = !outputExpanded)}
         >
           {outputExpanded
@@ -694,7 +694,7 @@
             lang,
           )}</pre>
         {#if truncated}
-          <div class="px-2 pb-1.5 text-[10px] text-muted-foreground/50">
+          <div class="px-2 pb-1.5 text-[10px] text-muted-foreground">
             {t("tool_linesTotal", { count: String(lines.length) })}
           </div>
         {/if}
@@ -726,7 +726,7 @@
             >{/if}
         </span>
         {#if grepResult}
-          <span class="text-[10px] text-muted-foreground/50 ml-auto shrink-0">
+          <span class="text-[10px] text-muted-foreground ml-auto shrink-0">
             {grepResult.numFiles !== 1
               ? t("tool_files", { count: String(grepResult.numFiles) })
               : t("tool_file", { count: String(grepResult.numFiles) })}
@@ -772,7 +772,7 @@
             >{/if}
         </span>
         {#if globResult}
-          <span class="text-[10px] text-muted-foreground/50 ml-auto shrink-0">
+          <span class="text-[10px] text-muted-foreground ml-auto shrink-0">
             {globResult.numFiles !== 1
               ? t("tool_files", { count: String(globResult.numFiles) })
               : t("tool_file", { count: String(globResult.numFiles) })}
@@ -850,7 +850,7 @@
       <div class="text-xs font-mono text-muted-foreground truncate">
         <span class="text-sky-400">{tool.input?.query ?? ""}</span>
         {#if webSearchResult}
-          <span class="text-[10px] text-muted-foreground/50 ml-2">
+          <span class="text-[10px] text-muted-foreground ml-2">
             {t("tool_resultsCount", {
               count: String(webSearchResult.results.filter((r) => typeof r !== "string").length),
             })}
@@ -874,7 +874,7 @@
                 class="block text-xs text-sky-500 hover:text-sky-400 hover:underline truncate"
               >
                 {link.title}
-                <span class="text-muted-foreground/40 text-[10px] ml-1">{link.url}</span>
+                <span class="text-muted-foreground text-[10px] ml-1">{link.url}</span>
               </a>
             {/each}
           {/if}

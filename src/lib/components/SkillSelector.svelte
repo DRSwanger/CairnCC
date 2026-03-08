@@ -70,7 +70,7 @@
 <div bind:this={wrapperEl} class="inline-flex items-center">
   <button
     bind:this={buttonEl}
-    class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-colors
+    class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium transition-colors
       {disabled
       ? 'text-muted-foreground/40 cursor-default'
       : 'text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer'}"
@@ -123,12 +123,12 @@
               onclick={() => selectSkill(skill.name)}
             >
               <span
-                class="shrink-0 text-[11px] font-mono text-muted-foreground/50 group-hover:text-primary transition-colors"
+                class="shrink-0 text-[11px] font-mono text-muted-foreground group-hover:text-primary transition-colors"
                 >/</span
               >
               <span class="shrink-0 text-xs font-medium text-foreground">{skill.name}</span>
               {#if skill.description}
-                <span class="min-w-0 truncate text-[11px] text-muted-foreground">
+                <span class="min-w-0 truncate text-xs text-muted-foreground">
                   {skill.description}
                 </span>
               {/if}

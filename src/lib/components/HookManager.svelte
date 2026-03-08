@@ -362,7 +362,7 @@
               >{t("hooks_handlers")}</label
             >
             <button
-              class="rounded-md border border-border px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               onclick={addHandler}
             >
               + {t("hooks_addHandler")}
@@ -376,7 +376,7 @@
                   <!-- Type toggle -->
                   <div class="flex gap-1 rounded-md border border-border p-0.5">
                     <button
-                      class="rounded px-2 py-0.5 text-[10px] font-medium transition-colors {handler.type ===
+                      class="rounded px-2 py-0.5 text-xs font-medium transition-colors {handler.type ===
                       'command'
                         ? 'bg-primary text-primary-foreground'
                         : 'text-muted-foreground hover:text-foreground'}"
@@ -385,7 +385,7 @@
                       }}>{t("hooks_handlerCommand")}</button
                     >
                     <button
-                      class="rounded px-2 py-0.5 text-[10px] font-medium transition-colors {handler.type ===
+                      class="rounded px-2 py-0.5 text-xs font-medium transition-colors {handler.type ===
                       'prompt'
                         ? 'bg-primary text-primary-foreground'
                         : 'text-muted-foreground hover:text-foreground'}"

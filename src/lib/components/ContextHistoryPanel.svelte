@@ -224,7 +224,7 @@
                     {formatDelta(catDelta.pctDelta)}
                   </span>
                 {:else}
-                  <span class="text-[10px] text-muted-foreground/30 w-12 text-right">&mdash;</span>
+                  <span class="text-[10px] text-muted-foreground w-12 text-right">&mdash;</span>
                 {/if}
               </div>
             {/each}
@@ -259,7 +259,7 @@
               <span class="flex items-center gap-1">
                 <span class="text-foreground/80 font-mono tabular-nums">
                   {formatTokens(sessionInfo.inputTokens)}
-                  {#if sessionInfo.tokensEstimated}<span class="text-muted-foreground/50 text-[9px]"
+                  {#if sessionInfo.tokensEstimated}<span class="text-muted-foreground text-[10px]"
                       >{t("infoPanel_estimated")}</span
                     >{/if}
                 </span>
@@ -275,7 +275,7 @@
               <span class="flex items-center gap-1">
                 <span class="text-foreground/80 font-mono tabular-nums">
                   {formatTokens(sessionInfo.outputTokens)}
-                  {#if sessionInfo.tokensEstimated}<span class="text-muted-foreground/50 text-[9px]"
+                  {#if sessionInfo.tokensEstimated}<span class="text-muted-foreground text-[10px]"
                       >{t("infoPanel_estimated")}</span
                     >{/if}
                 </span>
@@ -319,7 +319,7 @@
                 <span class="text-muted-foreground">{t("infoPanel_contextWindow")}</span>
                 <span class="text-foreground/80 font-mono tabular-nums">
                   {formatTokens(sessionInfo.contextWindow)}
-                  <span class="text-muted-foreground/50 text-[9px] ml-0.5"
+                  <span class="text-muted-foreground text-[10px] ml-0.5"
                     >({Math.round(sessionInfo.contextUtilization * 100)}%)</span
                   >
                 </span>
@@ -386,7 +386,7 @@
                 {/if}
               </div>
               {#if entry.tu}
-                <div class="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground/50">
+                <div class="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
                   <span>{formatCost(getTurnCost(entry.tu))}</span>
                   <span>{formatTokens(entry.tu.inputTokens + entry.tu.outputTokens)} tok</span>
                   {#if entry.tu.durationMs}

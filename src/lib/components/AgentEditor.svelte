@@ -204,7 +204,7 @@
       >
         {t("agent_formMode")}
         {#if mode === "edit"}
-          <span class="text-[9px] opacity-60">(view)</span>
+          <span class="text-[10px] opacity-60">(view)</span>
         {/if}
       </button>
       <button

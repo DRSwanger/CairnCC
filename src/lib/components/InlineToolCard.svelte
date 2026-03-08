@@ -1240,7 +1240,7 @@
             href={String(tool.input.remoteSessionUrl)}
             target="_blank"
             rel="noopener noreferrer"
-            class="mb-3 flex items-center gap-1.5 rounded border border-blue-500/20 bg-blue-500/5 px-2.5 py-1.5 text-[11px] font-medium text-blue-400 hover:bg-blue-500/10 transition-colors w-fit"
+            class="mb-3 flex items-center gap-1.5 rounded border border-blue-500/20 bg-blue-500/5 px-2.5 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors w-fit"
           >
             <svg
               class="h-3 w-3 shrink-0"
@@ -1577,7 +1577,7 @@
           <!-- Duration + output size -->
           <div class="flex items-center gap-1.5 shrink-0">
             {#if outputSizeLabel}
-              <span class="text-[10px] text-muted-foreground/40">{outputSizeLabel}</span>
+              <span class="text-[10px] text-muted-foreground">{outputSizeLabel}</span>
             {/if}
             {#if durationLabel}
               <span class="text-[10px] text-muted-foreground/60">{durationLabel}</span>

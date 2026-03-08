@@ -172,14 +172,14 @@
               <span class="text-sm font-medium text-foreground truncate block">{server.name}</span>
               <div class="flex items-center gap-1.5 mt-0.5">
                 <span
-                  class="rounded-full px-1.5 py-0.5 text-[9px] font-medium {typeBadgeColor(
+                  class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {typeBadgeColor(
                     server.server_type,
                   )}"
                 >
                   {server.server_type}
                 </span>
                 <span
-                  class="rounded-full px-1.5 py-0.5 text-[9px] font-medium {scopeBadgeColor(
+                  class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {scopeBadgeColor(
                     server.scope,
                   )}"
                 >
@@ -230,14 +230,14 @@
               <h3 class="text-sm font-semibold text-foreground">{selectedServer.name}</h3>
               <div class="flex items-center gap-1.5 mt-1">
                 <span
-                  class="rounded-full px-1.5 py-0.5 text-[9px] font-medium {typeBadgeColor(
+                  class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {typeBadgeColor(
                     selectedServer.server_type,
                   )}"
                 >
                   {selectedServer.server_type}
                 </span>
                 <span
-                  class="rounded-full px-1.5 py-0.5 text-[9px] font-medium {scopeBadgeColor(
+                  class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {scopeBadgeColor(
                     selectedServer.scope,
                   )}"
                 >

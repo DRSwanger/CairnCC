@@ -335,7 +335,7 @@
               <div class="pl-8 pb-2 space-y-0.5">
                 {#each groupedPlatforms as group}
                   <p
-                    class="px-1 pt-1.5 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/50"
+                    class="px-1 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
                   >
                     {group.label}
                   </p>
@@ -345,7 +345,7 @@
                     {@const hasCred = !!findCredential(platformCredentials, platform.id)?.api_key}
                     {@const isSelected = platform.id === platformId}
                     <button
-                      class="flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-[11px] hover:bg-accent/70 transition-colors"
+                      class="flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-xs hover:bg-accent/70 transition-colors"
                       onclick={() => selectPlatform(platform.id)}
                     >
                       <span
@@ -382,7 +382,7 @@
 
           <!-- Configure link -->
           <button
-            class="flex w-full items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            class="flex w-full items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             onclick={() => {
               dropdownOpen = false;
               goto("/settings");

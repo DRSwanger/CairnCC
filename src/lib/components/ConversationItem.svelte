@@ -139,7 +139,7 @@
     <div class="flex items-center gap-1 shrink-0">
       {#if runCount > 1}
         <span
-          class="inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-muted px-1 text-[8px] font-medium text-muted-foreground"
+          class="inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-muted px-1 text-[10px] font-medium text-muted-foreground"
           title={t("sidebar_conversations", { count: String(runCount) })}>{runCount}</span
         >
       {/if}

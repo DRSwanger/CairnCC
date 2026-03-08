@@ -297,13 +297,13 @@
     <div class="px-3 py-2">
       <div class="flex items-center gap-2">
         <button
-          class="text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-accent"
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-accent"
           onclick={() => goto("/settings?tab=cli-config")}
         >
           {t("infoPanel_goConfig")}
         </button>
         <button
-          class="text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-accent"
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-accent"
           onclick={() => goto("/usage")}
         >
           {t("infoPanel_goUsage")}

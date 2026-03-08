@@ -117,7 +117,7 @@
         {#each parsed.subTables as table}
           <div>
             <button
-              class="flex items-center gap-1 text-[11px] text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+              class="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground transition-colors"
               onclick={() => toggleSection(table.title)}
             >
               <svg

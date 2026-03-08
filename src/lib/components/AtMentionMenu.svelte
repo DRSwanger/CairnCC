@@ -134,7 +134,7 @@
           </span>
 
           {#if !entry.is_dir && entry.size > 0}
-            <span class="shrink-0 text-[10px] text-muted-foreground/40">
+            <span class="shrink-0 text-[10px] text-muted-foreground">
               {formatSize(entry.size)}
             </span>
           {/if}

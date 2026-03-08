@@ -471,7 +471,7 @@
           >
             {modelLabel}
             {#if showEffort && effort}
-              <span class="text-foreground/40 text-[10px]">{effort}</span>
+              <span class="text-foreground/60 text-[10px]">{effort}</span>
             {/if}
             <svg
               class="h-3 w-3 text-foreground/40"
@@ -616,7 +616,7 @@
 
       {#if toolsCount && toolsCount > 0 && onToolsClick}
         <button
-          class="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors"
           onclick={onToolsClick}
           title={t("statusbar_showTools")}
         >
@@ -707,7 +707,7 @@
             >{formatTokens(inputTokens)} / {formatTokens(outputTokens)} {t("statusbar_tok")}</span
           >
           {#if cacheReadTokens > 0 || cacheWriteTokens > 0}
-            <span class="text-foreground/30 text-[10px] shrink-0"
+            <span class="text-foreground/60 text-[10px] shrink-0"
               >{t("statusbar_cacheRW", {
                 read: formatTokens(cacheReadTokens),
                 write: formatTokens(cacheWriteTokens),
@@ -839,7 +839,7 @@
             <span class="w-3 shrink-0"></span>
           {/if}
           <span class="shrink-0 text-foreground">{m.displayName}</span>
-          <span class="text-[10px] text-foreground/50 truncate">{m.description}</span>
+          <span class="text-[10px] text-foreground/70 truncate">{m.description}</span>
         </button>
       {/each}
     </div>
@@ -858,7 +858,7 @@
           <div class="flex gap-1">
             {#each effortLevels as level}
               <button
-                class="flex-1 rounded px-2 py-1 text-[11px] transition-colors
+                class="flex-1 rounded px-2 py-1 text-xs transition-colors
                   {effort === level
                   ? 'bg-primary text-primary-foreground font-medium'
                   : 'bg-muted/50 text-muted-foreground hover:bg-accent'}"

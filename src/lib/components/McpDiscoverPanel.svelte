@@ -307,13 +307,13 @@
   <!-- Scope selector -->
   <div class="flex rounded-md border border-border p-0.5 shrink-0">
     <button
-      class="rounded px-2 py-1 text-[11px] font-medium transition-colors {installScope === 'user'
+      class="rounded px-2 py-1 text-xs font-medium transition-colors {installScope === 'user'
         ? 'bg-primary text-primary-foreground'
         : 'text-muted-foreground hover:text-foreground'}"
       onclick={() => (installScope = "user")}>{t("mcp_scopeUser")}</button
     >
     <button
-      class="rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed {installScope ===
+      class="rounded px-2 py-1 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed {installScope ===
       'project'
         ? 'bg-primary text-primary-foreground'
         : 'text-muted-foreground hover:text-foreground'}"
@@ -321,7 +321,7 @@
       onclick={() => (installScope = "project")}>{t("mcp_scopeProject")}</button
     >
     <button
-      class="rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed {installScope ===
+      class="rounded px-2 py-1 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed {installScope ===
       'local'
         ? 'bg-primary text-primary-foreground'
         : 'text-muted-foreground hover:text-foreground'}"
@@ -335,7 +335,7 @@
 <div class="flex flex-wrap gap-1.5 mb-4">
   {#each ["filesystem", "database", "github", "api", "web", "docker"] as filter}
     <button
-      class="rounded-full border border-border px-2.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors {query ===
+      class="rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors {query ===
       filter
         ? 'bg-primary/10 border-primary/30 text-foreground'
         : ''}"
@@ -411,7 +411,7 @@
                       <span class="text-[10px] text-muted-foreground">v{server.version}</span>
                     {/if}
                     <span
-                      class="rounded-full px-1.5 py-0.5 text-[9px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400"
+                      class="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400"
                     >
                       {getTransportLabel(server)}
                     </span>
@@ -424,7 +424,7 @@
                   >
                 {:else}
                   <button
-                    class="rounded-md px-2 py-1 text-[10px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0"
+                    class="rounded-md px-2 py-1 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0"
                     onclick={(e) => {
                       e.stopPropagation();
                       handleInstall(server);
@@ -454,7 +454,7 @@
                       <span class="text-[10px] text-muted-foreground">v{detail.version}</span>
                     {/if}
                     <span
-                      class="rounded-full px-1.5 py-0.5 text-[9px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400"
+                      class="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400"
                     >
                       {getTransportLabel(detail)}
                     </span>
@@ -500,7 +500,7 @@
                       <div class="flex items-center gap-2">
                         <span class="font-mono text-foreground">{pkg.identifier}</span>
                         <span
-                          class="rounded-full px-1.5 py-0.5 text-[9px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                          class="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400"
                         >
                           {pkg.registryType}
                         </span>

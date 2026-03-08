@@ -441,7 +441,7 @@
           <div class="flex h-40">
             <!-- Y-axis labels -->
             <div
-              class="flex flex-col justify-between items-end pr-2 text-[9px] text-muted-foreground tabular-nums shrink-0 py-0.5"
+              class="flex flex-col justify-between items-end pr-2 text-[10px] text-muted-foreground tabular-nums shrink-0 py-0.5"
             >
               <span>{formatAxisValue(maxDailyValue)}</span>
               <span>{formatAxisValue(maxDailyValue / 2)}</span>
@@ -476,7 +476,7 @@
                     i % Math.ceil(data.daily.slice(-30).length / 10) === 0}
                   <div class="flex-1 min-w-0 text-center">
                     {#if showLabel}
-                      <span class="text-[8px] text-muted-foreground tabular-nums">
+                      <span class="text-[10px] text-muted-foreground tabular-nums">
                         {formatShortDate(day.date)}
                       </span>
                     {/if}

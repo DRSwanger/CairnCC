@@ -280,7 +280,7 @@
                 >{t("team_tasksCount", { count: String(teamStore.tasks.length) })}</span
               >
               {#if teamStore.teamConfig.createdAt}
-                <span class="text-[10px] text-muted-foreground/50"
+                <span class="text-[10px] text-muted-foreground"
                   >{timeAgoEpoch(teamStore.teamConfig.createdAt)}</span
                 >
               {/if}
@@ -335,7 +335,7 @@
             {#each teamStore.teamConfig.members as member}
               {@const isLead = member.agentId === teamStore.teamConfig.leadAgentId}
               <button
-                class="shrink-0 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors {expandedMemberName ===
+                class="shrink-0 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors {expandedMemberName ===
                 member.name
                   ? 'border-primary/40 bg-primary/5'
                   : 'border-border/40 bg-card hover:bg-accent/50'}"
@@ -356,7 +356,7 @@
                 </span>
                 <span class="font-medium text-foreground">{member.name}</span>
                 {#if member.agentType}
-                  <span class="rounded bg-muted px-1 py-0.5 text-[9px] font-medium"
+                  <span class="rounded bg-muted px-1 py-0.5 text-[10px] font-medium"
                     >{member.agentType}</span
                   >
                 {/if}
@@ -365,19 +365,19 @@
                 {/if}
                 {#if member.isActive}
                   <span
-                    class="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-medium text-emerald-600 dark:text-emerald-400"
+                    class="rounded bg-emerald-500/10 px-1 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
                     >{t("team_badgeActive")}</span
                   >
                 {/if}
                 {#if member.planModeRequired}
                   <span
-                    class="rounded bg-violet-500/10 px-1 py-0.5 text-[9px] font-medium text-violet-600 dark:text-violet-400"
+                    class="rounded bg-violet-500/10 px-1 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400"
                     >{t("team_badgePlan")}</span
                   >
                 {/if}
                 {#if isLead}
                   <span
-                    class="rounded bg-primary/10 px-1 py-0.5 text-[9px] font-bold text-primary uppercase"
+                    class="rounded bg-primary/10 px-1 py-0.5 text-[10px] font-bold text-primary uppercase"
                     >{t("team_badgeLead")}</span
                   >
                 {/if}
@@ -422,11 +422,8 @@
                 </div>
                 {#if member.prompt}
                   <div class="mt-1.5">
-                    <span class="text-[10px] text-muted-foreground/50">{t("team_labelPrompt")}</span
-                    >
-                    <p
-                      class="text-[11px] text-foreground/70 whitespace-pre-wrap break-words mt-0.5"
-                    >
+                    <span class="text-[10px] text-muted-foreground">{t("team_labelPrompt")}</span>
+                    <p class="text-xs text-foreground/70 whitespace-pre-wrap break-words mt-0.5">
                       {member.prompt}
                     </p>
                   </div>
@@ -442,7 +439,7 @@
             <!-- Agent tabs -->
             <div class="shrink-0 flex gap-0.5 border-b border-border px-4 overflow-x-auto">
               <button
-                class="shrink-0 px-3 py-1.5 text-[11px] font-medium transition-colors border-b-2 {inboxTab ===
+                class="shrink-0 px-3 py-1.5 text-xs font-medium transition-colors border-b-2 {inboxTab ===
                 'all'
                   ? 'text-foreground border-primary'
                   : 'text-muted-foreground hover:text-foreground border-transparent'}"
@@ -450,7 +447,7 @@
               >
               {#each teamStore.teamConfig.members as member}
                 <button
-                  class="shrink-0 px-3 py-1.5 text-[11px] font-medium transition-colors border-b-2 {inboxTab ===
+                  class="shrink-0 px-3 py-1.5 text-xs font-medium transition-colors border-b-2 {inboxTab ===
                   member.name
                     ? 'text-foreground border-primary'
                     : 'text-muted-foreground hover:text-foreground border-transparent'}"
@@ -491,7 +488,7 @@
                         <span class="text-[11px] font-medium {msgColorClass(msg.color)}"
                           >{msg.from}</span
                         >
-                        <span class="text-[10px] text-muted-foreground/40 ml-auto shrink-0"
+                        <span class="text-[10px] text-muted-foreground ml-auto shrink-0"
                           >{timeAgo(msg.timestamp)}</span
                         >
                         {#if !msg.read}
@@ -649,7 +646,7 @@
                             <!-- Unknown structured type -->
                             <div class="flex items-center gap-1.5 text-[11px]">
                               <span
-                                class="rounded bg-muted px-1 py-0.5 text-[9px] text-muted-foreground"
+                                class="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground"
                                 >{parsed.type}</span
                               >
                               <span class="text-muted-foreground"
@@ -793,12 +790,12 @@
                             </div>
                             {#if task.blockedBy.length > 0}
                               <div class="flex items-center gap-1 mt-1 flex-wrap">
-                                <span class="text-[9px] text-amber-600 dark:text-amber-400"
+                                <span class="text-[10px] text-amber-600 dark:text-amber-400"
                                   >{t("team_blockedBy")}</span
                                 >
                                 {#each task.blockedBy as dep}
                                   <span
-                                    class="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-mono text-amber-600 dark:text-amber-400"
+                                    class="rounded bg-amber-500/10 px-1 py-0.5 text-[10px] font-mono text-amber-600 dark:text-amber-400"
                                     >#{dep}</span
                                   >
                                 {/each}
@@ -806,12 +803,12 @@
                             {/if}
                             {#if task.blocks.length > 0}
                               <div class="flex items-center gap-1 mt-0.5 flex-wrap">
-                                <span class="text-[9px] text-emerald-600 dark:text-emerald-400"
+                                <span class="text-[10px] text-emerald-600 dark:text-emerald-400"
                                   >{t("team_unblocks")}</span
                                 >
                                 {#each task.blocks as dep}
                                   <span
-                                    class="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-mono text-emerald-600 dark:text-emerald-400"
+                                    class="rounded bg-emerald-500/10 px-1 py-0.5 text-[10px] font-mono text-emerald-600 dark:text-emerald-400"
                                     >#{dep}</span
                                   >
                                 {/each}
@@ -852,7 +849,7 @@
                               <div class="mt-1.5 flex flex-wrap gap-1">
                                 {#each Object.entries(task.metadata as Record<string, unknown>) as [k, v]}
                                   <span
-                                    class="rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground"
+                                    class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
                                     >{k}: {typeof v === "string" ? v : JSON.stringify(v)}</span
                                   >
                                 {/each}
@@ -910,12 +907,12 @@
                             </div>
                             {#if task.blockedBy.length > 0}
                               <div class="flex items-center gap-1 mt-1 flex-wrap">
-                                <span class="text-[9px] text-amber-600 dark:text-amber-400"
+                                <span class="text-[10px] text-amber-600 dark:text-amber-400"
                                   >{t("team_blockedBy")}</span
                                 >
                                 {#each task.blockedBy as dep}
                                   <span
-                                    class="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-mono text-amber-600 dark:text-amber-400"
+                                    class="rounded bg-amber-500/10 px-1 py-0.5 text-[10px] font-mono text-amber-600 dark:text-amber-400"
                                     >#{dep}</span
                                   >
                                 {/each}
@@ -923,12 +920,12 @@
                             {/if}
                             {#if task.blocks.length > 0}
                               <div class="flex items-center gap-1 mt-0.5 flex-wrap">
-                                <span class="text-[9px] text-emerald-600 dark:text-emerald-400"
+                                <span class="text-[10px] text-emerald-600 dark:text-emerald-400"
                                   >{t("team_unblocks")}</span
                                 >
                                 {#each task.blocks as dep}
                                   <span
-                                    class="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-mono text-emerald-600 dark:text-emerald-400"
+                                    class="rounded bg-emerald-500/10 px-1 py-0.5 text-[10px] font-mono text-emerald-600 dark:text-emerald-400"
                                     >#{dep}</span
                                   >
                                 {/each}
@@ -969,7 +966,7 @@
                               <div class="mt-1.5 flex flex-wrap gap-1">
                                 {#each Object.entries(task.metadata as Record<string, unknown>) as [k, v]}
                                   <span
-                                    class="rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground"
+                                    class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
                                     >{k}: {typeof v === "string" ? v : JSON.stringify(v)}</span
                                   >
                                 {/each}
@@ -1020,9 +1017,7 @@
                             </div>
                             <div class="flex items-center gap-2 mt-0.5 flex-wrap">
                               {#if task.owner}
-                                <span class="text-[10px] text-muted-foreground/50"
-                                  >{task.owner}</span
-                                >
+                                <span class="text-[10px] text-muted-foreground">{task.owner}</span>
                               {/if}
                               {#if task.activeForm}
                                 <span class="text-[10px] text-emerald-400/60 italic"
@@ -1032,12 +1027,12 @@
                             </div>
                             {#if task.blockedBy.length > 0}
                               <div class="flex items-center gap-1 mt-1 flex-wrap">
-                                <span class="text-[9px] text-amber-600 dark:text-amber-400"
+                                <span class="text-[10px] text-amber-600 dark:text-amber-400"
                                   >{t("team_blockedBy")}</span
                                 >
                                 {#each task.blockedBy as dep}
                                   <span
-                                    class="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-mono text-amber-600 dark:text-amber-400"
+                                    class="rounded bg-amber-500/10 px-1 py-0.5 text-[10px] font-mono text-amber-600 dark:text-amber-400"
                                     >#{dep}</span
                                   >
                                 {/each}
@@ -1045,12 +1040,12 @@
                             {/if}
                             {#if task.blocks.length > 0}
                               <div class="flex items-center gap-1 mt-0.5 flex-wrap">
-                                <span class="text-[9px] text-emerald-600 dark:text-emerald-400"
+                                <span class="text-[10px] text-emerald-600 dark:text-emerald-400"
                                   >{t("team_unblocks")}</span
                                 >
                                 {#each task.blocks as dep}
                                   <span
-                                    class="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-mono text-emerald-600 dark:text-emerald-400"
+                                    class="rounded bg-emerald-500/10 px-1 py-0.5 text-[10px] font-mono text-emerald-600 dark:text-emerald-400"
                                     >#{dep}</span
                                   >
                                 {/each}
@@ -1091,7 +1086,7 @@
                               <div class="mt-1.5 flex flex-wrap gap-1">
                                 {#each Object.entries(task.metadata as Record<string, unknown>) as [k, v]}
                                   <span
-                                    class="rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground"
+                                    class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
                                     >{k}: {typeof v === "string" ? v : JSON.stringify(v)}</span
                                   >
                                 {/each}
