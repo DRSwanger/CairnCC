@@ -115,9 +115,13 @@ pub fn setup_job_kill_on_close() {
     const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS: u32 = 9;
     const ERROR_ACCESS_DENIED: u32 = 5;
 
+    #[allow(clippy::upper_case_acronyms)]
     type HANDLE = *mut c_void;
+    #[allow(clippy::upper_case_acronyms)]
     type BOOL = i32;
+    #[allow(clippy::upper_case_acronyms)]
     type DWORD = u32;
+    #[allow(clippy::upper_case_acronyms)]
     type LPCWSTR = *const u16;
 
     // ── Win32 structs (layout from Windows SDK winnt.h) ─────────────────
