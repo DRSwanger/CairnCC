@@ -79,11 +79,7 @@ pub async fn detect_install_methods() -> Result<Vec<InstallMethod>, String> {
         methods.push(InstallMethod {
             id: "powershell".into(),
             name: "PowerShell".into(),
-            command: if let Some(bin) = ps_bin {
-                format!("{bin} -NoProfile -ExecutionPolicy Bypass -Command \"[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm https://claude.ai/install.ps1 | iex\"")
-            } else {
-                "powershell -NoProfile -ExecutionPolicy Bypass -Command \"[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm https://claude.ai/install.ps1 | iex\"".into()
-            },
+            command: "irm https://claude.ai/install.ps1 | iex".into(),
             available: ps_bin.is_some(),
             unavailable_reason: if ps_bin.is_some() {
                 None
