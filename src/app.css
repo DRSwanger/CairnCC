@@ -649,6 +649,7 @@ code.hljs {
   font-family:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 13px;
+  tab-size: 2;
   height: 100%;
 }
 .cm-editor .cm-scroller {
