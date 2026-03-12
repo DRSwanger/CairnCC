@@ -646,6 +646,8 @@ code.hljs {
 .cm-editor {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 13px;
   height: 100%;
 }
@@ -655,15 +657,22 @@ code.hljs {
   overflow: auto;
 }
 .cm-editor .cm-gutters {
-  background-color: hsl(var(--muted) / 0.3);
+  background-color: hsl(var(--muted) / 0.4);
   border-right: 1px solid hsl(var(--border));
   color: hsl(var(--muted-foreground));
 }
+.cm-editor .cm-lineNumbers .cm-gutterElement {
+  padding-right: 12px;
+  padding-left: 8px;
+}
 .cm-editor .cm-activeLineGutter {
-  background-color: hsl(var(--muted) / 0.5);
+  background-color: hsl(var(--muted) / 0.65);
 }
 .cm-editor .cm-activeLine {
   background-color: hsl(var(--muted) / 0.2);
+}
+.cm-editor .cm-content {
+  padding-left: 8px;
 }
 .cm-editor.cm-focused {
   outline: none;
