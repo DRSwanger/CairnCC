@@ -676,9 +676,32 @@ code.hljs {
    (observed on Intel Mac WKWebView, Windows WebView2), causing white-space
    to fall back to 'normal' and collapse all leading indentation. */
 .cm-editor .cm-content {
+  flex: 1 1 auto;
+  min-width: 0;
   white-space: pre-wrap;
   word-break: break-word;
   padding-left: 8px;
+}
+/* Overlay layers: style-mod normally injects position/z-index/contain.
+   Without these, the layers render in normal flow as visible blocks. */
+.cm-editor .cm-selectionLayer {
+  z-index: -1;
+  contain: size style;
+  pointer-events: none;
+}
+.cm-editor .cm-cursorLayer {
+  z-index: 100;
+  contain: size style;
+  pointer-events: none;
+}
+.cm-editor .cm-cursor {
+  position: absolute;
+  border-left: 1.2px solid #528bff;
+  margin-left: -0.6px;
+}
+.cm-editor .cm-content[contenteditable] {
+  outline: none;
+  caret-color: transparent;
 }
 .cm-editor.cm-focused {
   outline: none;
