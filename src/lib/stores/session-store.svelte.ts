@@ -1003,6 +1003,14 @@ export class SessionStore {
     this.sessionCwd = "";
     this.sessionTools = [];
     this.outputStyle = "";
+    // If agent entered plan mode (previousPermissionMode is non-empty), restore the user's
+    // actual preference. If user manually selected plan (previousPermissionMode is empty),
+    // leave it alone — it's a user-level preference.
+    if (this.permissionMode === "plan" && this.previousPermissionMode) {
+      const restored = this.previousPermissionMode;
+      this.permissionMode = restored;
+      dbg("store", "permissionMode restored from agent plan on clear", { restored });
+    }
     this.previousPermissionMode = "";
     this.pendingPermissionModeOverride = null;
     this.pendingClearContextPlan = null;
@@ -2659,6 +2667,23 @@ export class SessionStore {
               (t.status === "running" && !!t.permission_request_id),
             ctx,
           );
+        }
+        // Clear stale elicitations on state transitions — CLI won't send control_cancelled
+        // for these if the session ends abnormally or restarts.
+        if (
+          ev.state === "idle" ||
+          ev.state === "spawning" ||
+          ev.state === "completed" ||
+          ev.state === "failed" ||
+          ev.state === "stopped"
+        ) {
+          if (this.pendingElicitations.size > 0) {
+            dbg("store", "run_state clearing stale elicitations", {
+              state: ev.state,
+              count: this.pendingElicitations.size,
+            });
+            this.pendingElicitations = new Map();
+          }
         }
         break;
 

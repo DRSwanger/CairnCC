@@ -54,8 +54,25 @@
     formValues = { ...formValues, [key]: value };
   }
 
+  // Check required fields against current schema
+  let missingRequired = $derived.by(() => {
+    if (!current?.requestedSchema) return [];
+    const required = current.requestedSchema.required ?? [];
+    const props = current.requestedSchema.properties ?? {};
+    return required.filter((key) => {
+      if (!(key in props)) return false;
+      const val = formValues[key];
+      if (val === undefined || val === null || val === "") return true;
+      return false;
+    });
+  });
+
   async function handleAccept() {
     if (!current || submitting) return;
+    if (missingRequired.length > 0) {
+      dbgWarn("ElicitationDialog", "required fields missing", { keys: missingRequired });
+      return;
+    }
     submitting = true;
     dbg("ElicitationDialog", "accept", { requestId: current.requestId });
     try {
@@ -225,7 +242,7 @@
       </button>
       <button
         class="rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-500 disabled:opacity-50"
-        disabled={submitting}
+        disabled={submitting || missingRequired.length > 0}
         onclick={handleAccept}
       >
         {submitting ? "..." : t("elicitation_accept")}

@@ -2708,10 +2708,10 @@
     const runId = store.run.id;
     dbg("chat", "elicitation respond", { runId, requestId, action });
     try {
-      // Optimistic cleanup before await
+      await api.respondElicitation(runId, requestId, action, content);
+      // Cleanup after successful response — not optimistic, avoids card loss on failure
       const { resolveElicitationOptimistic } = await import("$lib/utils/resolve-elicitation");
       resolveElicitationOptimistic(store, runId, requestId);
-      await api.respondElicitation(runId, requestId, action, content);
     } catch (e) {
       dbgWarn("chat", "elicitation respond failed:", e);
       store.error = String(e);
