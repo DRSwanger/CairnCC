@@ -71,7 +71,11 @@
   import { ansiToHtml, hasAnsiCodes } from "$lib/utils/ansi";
   import { randomSpinnerVerb } from "$lib/utils/spinner-verbs";
   import { type TurnUsage, classifyError } from "$lib/stores/types";
-  import { mergeWithVirtual, buildHelpText } from "$lib/utils/slash-commands";
+  import {
+    mergeWithVirtual,
+    buildHelpText,
+    CONTEXT_CLEARED_MARKER,
+  } from "$lib/utils/slash-commands";
   import { executeAddDir } from "$lib/utils/add-dir";
   import { buildDoctorReport } from "$lib/utils/doctor";
   import type { RewindCandidate, RewindMarker } from "$lib/utils/rewind";
@@ -2262,6 +2266,29 @@
           }),
         );
       }
+    } else if (action === "clear-context") {
+      if (!store.run || !store.sessionAlive) {
+        appendCommandOutput(t("chat_noActiveSession"));
+        return;
+      }
+      if (!store.useStreamSession) {
+        appendCommandOutput(t("chat_clearNotSupported"));
+        return;
+      }
+      if (store.isRunning) {
+        appendCommandOutput(t("chat_clearSessionBusy"));
+        return;
+      }
+      dbg("chat", "clear-context: stopping session", { runId: store.run.id });
+      try {
+        await store.stop();
+        dbg("chat", "clear-context: navigating to fresh chat");
+        goto("/chat", { replaceState: true });
+        window.dispatchEvent(new Event("ocv:runs-changed"));
+      } catch (e) {
+        dbgWarn("chat", "clear-context failed", e);
+        store.error = String(e);
+      }
     } else if (action === "rewind") {
       if (!store.run) {
         appendCommandOutput(t("rewind_noSession"));
@@ -2725,6 +2752,15 @@
       map.set(store.timeline[i].id, i);
     }
     return map;
+  });
+
+  // ID of the last context-cleared separator (for dimming messages above it)
+  let lastClearSepId = $derived.by(() => {
+    for (let i = store.timeline.length - 1; i >= 0; i--) {
+      const e = store.timeline[i];
+      if (e.kind === "separator" && e.content === CONTEXT_CLEARED_MARKER) return e.id;
+    }
+    return null;
   });
 
   // Latest plan tool card's tool_use_id (for auto-expand)
@@ -3284,6 +3320,9 @@
                     id="msg-{entry.ts}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
+                    class:opacity-40={lastClearSepId !== null &&
+                      (timelineIdIndex.get(entry.id) ?? 0) <
+                        (timelineIdIndex.get(lastClearSepId) ?? 0)}
                   >
                     {#if batchGroups.has(i)}
                       {@const batch = batchGroups.get(i)}
@@ -3420,7 +3459,9 @@
                           <div class="flex items-center gap-3">
                             <div class="h-px flex-1 bg-amber-500/20"></div>
                             <span class="text-xs text-amber-500/70 font-medium whitespace-nowrap">
-                              {entry.content}
+                              {entry.content === CONTEXT_CLEARED_MARKER
+                                ? t("chat_contextCleared")
+                                : entry.content}
                             </span>
                             <div class="h-px flex-1 bg-amber-500/20"></div>
                           </div>
