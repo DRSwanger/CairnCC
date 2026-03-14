@@ -18,6 +18,7 @@ import type {
 import { dbg, dbgWarn } from "$lib/utils/debug";
 import type { SessionMode, CliCommand } from "$lib/types";
 import { IMAGE_TYPES } from "$lib/utils/file-types";
+import { uuid } from "$lib/utils/uuid";
 import {
   type SessionPhase,
   type UsageState,
@@ -30,6 +31,7 @@ import {
 import { getEventMiddleware } from "./event-middleware";
 import { updateInstalledVersion, getCliCommands } from "./cli-info.svelte";
 import * as snapshotCache from "$lib/utils/snapshot-cache";
+import { getTransport } from "$lib/transport";
 
 // ── OpGuard: async operation guard with mounted check ──
 
@@ -233,6 +235,9 @@ export class SessionStore {
   // Internal dedup sets (not reactive — only used inside reducers)
   private _seenMessageIds = new Set<string>();
   private _seenToolIds = new Set<string>();
+
+  /** Highest _seq processed — used for WS checkpoint on reconnect/subscribe */
+  private _lastProcessedSeq = 0;
 
   // Generation counter: prevents stale async loadRun from overwriting state
   private _loadGen = 0;
@@ -763,6 +768,23 @@ export class SessionStore {
       dbg("store", "drop stale event", ev.type, "run_id=", ev.run_id, "current=", this.run?.id);
       return;
     }
+    // Track WS sequence checkpoint — skip already-processed events (dedup)
+    const evSeq = ((ev as Record<string, unknown>)._seq as number) ?? 0;
+    if (evSeq > 0) {
+      if (evSeq <= this._lastProcessedSeq) {
+        dbg(
+          "store",
+          "drop duplicate event",
+          ev.type,
+          "seq=",
+          evSeq,
+          "last=",
+          this._lastProcessedSeq,
+        );
+        return;
+      }
+      this._lastProcessedSeq = evSeq;
+    }
     this._reduce(ev, null);
   }
 
@@ -789,6 +811,9 @@ export class SessionStore {
       turnUsages: [...this.turnUsages],
     };
     for (const ev of events) {
+      // Track WS sequence checkpoint
+      const evSeq = ((ev as Record<string, unknown>)._seq as number) ?? 0;
+      if (evSeq > 0) this._lastProcessedSeq = Math.max(this._lastProcessedSeq, evSeq);
       this._reduceBatch(ev, ctx, replayOnly);
     }
     // If the session ended, resolve any leftover incomplete tools
@@ -970,6 +995,7 @@ export class SessionStore {
     // preference persisted in settings, not per-session state.
     this._seenMessageIds.clear();
     this._seenToolIds.clear();
+    this._lastProcessedSeq = 0;
   }
 
   /** Reset all state to empty. */
@@ -1019,6 +1045,7 @@ export class SessionStore {
       unknownEventCount: this.unknownEventCount,
       rawFallbackCount: this.rawFallbackCount,
       taskNotifications: [...this.taskNotifications.entries()],
+      _lastProcessedSeq: this._lastProcessedSeq,
     };
     return JSON.stringify(obj);
   }
@@ -1075,6 +1102,7 @@ export class SessionStore {
       this.taskNotifications = new Map(
         (obj.taskNotifications ?? []) as Array<[string, TaskNotificationItem]>,
       );
+      this._lastProcessedSeq = (obj._lastProcessedSeq as number) ?? 0;
 
       dbg("snapshot", "apply:ok", { timeline: this.timeline.length });
       return true;
@@ -1187,6 +1215,7 @@ export class SessionStore {
 
         if (snapshotBody && this._tryApplySnapshot(snapshotBody)) {
           snapshotHit = true;
+          this._wsSubscribeWithSeq(id, this._lastProcessedSeq);
         } else {
           // Miss or snapshot corrupted → normal path
           const busEvents = await api.getBusEvents(id);
@@ -1195,6 +1224,7 @@ export class SessionStore {
             return;
           }
           reducerMs = this.applyEventBatch(busEvents, { replayOnly: isTerminal });
+          this._wsSubscribeAfterLoad(id, busEvents);
           // Write guard: distinguish "legit empty session" from "reducer anomaly"
           // busEvents non-empty but timeline empty → reducer anomaly, don't cache
           // busEvents empty and timeline empty → real empty session, allow cache
@@ -1286,7 +1316,7 @@ export class SessionStore {
           ...this.timeline,
           {
             kind: "user",
-            id: crypto.randomUUID(),
+            id: uuid(),
             content: prompt,
             ts: new Date().toISOString(),
             ...(attachments.length > 0 ? { attachments: timelineAttachments(attachments) } : {}),
@@ -1296,6 +1326,7 @@ export class SessionStore {
         // The $effect in chat page will call subscribeCurrent again (idempotent).
         const mw = getEventMiddleware();
         mw.subscribeCurrent(run.id, this);
+        this._wsSubscribeNewSession(run.id);
         dbg("store", "stream session start, run=", run.id);
         // Map frontend Attachment[] to backend AttachmentData format
         const backendAtt =
@@ -1353,7 +1384,7 @@ export class SessionStore {
           ...this.timeline,
           {
             kind: "user",
-            id: crypto.randomUUID(),
+            id: uuid(),
             content: text,
             ts: new Date().toISOString(),
             ...(attachments.length > 0 ? { attachments: timelineAttachments(attachments) } : {}),
@@ -1552,6 +1583,7 @@ export class SessionStore {
       if (isStream) {
         if (snapshotBody && this._tryApplySnapshot(snapshotBody)) {
           snapshotHit = true;
+          this._wsSubscribeWithSeq(runId, this._lastProcessedSeq);
         } else {
           // Fallback: snapshot corrupted → re-fetch events if needed
           if (!busEvents.length && snapshotBody) {
@@ -1561,6 +1593,8 @@ export class SessionStore {
           if (busEvents.length > 0) {
             reducerMs = this.applyEventBatch(busEvents, { replayOnly: true });
           }
+          // Always subscribe — even empty history needs real-time events
+          this._wsSubscribeAfterLoad(runId, busEvents);
         }
 
         // Resume makes session go live → old snapshot is always stale
@@ -1588,7 +1622,7 @@ export class SessionStore {
           ...this.timeline,
           {
             kind: "user" as const,
-            id: crypto.randomUUID(),
+            id: uuid(),
             content: initialMessage,
             ts: new Date().toISOString(),
             ...(attachments && attachments.length > 0
@@ -1700,6 +1734,7 @@ export class SessionStore {
       dbg("store", "fork: replaying", newEvents.length, "parent events");
       this.applyEventBatch(newEvents, { replayOnly: true });
     }
+    this._wsSubscribeAfterLoad(newRunId, allForkEvents);
 
     // Step 2 (stream-json resume) is NOT started here.
     // handleResume will dismiss the overlay first, then call connectSession()
@@ -1720,6 +1755,7 @@ export class SessionStore {
     const sid = sessionId ?? this.run?.session_id;
     if (!sid) throw new Error("No session_id available for connectSession");
     dbg("store", "connectSession: establishing stream-json connection", { runId, sessionId: sid });
+    this._wsSubscribeNewSession(runId);
     this._setPhase("spawning");
     await api.startSession(
       runId,
@@ -1730,6 +1766,28 @@ export class SessionStore {
       this.platformId || undefined,
     );
     this._startSpawnTimeout(runId);
+  }
+
+  // ── WS subscribe helpers (browser-only, no-op on desktop) ──
+
+  /** Browser: notify WS server to start pushing real-time events after history load */
+  private _wsSubscribeAfterLoad(runId: string, events: BusEvent[]): void {
+    if (getTransport().isDesktop()) return;
+    const maxSeq =
+      events.length > 0
+        ? (((events[events.length - 1] as Record<string, unknown>)._seq as number) ?? 0)
+        : 0;
+    getTransport().subscribeRun(runId, maxSeq);
+  }
+
+  private _wsSubscribeNewSession(runId: string): void {
+    if (getTransport().isDesktop()) return;
+    getTransport().subscribeRun(runId, 0);
+  }
+
+  private _wsSubscribeWithSeq(runId: string, lastSeq: number): void {
+    if (getTransport().isDesktop()) return;
+    getTransport().subscribeRun(runId, lastSeq);
   }
 
   /** Call from page cleanup to prevent stale async writes after unmount. */
@@ -2253,7 +2311,7 @@ export class SessionStore {
         }
         const entry: TimelineEntry = {
           kind: "user",
-          id: crypto.randomUUID(),
+          id: uuid(),
           content: ev.text,
           ts: eventTs(ev),
           ...(ev.uuid ? { cliUuid: ev.uuid } : {}),
@@ -2437,9 +2495,11 @@ export class SessionStore {
           }
         }
 
-        // Plan mode inference: only top-level tools affect main session permissionMode.
+        // Plan mode inference: only top-level tools in live mode affect main session permissionMode.
         // Subagent EnterPlanMode should not change the parent session's mode.
-        if (ev.status !== "error" && !ev.parent_tool_use_id) {
+        // replayOnly guard: replaying a historical session that ended mid-plan must not
+        // pollute the current permissionMode (which is a user-level preference, not snapshot state).
+        if (!replayOnly && ev.status !== "error" && !ev.parent_tool_use_id) {
           if (ev.tool_name === "EnterPlanMode") {
             this.previousPermissionMode = this.permissionMode || "default";
             this.permissionMode = "plan";
@@ -2781,7 +2841,7 @@ export class SessionStore {
           const tokensInfo = ev.pre_tokens ? ` (${Math.round(ev.pre_tokens / 1000)}k tokens)` : "";
           const entry: TimelineEntry = {
             kind: "separator",
-            id: crypto.randomUUID(),
+            id: uuid(),
             content: `Context compacted${tokensInfo}`,
             ts: eventTs(ev),
           };
@@ -2813,7 +2873,7 @@ export class SessionStore {
         });
         const cmdEntry: TimelineEntry = {
           kind: "command_output",
-          id: crypto.randomUUID(),
+          id: uuid(),
           content: ev.content,
           ts: eventTs(ev),
         };
@@ -2827,7 +2887,7 @@ export class SessionStore {
         if (rawText && (ev.source === "claude_stdout_text" || ev.source === "claude_stderr")) {
           const entry: TimelineEntry = {
             kind: "assistant",
-            id: crypto.randomUUID(),
+            id: uuid(),
             content: `\`[${ev.source}]\` ${rawText}`,
             ts: new Date().toISOString(),
           };

@@ -1,10 +1,14 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import { getTransport } from "$lib/transport";
   import { t } from "$lib/i18n/index.svelte";
   import { dbg, dbgWarn } from "$lib/utils/debug";
   import { fmtRelative } from "$lib/i18n/format";
   import { cwdDisplayLabel } from "$lib/utils/format";
   import type { CliSessionSummary, ImportResult, SyncResult } from "$lib/types";
+
+  function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+    return getTransport().invoke<T>(cmd, args);
+  }
 
   let {
     cwd,

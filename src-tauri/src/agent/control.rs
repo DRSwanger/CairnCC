@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
 
 /// Cached CLI info with TTL
+#[derive(Clone)]
 pub struct CliInfoCache {
     inner: Arc<RwLock<Option<(CliInfo, std::time::Instant)>>>,
 }

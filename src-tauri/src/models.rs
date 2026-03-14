@@ -203,6 +203,18 @@ pub struct UserSettings {
     pub ui_zoom: Option<f64>,
     #[serde(default)]
     pub onboarding_completed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_server_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_server_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_server_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_server_bind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_server_allowed_origins: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_server_tunnel_url: Option<String>,
     pub updated_at: String,
 }
 
@@ -285,6 +297,12 @@ impl Default for UserSettings {
             active_platform_id: None,
             ui_zoom: None,
             onboarding_completed: false,
+            web_server_enabled: None,
+            web_server_token: None,
+            web_server_port: None,
+            web_server_bind: None,
+            web_server_allowed_origins: None,
+            web_server_tunnel_url: None,
             updated_at: now_iso(),
         }
     }

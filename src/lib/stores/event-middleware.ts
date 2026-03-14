@@ -6,11 +6,11 @@
  * - Microbatches bus-events (16ms) to reduce reactive updates
  * - PTY/Pipe events go through handler callbacks (DOM-bound)
  */
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { dbg, dbgWarn } from "$lib/utils/debug";
 import type { BusEvent, HookEvent } from "$lib/types";
 import type { SessionStore } from "./session-store.svelte";
 import { markAttention, clearAttention } from "./attention-store.svelte";
+import { getTransport } from "$lib/transport";
 
 // ── Handler interfaces (page-level DOM callbacks) ──
 
@@ -31,7 +31,7 @@ export interface RunEventHandler {
 // ── Middleware ──
 
 export class EventMiddleware {
-  private _unlisteners: UnlistenFn[] = [];
+  private _unlisteners: (() => void)[] = [];
   private _subscriptions = new Map<string, SessionStore>();
   private _currentRunId: string | null = null;
   private _currentStore: SessionStore | null = null;
@@ -50,6 +50,9 @@ export class EventMiddleware {
   // Idempotent start guard
   private _started = false;
 
+  // Debounce guard for _full_reload
+  private _reloadingRuns = new Set<string>();
+
   // ── Lifecycle ──
 
   async start(): Promise<void> {
@@ -61,82 +64,114 @@ export class EventMiddleware {
     dbg("middleware", "starting event listeners");
     const ul = this._unlisteners;
 
-    // Helper: register a single listener with error isolation.
+    const transport = getTransport();
+
+    // Helper: register a single listener via transport (works for both Tauri + WS).
+    // Transport.listen delivers payload directly (TauriTransport unwraps the envelope).
     // If one listener fails to register, the rest still get set up (partial degradation).
-    const reg = async <T>(name: string, handler: (event: { payload: T }) => void) => {
+    const reg = async <T>(name: string, handler: (payload: T) => void) => {
       try {
-        ul.push(await listen<T>(name, handler));
+        ul.push(await transport.listen<T>(name, handler));
       } catch (e) {
         dbgWarn("middleware", `failed to register listener for "${name}":`, e);
       }
     };
 
     // 1. Bus events (stream session mode) — microbatched
-    await reg<BusEvent>("bus-event", (event) => {
-      const ev = event.payload;
+    await reg<BusEvent>("bus-event", (ev) => {
       dbg("middleware", "bus-event", { type: ev.type, run_id: ev.run_id });
       this._handleBusEvent(ev);
     });
 
     // 2. PTY output
-    await reg<{ run_id: string; data: string }>("pty-output", (event) => {
-      dbg("middleware", "pty-output", { run_id: event.payload.run_id });
-      this._ptyHandler?.onOutput(event.payload);
+    await reg<{ run_id: string; data: string }>("pty-output", (payload) => {
+      dbg("middleware", "pty-output", { run_id: payload.run_id });
+      this._ptyHandler?.onOutput(payload);
     });
 
     // 3. PTY exit
-    await reg<{ run_id: string; exit_code: number }>("pty-exit", (event) => {
-      dbg("middleware", "pty-exit", event.payload);
-      this._ptyHandler?.onExit(event.payload);
+    await reg<{ run_id: string; exit_code: number }>("pty-exit", (payload) => {
+      dbg("middleware", "pty-exit", payload);
+      this._ptyHandler?.onExit(payload);
     });
 
     // 4. Chat delta (pipe mode)
-    await reg<{ text: string }>("chat-delta", (event) => {
-      dbg("middleware", "chat-delta", { len: event.payload.text.length });
-      this._pipeHandler?.onDelta(event.payload);
+    await reg<{ text: string }>("chat-delta", (payload) => {
+      dbg("middleware", "chat-delta", { len: payload.text.length });
+      this._pipeHandler?.onDelta(payload);
     });
 
     // 5. Chat done (pipe mode)
-    await reg<{ ok: boolean; code: number; error?: string }>("chat-done", (event) => {
-      dbg("middleware", "chat-done", event.payload);
-      this._pipeHandler?.onDone(event.payload);
+    await reg<{ ok: boolean; code: number; error?: string }>("chat-done", (payload) => {
+      dbg("middleware", "chat-done", payload);
+      this._pipeHandler?.onDone(payload);
     });
 
     // 6. Run events (pipe mode stderr)
-    await reg<{ run_id: string; type: string; text: string }>("run-event", (event) => {
-      dbg("middleware", "run-event", { run_id: event.payload.run_id, type: event.payload.type });
-      this._runEventHandler?.onRunEvent(event.payload);
+    await reg<{ run_id: string; type: string; text: string }>("run-event", (payload) => {
+      dbg("middleware", "run-event", { run_id: payload.run_id, type: payload.type });
+      this._runEventHandler?.onRunEvent(payload);
     });
 
     // 7. Hook events
-    await reg<HookEvent>("hook-event", (event) => {
+    await reg<HookEvent>("hook-event", (payload) => {
       dbg("middleware", "hook-event", {
-        hook_type: event.payload.hook_type,
-        tool: event.payload.tool_name,
+        hook_type: payload.hook_type,
+        tool: payload.tool_name,
       });
-      this._handleHookEvent(event.payload);
+      this._handleHookEvent(payload);
     });
 
     // 8. Hook usage
     await reg<{ run_id: string; input_tokens: number; output_tokens: number; cost: number }>(
       "hook-usage",
-      (event) => {
-        dbg("middleware", "hook-usage", event.payload);
-        this._handleHookUsage(event.payload);
+      (payload) => {
+        dbg("middleware", "hook-usage", payload);
+        this._handleHookUsage(payload);
       },
     );
+
+    // 9. Full reload (WS-only — Tauri transport won't emit this event)
+    if (!transport.isDesktop()) {
+      try {
+        const unlisten = await transport.listen<{ run_id: string }>("_full_reload", (payload) => {
+          const runId = payload.run_id;
+          dbgWarn("middleware", "_full_reload", { runId });
+          if (this._reloadingRuns.has(runId)) {
+            dbg("middleware", "_full_reload debounced", { runId });
+            return;
+          }
+          const store = this._subscriptions.get(runId);
+          if (store) {
+            this._reloadingRuns.add(runId);
+            void store.loadRun(runId).finally(() => {
+              this._reloadingRuns.delete(runId);
+            });
+          }
+        });
+        ul.push(unlisten);
+      } catch (e) {
+        dbgWarn("middleware", "failed to register _full_reload listener:", e);
+      }
+    }
 
     dbg("middleware", "all listeners registered:", ul.length);
   }
 
   destroy(): void {
     dbg("middleware", "destroying, unregistering", this._unlisteners.length, "listeners");
+    // Unsubscribe all runs from transport before cleanup
+    const transport = getTransport();
+    for (const runId of this._subscriptions.keys()) {
+      transport.unsubscribeRun(runId);
+    }
     for (const fn of this._unlisteners) fn();
     this._unlisteners = [];
     this._subscriptions.clear();
     this._currentRunId = null;
     this._currentStore = null;
     this._batchBuffer.clear();
+    this._reloadingRuns.clear();
     this._started = false;
   }
 
@@ -153,6 +188,7 @@ export class EventMiddleware {
 
     // Clear old subscription (different run or different store)
     if (this._currentRunId) {
+      getTransport().unsubscribeRun(this._currentRunId);
       this._subscriptions.delete(this._currentRunId);
       this._batchBuffer.delete(this._currentRunId);
     }
@@ -175,6 +211,7 @@ export class EventMiddleware {
   }
 
   unsubscribe(runId: string): void {
+    getTransport().unsubscribeRun(runId);
     this._subscriptions.delete(runId);
     this._batchBuffer.delete(runId);
     if (this._currentRunId === runId) {

@@ -53,6 +53,7 @@
     getSizeLimitByMime,
   } from "$lib/utils/file-types";
   import { convertFile } from "$lib/utils/file-convert";
+  import { uuid } from "$lib/utils/uuid";
   import type { ClipboardFileInfo } from "$lib/api";
   import type { PromptInputSnapshot } from "$lib/types";
   import {
@@ -1193,7 +1194,7 @@
           pendingAttachments = [
             ...pendingAttachments,
             {
-              id: crypto.randomUUID().slice(0, 8),
+              id: uuid().slice(0, 8),
               name: file.name,
               type: "application/pdf",
               size: file.size,
@@ -1231,7 +1232,7 @@
           pendingAttachments = [
             ...pendingAttachments,
             {
-              id: crypto.randomUUID().slice(0, 8),
+              id: uuid().slice(0, 8),
               name: file.name || `attachment.${file.type.split("/")[1] || "bin"}`,
               type: detectedPdf ? "application/pdf" : file.type,
               size: file.size,
@@ -1262,7 +1263,7 @@
           pastedBlocks = [
             ...pastedBlocks,
             {
-              id: crypto.randomUUID().slice(0, 8),
+              id: uuid().slice(0, 8),
               text,
               lineCount,
               charCount,
@@ -1292,7 +1293,7 @@
           pastedBlocks = [
             ...pastedBlocks,
             {
-              id: crypto.randomUUID().slice(0, 8),
+              id: uuid().slice(0, 8),
               text,
               lineCount,
               charCount: text.length,
@@ -1393,7 +1394,7 @@
     pastedBlocks = [
       ...pastedBlocks,
       {
-        id: crypto.randomUUID().slice(0, 8),
+        id: uuid().slice(0, 8),
         text,
         lineCount,
         charCount,
@@ -1464,7 +1465,7 @@
         pendingAttachments = [
           ...pendingAttachments,
           {
-            id: crypto.randomUUID().slice(0, 8),
+            id: uuid().slice(0, 8),
             name: file.name,
             type: effectiveMime,
             size: file.size,
@@ -1498,7 +1499,7 @@
           pendingAttachments = [
             ...pendingAttachments,
             {
-              id: crypto.randomUUID().slice(0, 8),
+              id: uuid().slice(0, 8),
               name: file.name,
               type: effectiveMime,
               size: file.size,
@@ -1522,7 +1523,7 @@
           pastedBlocks = [
             ...pastedBlocks,
             {
-              id: crypto.randomUUID().slice(0, 8),
+              id: uuid().slice(0, 8),
               text,
               lineCount,
               charCount: text.length,
@@ -1551,7 +1552,7 @@
           pastedBlocks = [
             ...pastedBlocks,
             {
-              id: crypto.randomUUID().slice(0, 8),
+              id: uuid().slice(0, 8),
               text,
               lineCount,
               charCount: text.length,
@@ -1676,7 +1677,7 @@
 
   export function addPathRefs(refs: Array<{ path: string; name: string; isDir: boolean }>) {
     const newRefs = refs.map((ref) => ({
-      id: crypto.randomUUID().slice(0, 8),
+      id: uuid().slice(0, 8),
       name: ref.name,
       path: ref.path,
       isDir: ref.isDir,
@@ -2028,6 +2029,25 @@
         {:else if !hasRun}
           <div class="w-1"></div>
         {/if}
+        <button
+          class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground border border-transparent hover:border-border"
+          onclick={() => window.dispatchEvent(new CustomEvent("ocv:open-permissions"))}
+          title={t("permissions_title")}
+        >
+          <svg
+            class="h-3 w-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          {t("permissions_rules")}
+        </button>
         {#if showAuthBadge && !hasRun}
           <AuthSourceBadge
             {authOverview}

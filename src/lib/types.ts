@@ -125,6 +125,11 @@ export interface UserSettings {
   active_platform_id?: string;
   ui_zoom?: number;
   onboarding_completed: boolean;
+  web_server_enabled?: boolean;
+  web_server_port?: number;
+  web_server_bind?: string;
+  web_server_allowed_origins?: string[];
+  web_server_tunnel_url?: string;
   updated_at: string;
 }
 
@@ -512,6 +517,16 @@ export interface PermissionSuggestion {
 }
 
 // ── Event Bus types ──
+
+export interface ChatDelta {
+  text: string;
+}
+
+export interface ChatDone {
+  ok: boolean;
+  code: number;
+  error?: string;
+}
 
 // ── Team types (mirror Rust models.rs) ──
 

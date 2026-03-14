@@ -15,6 +15,7 @@
   import CommandPalette from "$lib/components/CommandPalette.svelte";
   import SetupWizard from "$lib/components/SetupWizard.svelte";
   import AboutModal from "$lib/components/AboutModal.svelte";
+  import PermissionsModal from "$lib/components/PermissionsModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import CliSessionBrowser from "$lib/components/CliSessionBrowser.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
@@ -45,7 +46,7 @@
   import type { PlatformCredential } from "$lib/types";
   import { TeamStore } from "$lib/stores/team-store.svelte";
   import { KeybindingStore } from "$lib/stores/keybindings.svelte";
-  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { getTransport } from "$lib/transport";
   import {
     t,
     LOCALE_REGISTRY,
@@ -69,6 +70,7 @@
   let showSetupWizard = $state(false);
   let showAbout = $state(false);
   let showCliBrowser = $state(false);
+  let permissionsModalOpen = $state(false);
 
   // Team store (shared via context with /teams page)
   const teamStore = new TeamStore();
@@ -206,24 +208,30 @@
   }
 
   let _gitSeq = 0;
+  let _gitLoadedCwd = "";
   async function loadGitSummary() {
     if (!projectCwd) {
       gitSummary = null;
+      _gitLoadedCwd = "";
       return;
     }
+    const requestedCwd = projectCwd;
     const seq = ++_gitSeq;
     gitLoading = true;
     try {
-      const result = await getGitSummary(projectCwd);
+      const result = await getGitSummary(requestedCwd);
       if (seq !== _gitSeq) return; // stale response, discard
       gitSummary = result;
+      _gitLoadedCwd = requestedCwd;
       dbg("layout", "git summary loaded", {
         branch: result.branch,
         files: result.total_files,
       });
-    } catch {
+    } catch (e) {
       if (seq !== _gitSeq) return;
+      dbgWarn("layout", "git summary load error", e);
       gitSummary = null;
+      _gitLoadedCwd = "";
     } finally {
       if (seq === _gitSeq) gitLoading = false;
     }
@@ -286,14 +294,22 @@
     memoryScopeExpanded = { ...memoryScopeExpanded, [scope]: !memoryScopeExpanded[scope] };
   }
 
-  // Load tree + git when switching to explorer page or changing project
+  // Load tree when switching to explorer page or changing project
+  // Git summary is lazy-loaded when user clicks the Git tab (see below)
+  let _prevExplorerCwd: string | undefined;
   $effect(() => {
     const _path = currentPath;
     const _cwd = projectCwd;
     if (_path?.startsWith("/explorer")) {
       if (_cwd) {
         loadRootTree();
-        loadGitSummary();
+        // Invalidate git cache when cwd changes so Git tab reloads on next switch
+        if (_prevExplorerCwd !== undefined && _prevExplorerCwd !== _cwd) {
+          ++_gitSeq; // cancel in-flight request so it can't backfill _gitLoadedCwd
+          gitLoading = false;
+          _gitLoadedCwd = "";
+        }
+        _prevExplorerCwd = _cwd;
       } else {
         // Increment seq to invalidate any in-flight requests
         ++_treeSeq;
@@ -303,7 +319,21 @@
         gitSummary = null;
         gitLoading = false;
         treeLoading = false;
+        _gitLoadedCwd = "";
+        _prevExplorerCwd = _cwd;
       }
+    }
+  });
+
+  // Lazy-load git summary when user switches to Git tab (only on Explorer page)
+  $effect(() => {
+    if (
+      currentPath?.startsWith("/explorer") &&
+      explorerTab === "git" &&
+      projectCwd &&
+      _gitLoadedCwd !== projectCwd
+    ) {
+      loadGitSummary();
     }
   });
 
@@ -514,8 +544,8 @@
     type TaskUpdatePayload = { team_name: string; task_id: string; change: string };
 
     let destroyed = false;
-    let unlistenTeam: UnlistenFn | undefined;
-    let unlistenTask: UnlistenFn | undefined;
+    let unlistenTeam: (() => void) | undefined;
+    let unlistenTask: (() => void) | undefined;
     const retryTimers: ReturnType<typeof setTimeout>[] = [];
 
     // 首次+重试成功后都补偿同步（debounce 300ms）
@@ -527,13 +557,16 @@
       }, 300);
     }
 
+    const transport = getTransport();
+
     function registerTeamListener<T>(
       name: string,
-      handler: (event: { payload: T }) => void,
-      assign: (fn: UnlistenFn) => void,
+      handler: (payload: T) => void,
+      assign: (fn: () => void) => void,
     ) {
       function tryListen(attempt: number) {
-        listen<T>(name, handler)
+        transport
+          .listen<T>(name, handler)
           .then((fn) => {
             if (destroyed) {
               fn();
@@ -563,18 +596,18 @@
 
     registerTeamListener<TeamUpdatePayload>(
       "team-update",
-      (event) => {
-        dbg("layout", "team-update", event.payload);
-        teamStore.handleTeamUpdate(event.payload);
+      (payload) => {
+        dbg("layout", "team-update", payload);
+        teamStore.handleTeamUpdate(payload);
       },
       (fn) => (unlistenTeam = fn),
     );
 
     registerTeamListener<TaskUpdatePayload>(
       "task-update",
-      (event) => {
-        dbg("layout", "task-update", event.payload);
-        teamStore.handleTaskUpdate(event.payload);
+      (payload) => {
+        dbg("layout", "task-update", payload);
+        teamStore.handleTaskUpdate(payload);
       },
       (fn) => (unlistenTask = fn),
     );
@@ -591,8 +624,14 @@
     // Immediate refresh when chat page signals a status change
     function onRunsChanged() {
       loadRuns();
-      // Also refresh git if on explorer
-      if (currentPath?.startsWith("/explorer")) loadGitSummary();
+      // Invalidate git cache unconditionally; if currently viewing Git tab on Explorer,
+      // reload immediately — otherwise lazy $effect picks it up on next visit.
+      ++_gitSeq; // cancel in-flight request so it can't backfill _gitLoadedCwd
+      gitLoading = false;
+      _gitLoadedCwd = "";
+      if (currentPath?.startsWith("/explorer") && explorerTab === "git") {
+        loadGitSummary();
+      }
     }
     window.addEventListener("ocv:runs-changed", onRunsChanged);
 
@@ -629,6 +668,12 @@
       }
     }
     window.addEventListener("ocv:cwd-changed", handleCwdChanged);
+
+    // Open permissions modal from any entry point (Command Palette, PromptInput button)
+    function onOpenPermissions() {
+      permissionsModalOpen = true;
+    }
+    window.addEventListener("ocv:open-permissions", onOpenPermissions);
 
     // ── External link interceptor ──
     // Prevent webview from navigating away to external URLs.
@@ -688,6 +733,7 @@
       window.removeEventListener("ocv:cwd-changed", handleCwdChanged);
       window.removeEventListener("ocv:memory-file-selected", onMemoryFileSelected);
       window.removeEventListener("ocv:memory-file-saved", onMemoryFileSaved);
+      window.removeEventListener("ocv:open-permissions", onOpenPermissions);
       document.removeEventListener("click", handleExternalLink, true);
     };
   });
@@ -917,12 +963,31 @@
   }
 
   async function pickFolder() {
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({ directory: true, title: t("layout_selectProjectFolder") });
-      if (selected) {
-        const normalized = normalizeCwd(selected as string) || "";
-        // Un-remove if it was previously removed
+    if (getTransport().isDesktop()) {
+      try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const selected = await open({ directory: true, title: t("layout_selectProjectFolder") });
+        if (selected) {
+          const normalized = normalizeCwd(selected as string) || "";
+          if (normalized && removedCwds.includes(normalized)) {
+            removedCwds = removedCwds.filter((c) => c !== normalized);
+            persistRemovedCwds();
+            dbg("layout", "pickFolder: un-removed cwd", { cwd: normalized });
+          }
+          projectCwd = normalized;
+        }
+      } catch (e) {
+        dbgWarn("layout", "failed to open folder dialog:", e);
+      }
+    } else {
+      // Browser mode: no native file picker, prompt for path
+      const input = window.prompt(
+        t("layout_selectProjectFolder"),
+        projectCwd || settings?.working_directory || "/",
+      );
+      dbg("layout", "pickFolder (browser)", { input });
+      if (input) {
+        const normalized = normalizeCwd(input.trim()) || "";
         if (normalized && removedCwds.includes(normalized)) {
           removedCwds = removedCwds.filter((c) => c !== normalized);
           persistRemovedCwds();
@@ -930,8 +995,6 @@
         }
         projectCwd = normalized;
       }
-    } catch (e) {
-      dbgWarn("layout", "failed to open folder dialog:", e);
     }
   }
 
@@ -1891,9 +1954,15 @@
                   </div>
                 {:else}
                   {#each visibleSearchResults as result}
-                    <a
-                      href="/chat?run={result.runId}"
-                      class="flex flex-col gap-0.5 px-3 py-2 hover:bg-sidebar-accent/50 transition-colors no-underline text-sidebar-foreground"
+                    <button
+                      class="w-full text-left flex flex-col gap-0.5 px-3 py-2 hover:bg-sidebar-accent/50 transition-colors text-sidebar-foreground"
+                      onclick={() => {
+                        runSearchQuery = "";
+                        searchResults = [];
+                        goto(
+                          `/chat?run=${result.runId}&scrollTo=${encodeURIComponent(result.matchedTs)}`,
+                        );
+                      }}
                     >
                       <p class="text-[12px] min-w-0 truncate">
                         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -1905,7 +1974,7 @@
                         >
                         <span class="ml-auto shrink-0">{relativeTime(result.matchedTs)}</span>
                       </div>
-                    </a>
+                    </button>
                   {/each}
                 {/if}
               </div>
@@ -2059,6 +2128,8 @@
 {/if}
 
 <AboutModal bind:open={showAbout} />
+
+<PermissionsModal bind:open={permissionsModalOpen} cwd={projectCwd} />
 
 {#if showCliBrowser}
   <CliSessionBrowser

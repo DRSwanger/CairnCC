@@ -9,18 +9,26 @@ import type { BusEvent } from "$lib/types";
 
 // ── Mocks ──
 
-// Mock Tauri event listener — captures registered handlers so tests can fire events synchronously
-type ListenHandler = (event: { payload: unknown }) => void;
-const _listeners = new Map<string, ListenHandler>();
+// Mock transport — captures registered handlers so tests can fire events synchronously
+type TransportListenHandler = (payload: unknown) => void;
+const _transportListeners = new Map<string, TransportListenHandler>();
 const _unlistenSpies: ReturnType<typeof vi.fn>[] = [];
 
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async (name: string, handler: ListenHandler) => {
-    _listeners.set(name, handler);
+const mockTransport = {
+  isDesktop: vi.fn(() => false),
+  listen: vi.fn(async (event: string, handler: TransportListenHandler) => {
+    _transportListeners.set(event, handler);
     const unlisten = vi.fn();
     _unlistenSpies.push(unlisten);
     return unlisten;
   }),
+  subscribeRun: vi.fn(),
+  unsubscribeRun: vi.fn(),
+  invoke: vi.fn(),
+};
+
+vi.mock("$lib/transport", () => ({
+  getTransport: () => mockTransport,
 }));
 
 vi.mock("$lib/utils/debug", () => ({
@@ -46,11 +54,11 @@ function makeBusEvent(runId: string, type: string, extra: Record<string, unknown
   return { type, run_id: runId, ...extra } as unknown as BusEvent;
 }
 
-/** Fire a bus-event through the mocked listener */
+/** Fire a bus-event through the mocked transport listener */
 function fireBusEvent(ev: BusEvent): void {
-  const handler = _listeners.get("bus-event");
+  const handler = _transportListeners.get("bus-event");
   if (!handler) throw new Error("bus-event listener not registered");
-  handler({ payload: ev });
+  handler(ev);
 }
 
 /** Minimal mock of SessionStore with the methods EventMiddleware calls */
@@ -60,7 +68,15 @@ function mockStore() {
     applyEventBatch: vi.fn(),
     applyHookEvent: vi.fn(),
     applyHookUsage: vi.fn(),
+    loadRun: vi.fn().mockResolvedValue(undefined),
   };
+}
+
+/** Fire a _full_reload event through the mocked transport listener */
+function fireFullReload(runId: string): void {
+  const handler = _transportListeners.get("_full_reload");
+  if (!handler) throw new Error("_full_reload listener not registered");
+  handler({ run_id: runId });
 }
 
 // ── Tests ──
@@ -70,8 +86,11 @@ describe("EventMiddleware", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    _listeners.clear();
+    _transportListeners.clear();
     _unlistenSpies.length = 0;
+    mockTransport.subscribeRun.mockClear();
+    mockTransport.unsubscribeRun.mockClear();
+    mockTransport.listen.mockClear();
     mw = new EventMiddleware();
   });
 
@@ -83,25 +102,26 @@ describe("EventMiddleware", () => {
   // ── Lifecycle ──
 
   describe("lifecycle", () => {
-    it("registers all 8 listeners on start()", async () => {
+    it("registers all 9 listeners on start() (8 core + _full_reload for non-desktop)", async () => {
       await mw.start();
-      expect(_listeners.size).toBe(8);
-      expect(_listeners.has("bus-event")).toBe(true);
-      expect(_listeners.has("pty-output")).toBe(true);
-      expect(_listeners.has("pty-exit")).toBe(true);
-      expect(_listeners.has("chat-delta")).toBe(true);
-      expect(_listeners.has("chat-done")).toBe(true);
-      expect(_listeners.has("run-event")).toBe(true);
-      expect(_listeners.has("hook-event")).toBe(true);
-      expect(_listeners.has("hook-usage")).toBe(true);
+      expect(_transportListeners.size).toBe(9);
+      expect(_transportListeners.has("bus-event")).toBe(true);
+      expect(_transportListeners.has("pty-output")).toBe(true);
+      expect(_transportListeners.has("pty-exit")).toBe(true);
+      expect(_transportListeners.has("chat-delta")).toBe(true);
+      expect(_transportListeners.has("chat-done")).toBe(true);
+      expect(_transportListeners.has("run-event")).toBe(true);
+      expect(_transportListeners.has("hook-event")).toBe(true);
+      expect(_transportListeners.has("hook-usage")).toBe(true);
+      expect(_transportListeners.has("_full_reload")).toBe(true);
     });
 
     it("is idempotent — second start() is a no-op", async () => {
       await mw.start();
-      const firstCount = _listeners.size;
+      const firstCount = _transportListeners.size;
       await mw.start();
       // Should not have doubled listeners
-      expect(_listeners.size).toBe(firstCount);
+      expect(_transportListeners.size).toBe(firstCount);
     });
 
     it("destroy() calls all unlisteners and clears state", async () => {
@@ -150,8 +170,8 @@ describe("EventMiddleware", () => {
       const store = mockStore();
       mw.subscribeCurrent("run-1", store as any);
 
-      const handler = _listeners.get("hook-event")!;
-      handler({ payload: { run_id: "run-1", hook_type: "PreToolUse", tool_name: "Bash" } });
+      const handler = _transportListeners.get("hook-event")!;
+      handler({ run_id: "run-1", hook_type: "PreToolUse", tool_name: "Bash" });
 
       expect(store.applyHookEvent).toHaveBeenCalledOnce();
     });
@@ -161,8 +181,8 @@ describe("EventMiddleware", () => {
       const store = mockStore();
       mw.subscribeCurrent("run-1", store as any);
 
-      const handler = _listeners.get("hook-usage")!;
-      handler({ payload: { run_id: "run-1", input_tokens: 100, output_tokens: 50, cost: 0.01 } });
+      const handler = _transportListeners.get("hook-usage")!;
+      handler({ run_id: "run-1", input_tokens: 100, output_tokens: 50, cost: 0.01 });
 
       expect(store.applyHookUsage).toHaveBeenCalledOnce();
     });
@@ -328,8 +348,8 @@ describe("EventMiddleware", () => {
       const onOutput = vi.fn();
       mw.setPtyHandler({ onOutput, onExit: vi.fn() });
 
-      const handler = _listeners.get("pty-output")!;
-      handler({ payload: { run_id: "run-1", data: "base64data" } });
+      const handler = _transportListeners.get("pty-output")!;
+      handler({ run_id: "run-1", data: "base64data" });
 
       expect(onOutput).toHaveBeenCalledWith({ run_id: "run-1", data: "base64data" });
     });
@@ -339,8 +359,8 @@ describe("EventMiddleware", () => {
       const onDelta = vi.fn();
       mw.setPipeHandler({ onDelta, onDone: vi.fn() });
 
-      const handler = _listeners.get("chat-delta")!;
-      handler({ payload: { text: "hello" } });
+      const handler = _transportListeners.get("chat-delta")!;
+      handler({ text: "hello" });
 
       expect(onDelta).toHaveBeenCalledWith({ text: "hello" });
     });
@@ -348,8 +368,8 @@ describe("EventMiddleware", () => {
     it("no-op when handler is null", async () => {
       await mw.start();
       // Don't set any handlers — should not throw
-      const handler = _listeners.get("pty-output")!;
-      expect(() => handler({ payload: { run_id: "run-1", data: "x" } })).not.toThrow();
+      const handler = _transportListeners.get("pty-output")!;
+      expect(() => handler({ run_id: "run-1", data: "x" })).not.toThrow();
     });
   });
 
@@ -357,16 +377,14 @@ describe("EventMiddleware", () => {
 
   describe("partial degradation on listener failure", () => {
     it("continues registering other listeners if one fails", async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      const listenMock = vi.mocked(listen);
       let callCount = 0;
-      listenMock.mockImplementation(async (name: string, handler: any) => {
+      mockTransport.listen.mockImplementation(async (name: string, handler: any) => {
         callCount++;
         if (callCount === 3) {
           // Fail the 3rd listener registration
           throw new Error("listen failed for pty-exit");
         }
-        _listeners.set(name, handler);
+        _transportListeners.set(name, handler);
         const unlisten = vi.fn();
         _unlistenSpies.push(unlisten);
         return unlisten;
@@ -374,8 +392,8 @@ describe("EventMiddleware", () => {
 
       await mw.start();
 
-      // Should have 7 listeners (8 - 1 failed)
-      expect(_listeners.size).toBe(7);
+      // Should have 8 listeners (9 total including _full_reload, minus 1 failed)
+      expect(_transportListeners.size).toBe(8);
       expect(dbgWarn).toHaveBeenCalledWith(
         "middleware",
         expect.stringContaining("failed to register listener"),
@@ -494,6 +512,105 @@ describe("EventMiddleware", () => {
       await mw.start();
       fireBusEvent(makeBusEvent("run-1", "run_state", { state: "some_future_state" }));
       expect(clearMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── _full_reload protocol ──
+
+  describe("_full_reload protocol (WS-only)", () => {
+    it("registers _full_reload listener via transport.listen on start()", async () => {
+      await mw.start();
+      expect(mockTransport.listen).toHaveBeenCalledWith("_full_reload", expect.any(Function));
+      expect(_transportListeners.has("_full_reload")).toBe(true);
+    });
+
+    it("triggers store.loadRun on receiving _full_reload", async () => {
+      await mw.start();
+      const store = mockStore();
+      mw.subscribeCurrent("run-1", store as any);
+
+      fireFullReload("run-1");
+
+      expect(store.loadRun).toHaveBeenCalledWith("run-1");
+      expect(store.loadRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not call loadRun for unsubscribed run_id", async () => {
+      await mw.start();
+      const store = mockStore();
+      mw.subscribeCurrent("run-1", store as any);
+
+      fireFullReload("run-OTHER");
+
+      expect(store.loadRun).not.toHaveBeenCalled();
+    });
+
+    it("debounces consecutive _full_reload for same run_id", async () => {
+      await mw.start();
+      const store = mockStore();
+      mw.subscribeCurrent("run-1", store as any);
+
+      fireFullReload("run-1");
+      expect(store.loadRun).toHaveBeenCalledTimes(1);
+
+      // Second fire while first is still in-flight → debounced
+      fireFullReload("run-1");
+      expect(store.loadRun).toHaveBeenCalledTimes(1);
+
+      // Flush the promise (.finally clears _reloadingRuns)
+      await Promise.resolve();
+
+      // Now debounce is cleared, should accept again
+      fireFullReload("run-1");
+      expect(store.loadRun).toHaveBeenCalledTimes(2);
+    });
+
+    it("handles different run_ids independently (no cross-debounce)", async () => {
+      await mw.start();
+      const store1 = mockStore();
+      const store2 = mockStore();
+      mw.subscribeCurrent("run-1", store1 as any);
+      mw.subscribe("run-2", store2 as any);
+
+      fireFullReload("run-1");
+      fireFullReload("run-2");
+
+      expect(store1.loadRun).toHaveBeenCalledTimes(1);
+      expect(store2.loadRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("destroy() clears _full_reload unlisten", async () => {
+      await mw.start();
+      const transportUnlisten = _unlistenSpies[_unlistenSpies.length - 1]; // last pushed
+      mw.destroy();
+      expect(transportUnlisten).toHaveBeenCalledOnce();
+    });
+  });
+
+  // ── Transport subscription contract ──
+
+  describe("transport subscription contract", () => {
+    it("subscribeCurrent does NOT call transport.subscribeRun", async () => {
+      await mw.start();
+      const store = mockStore();
+      mw.subscribeCurrent("run-1", store as any);
+      expect(mockTransport.subscribeRun).not.toHaveBeenCalled();
+    });
+
+    it("subscribe does NOT call transport.subscribeRun", async () => {
+      await mw.start();
+      const store = mockStore();
+      mw.subscribe("run-1", store as any);
+      expect(mockTransport.subscribeRun).not.toHaveBeenCalled();
+    });
+
+    it("unsubscribe calls transport.unsubscribeRun", async () => {
+      await mw.start();
+      const store = mockStore();
+      mw.subscribeCurrent("run-1", store as any);
+      mockTransport.unsubscribeRun.mockClear();
+      mw.unsubscribe("run-1");
+      expect(mockTransport.unsubscribeRun).toHaveBeenCalledWith("run-1");
     });
   });
 });

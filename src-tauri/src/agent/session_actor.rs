@@ -18,13 +18,12 @@ use crate::models::{
     max_attachment_size, now_iso, BusEvent, RunStatus, ALLOWED_DOC_TYPES, ALLOWED_IMAGE_TYPES,
 };
 use crate::storage;
-use crate::storage::events::EventWriter;
 use crate::storage::runs;
+use crate::web_server::broadcaster::BroadcastEmitter;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot};
@@ -105,8 +104,7 @@ pub struct SessionActorHandle {
 
 /// The actor's private state. Runs in a single tokio task.
 struct SessionActor {
-    app: AppHandle,
-    writer: Arc<EventWriter>,
+    emitter: Arc<BroadcastEmitter>,
     sessions: ActorSessionMap,
     run_id: String,
     tag: Arc<()>,
@@ -165,8 +163,7 @@ struct SessionActor {
 /// (from `count_user_messages`). For new sessions, pass (0, 0).
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_actor(
-    app: AppHandle,
-    writer: Arc<EventWriter>,
+    emitter: Arc<BroadcastEmitter>,
     sessions: ActorSessionMap,
     run_id: String,
     child: Child,
@@ -191,8 +188,7 @@ pub fn spawn_actor(
     );
 
     let actor = SessionActor {
-        app,
-        writer,
+        emitter,
         sessions,
         run_id: run_id.clone(),
         tag: tag.clone(),
@@ -529,7 +525,7 @@ impl SessionActor {
             turn_index,
         });
         self.active_extractor = Some(Box::new(ContextExtractor {
-            app: self.app.clone(),
+            app: self.emitter.app().clone(),
             run_id: self.run_id.clone(),
             for_turn_index: turn_index,
             captured: false,
@@ -724,12 +720,9 @@ impl SessionActor {
         Ok(user_uuid)
     }
 
-    /// Persist a BusEvent to JSONL and emit to frontend. (HC #32)
+    /// Persist a BusEvent to JSONL, emit to Tauri webview, and broadcast to WS clients. (HC #32)
     fn persist_and_emit(&self, event: &BusEvent) {
-        if let Err(e) = self.writer.write_bus_event(&self.run_id, event) {
-            log::warn!("[actor] persist failed for run_id={}: {}", self.run_id, e);
-        }
-        let _ = self.app.emit("bus-event", event);
+        self.emitter.persist_and_emit(&self.run_id, event);
     }
 
     /// Fail all pending user reply channels. (HC #12)
@@ -1300,7 +1293,7 @@ impl SessionActor {
             }
             if hook_event == "PreToolUse" {
                 notify_if_background(
-                    &self.app,
+                    self.emitter.app(),
                     "Hook Review Required",
                     &format!(
                         "{} — PreToolUse: {}",
@@ -1311,13 +1304,14 @@ impl SessionActor {
             }
         } else if subtype == "mcp_message" {
             log::debug!("[actor] mcp_message: run_id={}", self.run_id);
-            let _ = self.app.emit(
+            self.emitter.emit_realtime(
                 "bus-event",
                 &BusEvent::Raw {
                     run_id: self.run_id.clone(),
                     source: "mcp_message".to_string(),
                     data: parsed.clone(),
                 },
+                Some(&self.run_id),
             );
         } else if subtype == "can_use_tool" {
             let request_id = parsed
@@ -1373,7 +1367,7 @@ impl SessionActor {
                 suggestions,
             });
             notify_if_background(
-                &self.app,
+                self.emitter.app(),
                 "Permission Required",
                 &format!(
                     "{} wants to use: {}",
@@ -1490,10 +1484,7 @@ impl SessionActor {
             source: "claude_stderr".to_string(),
             data: Value::String(text.to_string()),
         };
-        if let Err(e) = self.writer.write_bus_event(&self.run_id, &event) {
-            log::warn!("[actor] stderr persist failed: {}", e);
-        }
-        let _ = self.app.emit("bus-event", &event);
+        self.emitter.persist_and_emit(&self.run_id, &event);
     }
 
     /// Handle stdout EOF — determine terminal state.
@@ -1576,27 +1567,10 @@ impl SessionActor {
             error: error.clone(),
         };
 
-        // 3. Persist to JSONL
-        if let Err(e) = self.writer.write_bus_event(&self.run_id, &event) {
-            log::warn!(
-                "[actor] persist failed: run={} state={} err={}",
-                self.run_id,
-                new_state,
-                e
-            );
-        }
+        // 3. Persist + Tauri emit + WS broadcast (unified)
+        self.emitter.persist_and_emit(&self.run_id, &event);
 
-        // 4. Emit to Tauri bus
-        if let Err(e) = self.app.emit("bus-event", &event) {
-            log::warn!(
-                "[actor] emit failed: run={} state={} err={}",
-                self.run_id,
-                new_state,
-                e
-            );
-        }
-
-        // 5. Conditional meta update
+        // 4. Conditional meta update
         if update_meta {
             if let Some(status) = map_state_to_run_status(new_state) {
                 let meta_error = if new_state == "failed" {

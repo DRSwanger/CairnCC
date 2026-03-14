@@ -10,7 +10,7 @@
   import { PLATFORM_PRESETS, PRESET_CATEGORIES } from "$lib/utils/platform-presets";
   import { dbg, dbgWarn } from "$lib/utils/debug";
   import { IS_WINDOWS } from "$lib/utils/platform";
-  import { listen } from "@tauri-apps/api/event";
+  import { getTransport } from "$lib/transport";
   import { t } from "$lib/i18n/index.svelte";
 
   let { onComplete }: { onComplete: () => void } = $props();
@@ -136,16 +136,20 @@
     error = "";
     installProgress = [];
 
-    const unlistenAppend = await listen<string>("setup-progress", (event) => {
-      installProgress = [...installProgress, event.payload];
+    const wizTransport = getTransport();
+    const unlistenAppend = await wizTransport.listen<string>("setup-progress", (payload) => {
+      installProgress = [...installProgress, payload];
     });
-    const unlistenReplace = await listen<string>("setup-progress-replace", (event) => {
-      if (installProgress.length > 0) {
-        installProgress = [...installProgress.slice(0, -1), event.payload];
-      } else {
-        installProgress = [event.payload];
-      }
-    });
+    const unlistenReplace = await wizTransport.listen<string>(
+      "setup-progress-replace",
+      (payload) => {
+        if (installProgress.length > 0) {
+          installProgress = [...installProgress.slice(0, -1), payload];
+        } else {
+          installProgress = [payload];
+        }
+      },
+    );
     const unlisten = () => {
       unlistenAppend();
       unlistenReplace();

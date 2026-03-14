@@ -5,18 +5,46 @@ pub mod models;
 pub mod pricing;
 pub mod process_ext;
 pub mod storage;
+pub mod web_server;
 
 use agent::adapter::new_actor_session_map;
 use agent::control::CliInfoCache;
 use agent::pty::new_pty_map;
 use agent::spawn_locks::SpawnLocks;
 use agent::stream::new_process_map;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::Arc;
 use storage::events::EventWriter;
 use tauri::tray::TrayIconEvent;
 use tauri::Manager;
+use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
+
+/// Effective web server port (may differ from configured port if busy)
+pub type EffectiveWebPort = Arc<AtomicU16>;
+/// Web-server-specific cancel token for restart support
+pub type WebServerCancel = Arc<tokio::sync::Mutex<CancellationToken>>;
+/// Token version — shared between IPC and web server for rotation detection
+pub type SharedTokenVersion = Arc<AtomicU64>;
+/// WS shutdown broadcast — token rotation triggers disconnect of all WS clients
+pub type WsShutdownSender = Arc<broadcast::Sender<()>>;
+/// Live token — hot-swappable via RwLock for immediate login/logout on rotation
+pub type SharedLiveToken = Arc<tokio::sync::RwLock<String>>;
+/// Mutex to serialize web server start/stop operations
+pub type WebServerLock = Arc<tokio::sync::Mutex<()>>;
+/// JoinHandle for the serve task — await during stop to ensure port release
+pub type WebServerHandle = Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>;
+/// Generation counter — each spawn_server increments; stale tasks check before cleanup.
+/// Newtype to avoid Tauri manage() collision with SharedTokenVersion (both Arc<AtomicU64>).
+#[derive(Clone)]
+pub struct WebServerGeneration(pub Arc<AtomicU64>);
+/// Effective bind address — reflects actual running state (not settings).
+/// Newtype to avoid Tauri manage() collision with SharedLiveToken (both Arc<RwLock<String>>).
+#[derive(Clone)]
+pub struct EffectiveWebBind(pub Arc<tokio::sync::RwLock<String>>);
+/// Startup warning — populated when origins are degraded or other non-fatal startup issues.
+#[derive(Clone)]
+pub struct WebServerWarning(pub Arc<tokio::sync::RwLock<Option<String>>>);
 
 /// One-shot gate to prevent concurrent shutdown tasks.
 /// CAS ensures only the first caller proceeds; subsequent quit/close events are no-ops.
@@ -69,6 +97,27 @@ pub fn run() {
     let tray_ok = Arc::new(AtomicBool::new(false));
     let tray_ok_for_event = tray_ok.clone();
 
+    // Web server shared state
+    let ws_shutdown_sender: WsShutdownSender = Arc::new(broadcast::channel::<()>(1).0);
+    let shared_token_version: SharedTokenVersion = Arc::new(AtomicU64::new(0));
+    let shared_live_token: SharedLiveToken = {
+        use rand::Rng;
+        let token: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect();
+        log::debug!("[app] ephemeral web token generated (masked)");
+        Arc::new(tokio::sync::RwLock::new(token))
+    };
+    let effective_web_port: EffectiveWebPort = Arc::new(AtomicU16::new(0));
+    let ws_cancel: WebServerCancel = Arc::new(tokio::sync::Mutex::new(CancellationToken::new()));
+    let ws_lock: WebServerLock = Arc::new(tokio::sync::Mutex::new(()));
+    let ws_handle: WebServerHandle = Arc::new(tokio::sync::Mutex::new(None));
+    let ws_generation = WebServerGeneration(Arc::new(AtomicU64::new(0)));
+    let ws_effective_bind = EffectiveWebBind(Arc::new(tokio::sync::RwLock::new(String::new())));
+    let ws_warning = WebServerWarning(Arc::new(tokio::sync::RwLock::new(None)));
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -81,6 +130,16 @@ pub fn run() {
         .manage(SpawnLocks::new())
         .manage(ShutdownGate::new())
         .manage(cancel_token)
+        .manage(ws_shutdown_sender)
+        .manage(shared_token_version)
+        .manage(shared_live_token)
+        .manage(effective_web_port)
+        .manage(ws_cancel)
+        .manage(ws_lock)
+        .manage(ws_handle)
+        .manage(ws_generation)
+        .manage(ws_effective_bind)
+        .manage(ws_warning)
         // NOTE: Currently ~60 IPC commands. If approaching 80+, consider grouping
         // into Tauri command modules or using a single dispatch command with typed payloads.
         .invoke_handler(tauri::generate_handler![
@@ -189,6 +248,8 @@ pub fn run() {
             commands::cli_config::get_cli_config,
             commands::cli_config::get_project_cli_config,
             commands::cli_config::update_cli_config,
+            commands::cli_settings::get_cli_permissions,
+            commands::cli_settings::update_cli_permissions,
             commands::onboarding::check_auth_status,
             commands::onboarding::detect_install_methods,
             commands::onboarding::run_claude_login,
@@ -201,8 +262,34 @@ pub fn run() {
             commands::cli_sync::import_cli_session,
             commands::cli_sync::sync_cli_session,
             commands::updates::check_for_updates,
+            commands::web_server::get_web_server_status,
+            commands::web_server::get_web_server_token,
+            commands::web_server::regenerate_web_server_token,
+            commands::web_server::restart_web_server,
+            commands::web_server::get_local_ip,
         ])
         .setup(move |app| {
+            // Set up broadcast emitter (requires AppHandle, so must be in setup)
+            let broadcaster = web_server::broadcaster::EventBroadcaster::new();
+            let writer = app.state::<Arc<EventWriter>>().inner().clone();
+            let emitter = Arc::new(web_server::broadcaster::BroadcastEmitter::new(
+                writer,
+                app.handle().clone(),
+                broadcaster.clone(),
+            ));
+            app.manage(broadcaster);
+            app.manage(emitter);
+
+            // Start web server (non-blocking, spawns async task)
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match web_server::start_server(&app_handle).await {
+                    Ok(true) => log::debug!("[app] web server started"),
+                    Ok(false) => log::debug!("[app] web server disabled"),
+                    Err(e) => log::error!("[app] web server failed to start: {}", e),
+                }
+            });
+
             // Start team file watcher for ~/.claude/teams/ and ~/.claude/tasks/
             let cancel = app.state::<CancellationToken>().inner().clone();
             hooks::team_watcher::start_team_watcher(app.handle().clone(), cancel);

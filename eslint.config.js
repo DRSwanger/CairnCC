@@ -42,6 +42,27 @@ export default ts.config(
       "svelte/prefer-svelte-reactivity": "off",
       "svelte/no-useless-children-snippet": "off",
       "svelte/prefer-writable-derived": "off",
+      // Prevent direct static imports of @tauri-apps/api outside the transport layer.
+      // Dynamic import() is allowed for desktop-only features with graceful fallback.
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@tauri-apps/api/*"],
+              message:
+                "Use getTransport() from $lib/transport instead. Direct Tauri imports break browser (WS) mode. Dynamic import() is OK for desktop-only features.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // Allow @tauri-apps/api in the transport layer (the only place it belongs)
+  {
+    files: ["src/lib/transport/**"],
+    rules: {
+      "no-restricted-imports": "off",
     },
   },
   {

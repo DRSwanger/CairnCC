@@ -53,3 +53,6 @@ AGENTS.md
 .githooks/
 
 .metadata_never_index
+
+# Unrelated binaries
+forget_ptr

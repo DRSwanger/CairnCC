@@ -98,6 +98,9 @@
         if (cmd.payload === "model-selector") onOpenModelSelector?.();
         else if (cmd.payload === "folder-browser") onOpenFolderBrowser?.();
         else if (cmd.payload === "version-info") showVersionInfo();
+        else if (cmd.payload === "permissions") {
+          window.dispatchEvent(new CustomEvent("ocv:open-permissions"));
+        }
         break;
 
       case "ipc_command":

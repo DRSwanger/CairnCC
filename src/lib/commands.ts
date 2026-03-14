@@ -211,6 +211,15 @@ export const commands: CommandDef[] = [
     action: "navigate",
     payload: "/settings",
   },
+  {
+    id: "permissions",
+    name: "Permissions",
+    description: "Manage tool permission rules (allow/deny)",
+    category: "settings",
+    agent: "both",
+    action: "open_modal",
+    payload: "permissions",
+  },
 
   // Diagnostics
   {

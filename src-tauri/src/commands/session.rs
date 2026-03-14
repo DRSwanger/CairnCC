@@ -5,9 +5,9 @@ use crate::agent::spawn_locks::SpawnLocks;
 use crate::models::{BusEvent, RemoteHost, RunMeta, RunStatus, SessionMode, UserSettings};
 use crate::process_ext::HideConsole;
 use crate::storage;
-use crate::storage::events::EventWriter;
+use crate::web_server::broadcaster::BroadcastEmitter;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::State;
 use tokio_util::sync::CancellationToken;
 
 /// Truncate a string to at most `max` bytes, snapping to a char boundary.
@@ -52,14 +52,6 @@ async fn stop_actor(sessions: &ActorSessionMap, run_id: &str) -> Result<bool, St
     let _ = tokio::time::timeout(std::time::Duration::from_secs(5), handle.join_handle).await;
 
     Ok(true)
-}
-
-/// Helper: emit a BusEvent (persist + Tauri emit).
-fn emit_bus_event(app: &AppHandle, writer: &EventWriter, run_id: &str, event: &BusEvent) {
-    if let Err(e) = writer.write_bus_event(run_id, event) {
-        log::warn!("[session] persist failed: {}", e);
-    }
-    let _ = app.emit("bus-event", event);
 }
 
 /// Resolve a RemoteHost from RunMeta.
@@ -430,13 +422,11 @@ fn resolve_auth_env_for_platform(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[tauri::command]
-pub async fn start_session(
-    app: AppHandle,
-    sessions: State<'_, ActorSessionMap>,
-    seq_counter: State<'_, Arc<EventWriter>>,
-    spawn_locks: State<'_, SpawnLocks>,
-    cancel_token: State<'_, CancellationToken>,
+pub(crate) async fn start_session_impl(
+    emitter: &Arc<BroadcastEmitter>,
+    sessions: &ActorSessionMap,
+    spawn_locks: &SpawnLocks,
+    cancel_token: &CancellationToken,
     run_id: String,
     mode: Option<SessionMode>,
     session_id: Option<String>,
@@ -545,11 +535,11 @@ pub async fn start_session(
         exit_code: None,
         error: None,
     };
-    emit_bus_event(&app, &seq_counter, &run_id, &spawning_event);
+    emitter.persist_and_emit(&run_id, &spawning_event);
     storage::runs::update_status(&run_id, RunStatus::Running, None, None).ok();
 
     // 5. Stop any existing actor for this run_id
-    let had_session = stop_actor(sessions.inner(), &run_id).await?;
+    let had_session = stop_actor(sessions, &run_id).await?;
     if had_session {
         log::debug!(
             "[session] old actor teardown complete for run_id={}",
@@ -594,16 +584,15 @@ pub async fn start_session(
 
     // 8. Spawn actor
     let actor_handle = session_actor::spawn_actor(
-        app.clone(),
-        Arc::clone(&seq_counter),
-        sessions.inner().clone(),
+        Arc::clone(emitter),
+        sessions.clone(),
         run_id.clone(),
         child,
         stdin,
         stdout,
         stderr,
         !is_new,
-        cancel_token.inner().clone(),
+        cancel_token.clone(),
         initial_turn_index,
         initial_auto_ctx_id,
     );
@@ -641,7 +630,7 @@ pub async fn start_session(
             exit_code: None,
             error: None,
         };
-        emit_bus_event(&app, &seq_counter, &run_id, &idle_event);
+        emitter.persist_and_emit(&run_id, &idle_event);
         log::debug!(
             "[session] resume/continue: emitted synthetic RunState(idle) for run_id={}",
             run_id
@@ -652,11 +641,38 @@ pub async fn start_session(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn start_session(
+    emitter: State<'_, Arc<BroadcastEmitter>>,
+    sessions: State<'_, ActorSessionMap>,
+    spawn_locks: State<'_, SpawnLocks>,
+    cancel_token: State<'_, CancellationToken>,
+    run_id: String,
+    mode: Option<SessionMode>,
+    session_id: Option<String>,
+    initial_message: Option<String>,
+    attachments: Option<Vec<AttachmentData>>,
+    platform_id: Option<String>,
+) -> Result<(), String> {
+    start_session_impl(
+        emitter.inner(),
+        sessions.inner(),
+        spawn_locks.inner(),
+        cancel_token.inner(),
+        run_id,
+        mode,
+        session_id,
+        initial_message,
+        attachments,
+        platform_id,
+    )
+    .await
+}
+
 #[tauri::command]
 pub async fn send_session_message(
-    _app: AppHandle,
     sessions: State<'_, ActorSessionMap>,
-    _seq_counter: State<'_, Arc<EventWriter>>,
     run_id: String,
     message: String,
     attachments: Option<Vec<AttachmentData>>,
@@ -702,17 +718,15 @@ pub async fn send_session_message(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn stop_session(
-    app: AppHandle,
-    sessions: State<'_, ActorSessionMap>,
-    seq_counter: State<'_, Arc<EventWriter>>,
-    spawn_locks: State<'_, SpawnLocks>,
+pub(crate) async fn stop_session_impl(
+    emitter: &Arc<BroadcastEmitter>,
+    sessions: &ActorSessionMap,
+    spawn_locks: &SpawnLocks,
     run_id: String,
 ) -> Result<(), String> {
     let _guard = spawn_locks.acquire(&run_id).await;
 
-    let was_active = stop_actor(sessions.inner(), &run_id).await?;
+    let was_active = stop_actor(sessions, &run_id).await?;
     if was_active {
         // Actor was active — emit stopped
         let event = BusEvent::RunState {
@@ -721,11 +735,27 @@ pub async fn stop_session(
             exit_code: None,
             error: None,
         };
-        emit_bus_event(&app, &seq_counter, &run_id, &event);
+        emitter.persist_and_emit(&run_id, &event);
         storage::runs::update_status(&run_id, RunStatus::Stopped, None, None).ok();
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_session(
+    emitter: State<'_, Arc<BroadcastEmitter>>,
+    sessions: State<'_, ActorSessionMap>,
+    spawn_locks: State<'_, SpawnLocks>,
+    run_id: String,
+) -> Result<(), String> {
+    stop_session_impl(
+        emitter.inner(),
+        sessions.inner(),
+        spawn_locks.inner(),
+        run_id,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -808,12 +838,10 @@ pub fn get_bus_events(
     Ok(storage::events::list_bus_events(&id, since_seq))
 }
 
-#[tauri::command]
-pub async fn fork_session(
-    app: AppHandle,
-    sessions: State<'_, ActorSessionMap>,
-    seq_counter: State<'_, Arc<EventWriter>>,
-    spawn_locks: State<'_, SpawnLocks>,
+pub(crate) async fn fork_session_impl(
+    emitter: &Arc<BroadcastEmitter>,
+    sessions: &ActorSessionMap,
+    spawn_locks: &SpawnLocks,
     run_id: String,
 ) -> Result<String, String> {
     let _guard = spawn_locks.acquire(&run_id).await;
@@ -828,7 +856,7 @@ pub async fn fork_session(
         .ok_or_else(|| "No session_id available for fork".to_string())?;
 
     // 2. Stop source actor if alive
-    let was_active = stop_actor(sessions.inner(), &run_id).await?;
+    let was_active = stop_actor(sessions, &run_id).await?;
     if was_active {
         log::debug!("[session] fork_session: stopped active source actor");
         let event = BusEvent::RunState {
@@ -837,7 +865,7 @@ pub async fn fork_session(
             exit_code: None,
             error: None,
         };
-        emit_bus_event(&app, &seq_counter, &run_id, &event);
+        emitter.persist_and_emit(&run_id, &event);
         storage::runs::update_status(&run_id, RunStatus::Stopped, None, None).ok();
     }
 
@@ -938,12 +966,26 @@ pub async fn fork_session(
 }
 
 #[tauri::command]
-pub async fn approve_session_tool(
-    app: AppHandle,
+pub async fn fork_session(
+    emitter: State<'_, Arc<BroadcastEmitter>>,
     sessions: State<'_, ActorSessionMap>,
-    seq_counter: State<'_, Arc<EventWriter>>,
     spawn_locks: State<'_, SpawnLocks>,
-    cancel_token: State<'_, CancellationToken>,
+    run_id: String,
+) -> Result<String, String> {
+    fork_session_impl(
+        emitter.inner(),
+        sessions.inner(),
+        spawn_locks.inner(),
+        run_id,
+    )
+    .await
+}
+
+pub(crate) async fn approve_session_tool_impl(
+    emitter: &Arc<BroadcastEmitter>,
+    sessions: &ActorSessionMap,
+    spawn_locks: &SpawnLocks,
+    cancel_token: &CancellationToken,
     run_id: String,
     tool_name: String,
 ) -> Result<(), String> {
@@ -1016,7 +1058,7 @@ pub async fn approve_session_tool(
     }
 
     // 5. Now safe to stop current actor
-    stop_actor(sessions.inner(), &run_id).await?;
+    stop_actor(sessions, &run_id).await?;
 
     // 6. Emit spawning
     let spawning_event = BusEvent::RunState {
@@ -1025,7 +1067,7 @@ pub async fn approve_session_tool(
         exit_code: None,
         error: None,
     };
-    emit_bus_event(&app, &seq_counter, &run_id, &spawning_event);
+    emitter.persist_and_emit(&run_id, &spawning_event);
     storage::runs::update_status(&run_id, RunStatus::Running, None, None).ok();
 
     // 8. Spawn CLI with Continue mode (audit #3: SSH path if remote)
@@ -1060,16 +1102,15 @@ pub async fn approve_session_tool(
 
     // 8b. Spawn actor
     let actor_handle = session_actor::spawn_actor(
-        app.clone(),
-        Arc::clone(&seq_counter),
-        sessions.inner().clone(),
+        Arc::clone(emitter),
+        sessions.clone(),
         run_id.clone(),
         child,
         stdin,
         stdout,
         stderr,
         true, // is_resume
-        cancel_token.inner().clone(),
+        cancel_token.clone(),
         total + 1,
         normal + 1,
     );
@@ -1109,6 +1150,26 @@ pub async fn approve_session_tool(
         run_id
     );
     Ok(())
+}
+
+#[tauri::command]
+pub async fn approve_session_tool(
+    emitter: State<'_, Arc<BroadcastEmitter>>,
+    sessions: State<'_, ActorSessionMap>,
+    spawn_locks: State<'_, SpawnLocks>,
+    cancel_token: State<'_, CancellationToken>,
+    run_id: String,
+    tool_name: String,
+) -> Result<(), String> {
+    approve_session_tool_impl(
+        emitter.inner(),
+        sessions.inner(),
+        spawn_locks.inner(),
+        cancel_token.inner(),
+        run_id,
+        tool_name,
+    )
+    .await
 }
 
 /// Respond to an inline permission prompt (--permission-prompt-tool stdio).

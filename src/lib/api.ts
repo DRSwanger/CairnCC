@@ -1,5 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
+import { getTransport } from "./transport";
 import { dbg, dbgWarn, redactSensitive } from "./utils/debug";
+
+function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  return getTransport().invoke<T>(cmd, args);
+}
 import type {
   TaskRun,
   RunEvent,
@@ -859,6 +863,34 @@ export async function searchMcpRegistry(
   });
 }
 
+// ── CLI Permissions ──
+
+export interface CliPermissions {
+  user: { allow: string[]; deny: string[] };
+  project: { allow: string[]; deny: string[] };
+  projectError?: string | null;
+}
+
+export async function getCliPermissions(cwd?: string): Promise<CliPermissions> {
+  dbg("api", "getCliPermissions", { cwd });
+  return invoke<CliPermissions>("get_cli_permissions", { cwd: cwd ?? null });
+}
+
+export async function updateCliPermissions(
+  scope: "user" | "project",
+  category: "allow" | "deny",
+  rules: string[],
+  cwd?: string,
+): Promise<void> {
+  dbg("api", "updateCliPermissions", { scope, category, count: rules.length });
+  return invoke<void>("update_cli_permissions", {
+    scope,
+    category,
+    rules,
+    cwd: cwd ?? null,
+  });
+}
+
 // ── CLI Config ──
 
 export async function getCliConfig(): Promise<Record<string, unknown>> {
@@ -934,6 +966,58 @@ export async function captureScreenshot(): Promise<void> {
 export async function updateScreenshotHotkey(hotkey: string | null): Promise<void> {
   dbg("api", "updateScreenshotHotkey", { hotkey });
   return invoke<void>("update_screenshot_hotkey", { hotkey });
+}
+
+// ── Web Server ──
+
+export async function getWebServerToken(): Promise<string | null> {
+  dbg("api", "getWebServerToken");
+  return invoke<string | null>("get_web_server_token");
+}
+
+export async function getWebServerStatus(): Promise<{
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  bind: string;
+  warning?: string;
+}> {
+  dbg("api", "getWebServerStatus");
+  return invoke<{
+    enabled: boolean;
+    running: boolean;
+    port: number;
+    bind: string;
+    warning?: string;
+  }>("get_web_server_status");
+}
+
+export async function regenerateWebServerToken(): Promise<string> {
+  dbg("api", "regenerateWebServerToken");
+  return invoke<string>("regenerate_web_server_token");
+}
+
+export interface WebServerConfig {
+  enabled: boolean;
+  port: number;
+  bind: string;
+  allowed_origins: string[] | null;
+  tunnel_url: string | null;
+}
+
+export interface RestartResult {
+  started: boolean;
+  config_saved: boolean;
+}
+
+export async function restartWebServer(config: WebServerConfig): Promise<RestartResult> {
+  dbg("api", "restartWebServer", { enabled: config.enabled, port: config.port });
+  return invoke<RestartResult>("restart_web_server", { config });
+}
+
+export async function getLocalIp(preferV6: boolean): Promise<string | null> {
+  dbg("api", "getLocalIp", { preferV6 });
+  return invoke<string | null>("get_local_ip", { preferV6 });
 }
 
 // ── Agents ──

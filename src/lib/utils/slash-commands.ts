@@ -161,6 +161,13 @@ export const VIRTUAL_COMMANDS: CliCommand[] = [
     _virtual: true,
     _action: "rewind",
   },
+  {
+    name: "permissions",
+    description: "Manage tool permission rules (allow/deny)",
+    aliases: [],
+    _virtual: true,
+    _action: "open-permissions",
+  },
 ];
 
 /**

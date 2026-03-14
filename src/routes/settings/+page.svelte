@@ -34,10 +34,18 @@
   import { splitPath } from "$lib/utils/format";
   import { IS_WINDOWS } from "$lib/utils/platform";
   import { t, LOCALE_REGISTRY, currentLocale, switchLocale } from "$lib/i18n/index.svelte";
+  import { getTransport } from "$lib/transport";
 
   // ── Tab state ──
-  type SettingsTab = "general" | "cli-config" | "shortcuts" | "remote" | "debug";
-  const VALID_TABS: SettingsTab[] = ["general", "cli-config", "shortcuts", "remote", "debug"];
+  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "debug";
+  const VALID_TABS: SettingsTab[] = [
+    "general",
+    "connection",
+    "cli-config",
+    "shortcuts",
+    "remote",
+    "debug",
+  ];
   const urlTab = $page.url.searchParams.get("tab");
   const initialTab: SettingsTab = VALID_TABS.includes(urlTab as SettingsTab)
     ? (urlTab as SettingsTab)
@@ -46,6 +54,7 @@
 
   const tabLabels: Record<SettingsTab, () => string> = {
     general: () => t("settings_tab_general"),
+    connection: () => t("settings_tab_connection"),
     "cli-config": () => t("settings_tab_cliConfig"),
     shortcuts: () => t("settings_tab_shortcuts"),
     remote: () => t("settings_tab_remote"),
@@ -56,6 +65,10 @@
     {
       id: "general",
       icon: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z",
+    },
+    {
+      id: "connection",
+      icon: "M12 2a4 4 0 0 0-4 4c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2 4 4 0 0 0-4-4z M8 8v2a4 4 0 0 0 8 0V8 M12 14v4 M8 18h8",
     },
     {
       id: "cli-config",
@@ -107,15 +120,41 @@
   let localAdvancedOpen = $state(false);
   let localProxyStatuses = $state<Record<string, { running: boolean; needsAuth: boolean }>>({});
 
+  // ── Web Server state (desktop-only) ──
+  let webToken = $state<string | null>(null);
+  let webStatus = $state<{
+    enabled: boolean;
+    running: boolean;
+    port: number;
+    bind: string;
+    warning?: string;
+  } | null>(null);
+  let showWebToken = $state(false);
+  let webTokenCopied = $state(false);
+  let webLinkCopied = $state(false);
+  let webRestarting = $state(false);
+  let webRestartError = $state<string | null>(null);
+  let webRestartWarning = $state<string | null>(null);
+  let webPortInput = $state("9476");
+  let webOriginInput = $state("");
+  let webBindValue = $state("127.0.0.1");
+  let webOrigins = $state<string[]>([]);
+  let webOriginError = $state<string | null>(null);
+  let webAdvancedOpen = $state(false);
+  let webLanIp = $state<string | null>(null);
+  let webTunnelUrl = $state("");
+  let webTunnelError = $state<string | null>(null);
+  let webTunnelLinkCopied = $state(false);
+  let lanIpRequestId = $state(0);
+
   let debugOn = $state(isDebugMode());
   let logCopied = $state(false);
   let debugFilter = $state(getDebugFilter() || "1");
 
-  // ── UI Zoom state ──
-  import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+  // ── UI Zoom state (desktop-only, dynamic import with fallback) ──
 
-  let cachedWebview: WebviewWindow | null = null;
-  async function getWebview(): Promise<WebviewWindow> {
+  let cachedWebview: any = null;
+  async function getWebview() {
     if (!cachedWebview) {
       const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
       cachedWebview = getCurrentWebviewWindow();
@@ -1056,6 +1095,28 @@
       .catch((e) => {
         dbgWarn("settings", "failed to load auth overview", e);
       });
+    // Load web server status + token (desktop only)
+    if (getTransport().isDesktop()) {
+      Promise.all([api.getWebServerStatus(), api.getWebServerToken()])
+        .then(async ([status, token]) => {
+          webStatus = status;
+          webToken = token;
+          // Initialize form fields from settings
+          webPortInput = String(settings?.web_server_port ?? 9476);
+          webBindValue = settings?.web_server_bind ?? "127.0.0.1";
+          webOrigins = [...(settings?.web_server_allowed_origins ?? [])];
+          webTunnelUrl = settings?.web_server_tunnel_url ?? "";
+          dbg("settings", "webServer loaded", {
+            enabled: status?.enabled,
+            hasToken: !!token,
+            tunnel: webTunnelUrl,
+          });
+          if (status?.running) await refreshLanIp(status.bind);
+        })
+        .catch((e) => {
+          dbgWarn("settings", "webServer load failed", e);
+        });
+    }
     loadCliInfo();
     // Auto-detect local proxies
     checkAllLocalProxies();
@@ -1087,6 +1148,132 @@
       setTimeout(() => (generalSaved = false), 1500);
     } catch (e) {
       dbgWarn("settings", "saveGeneralPatch error", e);
+    }
+  }
+
+  // ── Web Server helpers ──
+
+  async function applyWebServerSettings() {
+    webRestarting = true;
+    webRestartError = null;
+    webRestartWarning = null;
+    webTunnelError = null;
+    try {
+      const portNum = parseInt(webPortInput, 10);
+      if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+        throw new Error(t("settings_general_webPortInvalid"));
+      }
+      const result = await api.restartWebServer({
+        enabled: true,
+        port: portNum,
+        bind: webBindValue,
+        allowed_origins: webOrigins.length > 0 ? webOrigins : null,
+        tunnel_url: webTunnelUrl.trim() || null,
+      });
+      webStatus = await api.getWebServerStatus();
+      settings = await api.getUserSettings();
+      if (!result.config_saved) {
+        webRestartWarning = t("settings_general_webSaveWarning");
+      }
+      dbg("settings", "webServer apply", { started: result.started, saved: result.config_saved });
+      if (webStatus?.running) await refreshLanIp(webStatus.bind);
+    } catch (e: unknown) {
+      webRestartError = (e as Error)?.message ?? String(e);
+      webStatus = await api.getWebServerStatus();
+      dbgWarn("settings", "webServer apply failed", e);
+    } finally {
+      webRestarting = false;
+    }
+  }
+
+  function addWebOrigin() {
+    const trimmed = webOriginInput.trim().replace(/\/+$/, "");
+    if (!trimmed) return;
+    try {
+      const url = new URL(trimmed);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        webOriginError = t("settings_general_webOriginInvalid");
+        return;
+      }
+      const origin = url.origin;
+      if (!webOrigins.includes(origin)) {
+        webOrigins = [...webOrigins, origin];
+      }
+    } catch {
+      webOriginError = t("settings_general_webOriginInvalid");
+      return;
+    }
+    webOriginInput = "";
+    webOriginError = null;
+  }
+
+  async function refreshLanIp(bind: string): Promise<string | null> {
+    const myId = ++lanIpRequestId;
+    if (bind !== "0.0.0.0" && bind !== "::" && bind !== "[::]") {
+      webLanIp = null;
+      return null;
+    }
+    try {
+      const preferV6 = bind === "::" || bind === "[::]";
+      const ip = await api.getLocalIp(preferV6);
+      if (myId !== lanIpRequestId) return webLanIp;
+      webLanIp = ip;
+      return ip;
+    } catch (e) {
+      dbgWarn("settings", "refreshLanIp failed", e);
+      if (myId !== lanIpRequestId) return webLanIp;
+      webLanIp = null;
+      return null;
+    }
+  }
+
+  function buildLocalAccessUrl(): string | null {
+    if (!webStatus?.running || !webToken) return null;
+    const bind = webStatus.bind;
+    const isAll = bind === "0.0.0.0" || bind === "::" || bind === "[::]";
+    const rawHost = isAll ? webLanIp : bind;
+    if (!rawHost) return null;
+    const host = rawHost.includes(":") ? `[${rawHost}]` : rawHost;
+    return `http://${host}:${webStatus.port}/login#token=${webToken}`;
+  }
+
+  function buildTunnelAccessUrl(): string | null {
+    if (!webStatus?.running || !webToken) return null;
+    // Use saved (applied) tunnel URL, not the draft input value
+    const tunnel = settings?.web_server_tunnel_url?.trim();
+    if (!tunnel) return null;
+    try {
+      const u = new URL(tunnel);
+      // Tunnel links use ?token= (server-side auth) to survive ngrok/cloudflared
+      // interstitial pages. Local links keep #token= (fragment, never sent to server).
+      return `${u.origin}/login?token=${webToken}`;
+    } catch {
+      return null;
+    }
+  }
+
+  function buildAccessUrl(): string | null {
+    return buildTunnelAccessUrl() ?? buildLocalAccessUrl();
+  }
+
+  async function copyAccessLink() {
+    const url = buildAccessUrl();
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    webLinkCopied = true;
+    dbg("settings", "webLink copied");
+    setTimeout(() => (webLinkCopied = false), 1500);
+  }
+
+  async function openAccessLink() {
+    const url = buildAccessUrl();
+    if (!url) return;
+    try {
+      const { open } = await import("@tauri-apps/plugin-shell");
+      await open(url);
+      dbg("settings", "webLink opened in browser");
+    } catch (e) {
+      dbgWarn("settings", "failed to open browser", e);
     }
   }
 </script>
@@ -1203,6 +1390,449 @@
           </div>
         </Card>
 
+        <!-- Web Server Card (desktop only) -->
+        {#if getTransport().isDesktop()}
+          <Card class="p-6 space-y-4">
+            <h2 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+              {t("settings_general_webServer")}
+            </h2>
+
+            <!-- Enabled toggle -->
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium">{t("settings_general_webEnabled")}</p>
+                <p class="text-xs text-muted-foreground">{t("settings_general_webEnabledDesc")}</p>
+              </div>
+              <button
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {webStatus?.enabled
+                  ? 'bg-primary'
+                  : 'bg-muted'}"
+                disabled={webRestarting}
+                onclick={async () => {
+                  const newEnabled = !webStatus?.enabled;
+                  webRestarting = true;
+                  webRestartError = null;
+                  webRestartWarning = null;
+                  try {
+                    if (newEnabled) {
+                      const portNum = parseInt(webPortInput, 10);
+                      if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+                        throw new Error(t("settings_general_webPortInvalid"));
+                      }
+                      const result = await api.restartWebServer({
+                        enabled: true,
+                        port: portNum,
+                        bind: webBindValue,
+                        allowed_origins: webOrigins.length > 0 ? webOrigins : null,
+                        tunnel_url: webTunnelUrl.trim() || null,
+                      });
+                      if (!result.config_saved) {
+                        webRestartWarning = t("settings_general_webSaveWarning");
+                      }
+                    } else {
+                      await api.restartWebServer({
+                        enabled: false,
+                        port: 0,
+                        bind: "",
+                        allowed_origins: null,
+                        tunnel_url: null,
+                      });
+                    }
+                    webStatus = await api.getWebServerStatus();
+                    settings = await api.getUserSettings();
+                    dbg("settings", "webServer toggled", { enabled: newEnabled });
+                    if (webStatus?.running) await refreshLanIp(webStatus.bind);
+                  } catch (e) {
+                    webRestartError = (e as Error)?.message ?? String(e);
+                    webStatus = await api.getWebServerStatus();
+                    dbgWarn("settings", "webServer toggle failed", e);
+                  } finally {
+                    webRestarting = false;
+                  }
+                }}
+              >
+                <span
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {webStatus?.enabled
+                    ? 'translate-x-6'
+                    : 'translate-x-1'}"
+                ></span>
+              </button>
+            </div>
+
+            <!-- Config area (show when enabled OR running) -->
+            {#if webStatus?.enabled || webStatus?.running}
+              <!-- Startup warning banner -->
+              {#if webStatus?.warning}
+                <div class="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                  <p class="text-xs text-amber-400 whitespace-pre-line">
+                    {t("settings_general_webStartupWarning", { warning: webStatus.warning })}
+                  </p>
+                </div>
+              {/if}
+
+              <!-- Access link + token (only when running) -->
+              {#if webStatus?.running && webToken}
+                {@const isAllInterfaces =
+                  webStatus.bind === "0.0.0.0" ||
+                  webStatus.bind === "::" ||
+                  webStatus.bind === "[::]"}
+                {@const rawHost = isAllInterfaces ? webLanIp : webStatus.bind}
+                {@const displayHost = rawHost
+                  ? rawHost.includes(":")
+                    ? `[${rawHost}]`
+                    : rawHost
+                  : null}
+                {@const tunnelUrl = buildTunnelAccessUrl()}
+                {@const localUrl = buildLocalAccessUrl()}
+                <div class="space-y-2">
+                  {#if tunnelUrl}
+                    <!-- Tunnel link (primary) -->
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-muted-foreground shrink-0"
+                        >{t("settings_general_webTunnelLink")}</span
+                      >
+                      <code
+                        class="flex-1 rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs overflow-hidden text-ellipsis whitespace-nowrap"
+                        >{tunnelUrl.replace(/[?#]token=.*$/, "?token=...")}</code
+                      >
+                      <button
+                        class="rounded-md border px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors shrink-0"
+                        onclick={async () => {
+                          await navigator.clipboard.writeText(tunnelUrl);
+                          webTunnelLinkCopied = true;
+                          dbg("settings", "tunnelLink copied");
+                          setTimeout(() => (webTunnelLinkCopied = false), 1500);
+                        }}
+                      >
+                        {webTunnelLinkCopied
+                          ? t("settings_general_webCopied")
+                          : t("settings_general_webCopyLink")}
+                      </button>
+                      <button
+                        class="rounded-md border px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors shrink-0"
+                        onclick={async () => {
+                          try {
+                            const { open } = await import("@tauri-apps/plugin-shell");
+                            await open(tunnelUrl);
+                            dbg("settings", "tunnelLink opened in browser");
+                          } catch (e) {
+                            dbgWarn("settings", "failed to open browser", e);
+                          }
+                        }}
+                      >
+                        {t("settings_general_webOpenBrowser")}
+                      </button>
+                    </div>
+                    <!-- Local link (secondary, muted) -->
+                    {#if displayHost && localUrl}
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs text-muted-foreground/60 shrink-0"
+                          >{t("settings_general_webLocalLink")}</span
+                        >
+                        <code
+                          class="flex-1 rounded-md border border-border/50 bg-muted/30 px-3 py-1.5 font-mono text-[11px] text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap"
+                          >{localUrl.replace(/#token=.*$/, "#token=...")}</code
+                        >
+                        <button
+                          class="rounded-md border px-3 py-1.5 text-[11px] text-muted-foreground/60 hover:bg-accent transition-colors shrink-0"
+                          onclick={async () => {
+                            if (localUrl) {
+                              await navigator.clipboard.writeText(localUrl);
+                              webLinkCopied = true;
+                              dbg("settings", "localLink copied");
+                              setTimeout(() => (webLinkCopied = false), 1500);
+                            }
+                          }}
+                        >
+                          {webLinkCopied
+                            ? t("settings_general_webCopied")
+                            : t("settings_general_webCopyLink")}
+                        </button>
+                      </div>
+                    {/if}
+                  {:else if displayHost}
+                    <div class="flex items-center gap-2">
+                      <code
+                        class="flex-1 rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs overflow-hidden text-ellipsis whitespace-nowrap"
+                        >{`http://${displayHost}:${webStatus.port}/login#token=...`}</code
+                      >
+                      <button
+                        class="rounded-md border px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors shrink-0"
+                        onclick={copyAccessLink}
+                      >
+                        {webLinkCopied
+                          ? t("settings_general_webCopied")
+                          : t("settings_general_webCopyLink")}
+                      </button>
+                      <button
+                        class="rounded-md border px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors shrink-0"
+                        onclick={openAccessLink}
+                      >
+                        {t("settings_general_webOpenBrowser")}
+                      </button>
+                    </div>
+                  {:else if isAllInterfaces}
+                    <p class="text-xs text-amber-400">
+                      {t("settings_general_webLanIpFailed")}
+                    </p>
+                  {/if}
+                  <!-- Token reveal + regenerate -->
+                  <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                    {#if showWebToken}
+                      <code class="font-mono text-[11px] select-all">{webToken}</code>
+                      <button
+                        class="hover:text-foreground transition-colors shrink-0"
+                        onclick={() => (showWebToken = false)}
+                      >
+                        {t("settings_general_hide")}
+                      </button>
+                      <button
+                        class="hover:text-foreground transition-colors shrink-0"
+                        onclick={async () => {
+                          if (webToken) {
+                            await navigator.clipboard.writeText(webToken);
+                            webTokenCopied = true;
+                            dbg("settings", "webToken copied");
+                            setTimeout(() => (webTokenCopied = false), 1500);
+                          }
+                        }}
+                      >
+                        {webTokenCopied
+                          ? t("settings_general_webCopied")
+                          : t("settings_general_webCopy")}
+                      </button>
+                    {:else}
+                      <button
+                        class="hover:text-foreground transition-colors"
+                        onclick={() => (showWebToken = true)}
+                      >
+                        {t("settings_general_webShowToken")}
+                      </button>
+                    {/if}
+                    <span class="text-border">|</span>
+                    <button
+                      class="text-amber-400/70 hover:text-amber-400 transition-colors"
+                      onclick={async () => {
+                        try {
+                          const newToken = await api.regenerateWebServerToken();
+                          webToken = newToken;
+                          showWebToken = false;
+                          webTokenCopied = false;
+                          webLinkCopied = false;
+                          dbg("settings", "webToken regenerated");
+                        } catch (e) {
+                          dbgWarn("settings", "webToken regenerate failed", e);
+                        }
+                      }}
+                    >
+                      {t("settings_general_webRegenerate")}
+                    </button>
+                    <span class="text-muted-foreground/50">—</span>
+                    <span class="text-muted-foreground/50"
+                      >{t("settings_general_webRegenerateDesc")}</span
+                    >
+                  </div>
+                </div>
+              {/if}
+
+              <!-- HTTP Tunnel -->
+              <div>
+                <p class="text-sm font-medium mb-1.5">{t("settings_general_webTunnel")}</p>
+                <input
+                  type="text"
+                  class="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  placeholder={t("settings_general_webTunnelPlaceholder")}
+                  bind:value={webTunnelUrl}
+                  onblur={() => {
+                    const v = webTunnelUrl.trim();
+                    if (v) {
+                      try {
+                        const u = new URL(v);
+                        if (u.protocol !== "http:" && u.protocol !== "https:") {
+                          webTunnelError = t("settings_general_webTunnelInvalid");
+                        } else {
+                          webTunnelError = null;
+                        }
+                      } catch {
+                        webTunnelError = t("settings_general_webTunnelInvalid");
+                      }
+                    } else {
+                      webTunnelError = null;
+                    }
+                  }}
+                />
+                {#if webTunnelError}
+                  <p class="text-xs text-red-400 mt-1">{webTunnelError}</p>
+                {:else}
+                  <p class="text-xs text-muted-foreground mt-1">
+                    {t("settings_general_webTunnelDesc")}
+                  </p>
+                {/if}
+              </div>
+
+              <!-- Access + Port — side by side -->
+              <div class="grid grid-cols-[1fr_auto] gap-4 items-start">
+                <div>
+                  <p class="text-sm font-medium mb-1.5">{t("settings_general_webAccess")}</p>
+                  <div class="flex gap-2">
+                    <button
+                      class="flex-1 rounded-md border px-3 py-2 text-xs transition-colors {webBindValue ===
+                      '127.0.0.1'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:bg-accent'}"
+                      onclick={() => (webBindValue = "127.0.0.1")}
+                    >
+                      {t("settings_general_webAccessLocal")}
+                    </button>
+                    <button
+                      class="flex-1 rounded-md border px-3 py-2 text-xs transition-colors {webBindValue ===
+                      '0.0.0.0'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:bg-accent'}"
+                      onclick={() => (webBindValue = "0.0.0.0")}
+                    >
+                      {t("settings_general_webAccessLan")}
+                    </button>
+                  </div>
+                  <p class="text-xs text-muted-foreground mt-1">
+                    {t("settings_general_webAccessDesc")}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-sm font-medium mb-1.5">{t("settings_general_webPort")}</p>
+                  <input
+                    type="number"
+                    class="w-24 rounded-md border bg-background px-3 py-2 text-sm"
+                    bind:value={webPortInput}
+                    min="1024"
+                    max="65535"
+                    onblur={() => {
+                      const n = parseInt(webPortInput, 10);
+                      if (isNaN(n) || n < 1024 || n > 65535) {
+                        webRestartError = t("settings_general_webPortInvalid");
+                      } else {
+                        if (webRestartError === t("settings_general_webPortInvalid")) {
+                          webRestartError = null;
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              <!-- Advanced (collapsible) -->
+              <div>
+                <button
+                  class="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onclick={() => (webAdvancedOpen = !webAdvancedOpen)}
+                >
+                  <svg
+                    class="h-3 w-3 transition-transform {webAdvancedOpen ? 'rotate-90' : ''}"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"><path d="m9 18 6-6-6-6" /></svg
+                  >
+                  {t("settings_general_webAdvanced")}
+                </button>
+
+                {#if webAdvancedOpen}
+                  <div class="mt-3 space-y-2">
+                    <p class="text-sm font-medium">{t("settings_general_webAllowedOrigins")}</p>
+                    {#if webOrigins.length > 0}
+                      <div class="flex flex-wrap gap-1.5">
+                        {#each webOrigins as origin, i}
+                          <span
+                            class="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs"
+                          >
+                            {origin}
+                            <button
+                              class="text-muted-foreground hover:text-foreground"
+                              onclick={() => {
+                                webOrigins = webOrigins.filter((_, idx) => idx !== i);
+                              }}
+                            >
+                              <svg
+                                class="h-3 w-3"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"><path d="M18 6L6 18M6 6l12 12" /></svg
+                              >
+                            </button>
+                          </span>
+                        {/each}
+                      </div>
+                    {/if}
+                    <div class="flex gap-2">
+                      <input
+                        type="text"
+                        class="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+                        placeholder={t("settings_general_webAllowedOriginsPlaceholder")}
+                        bind:value={webOriginInput}
+                        onkeydown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addWebOrigin();
+                          }
+                        }}
+                      />
+                      <button
+                        class="rounded-md border px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors shrink-0"
+                        onclick={addWebOrigin}
+                      >
+                        {t("settings_general_webAddOrigin")}
+                      </button>
+                    </div>
+                    {#if webOriginError}
+                      <p class="text-xs text-red-400">{webOriginError}</p>
+                    {/if}
+                    <p class="text-xs text-muted-foreground">
+                      {t("settings_general_webAllowedOriginsDesc")}
+                    </p>
+                  </div>
+                {/if}
+              </div>
+
+              <!-- Apply + feedback -->
+              <div class="space-y-2 pt-2 border-t border-border">
+                {#if webRestartError}
+                  <p class="text-xs text-red-400">
+                    {t("settings_general_webRestartFailed", { error: webRestartError })}
+                  </p>
+                {/if}
+                {#if webRestartWarning}
+                  <p class="text-xs text-amber-400">{webRestartWarning}</p>
+                {/if}
+                <button
+                  class="rounded-md border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+                  disabled={webRestarting}
+                  onclick={applyWebServerSettings}
+                >
+                  {#if webRestarting}
+                    <span class="inline-flex items-center gap-2">
+                      <span
+                        class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                      ></span>
+                      {t("settings_general_webApplying")}
+                    </span>
+                  {:else}
+                    {t("settings_general_webApply")}
+                  {/if}
+                </button>
+              </div>
+            {:else}
+              <p class="text-sm text-muted-foreground">
+                {t("settings_general_webDisabled")}
+              </p>
+            {/if}
+          </Card>
+        {/if}
+      </div>
+
+      <!-- ═══ Connection tab ═══ -->
+    {:else if activeTab === "connection"}
+      <div class="space-y-6">
         <!-- Authentication -->
         <Card class="p-6 space-y-5">
           <div class="flex items-center justify-between">
@@ -1750,8 +2380,6 @@
                     class="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                     onclick={() => {
                       platformExtraEnv = [...platformExtraEnv, { key: "", value: "" }];
-                      // Don't markExtraEnvTouched(): empty row isn't an edit, avoids baking preset defaults.
-                      // touched is marked on onblur (actual value entry) or row deletion.
                     }}
                   >
                     <svg

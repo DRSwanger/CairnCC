@@ -2,7 +2,7 @@
   import { page } from "$app/stores";
   import { goto, replaceState } from "$app/navigation";
   import { tick, onMount, untrack, getContext } from "svelte";
-  import { listen } from "@tauri-apps/api/event";
+  import { getTransport } from "$lib/transport";
   import * as api from "$lib/api";
   import {
     SessionStore,
@@ -75,6 +75,7 @@
   import { buildDoctorReport } from "$lib/utils/doctor";
   import type { RewindCandidate, RewindMarker } from "$lib/utils/rewind";
   import { truncate } from "$lib/utils/format";
+  import { uuid } from "$lib/utils/uuid";
   import RewindModal from "$lib/components/RewindModal.svelte";
 
   // ── Helpers ──
@@ -581,11 +582,21 @@
     renderLimit = Infinity;
     dbg("chat", "loadRun complete", { timeline: filteredTimeline.length, gen });
 
-    // Scroll to bottom after DOM update — ensures content-visibility triggers re-layout
-    await tick();
-    requestAnimationFrame(() => {
-      if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
-    });
+    // If ?scrollTo= is present, scroll to the matched message; otherwise scroll to bottom
+    const scrollTo = $page.url.searchParams.get("scrollTo");
+    if (scrollTo) {
+      const clean = new URL($page.url);
+      clean.searchParams.delete("scrollTo");
+      replaceState(clean, {});
+      await tick();
+      scrollToMessage(scrollTo);
+    } else {
+      // Scroll to bottom after DOM update — ensures content-visibility triggers re-layout
+      await tick();
+      requestAnimationFrame(() => {
+        if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
+      });
+    }
   }
 
   let isExpandingTimeline = $derived(false);
@@ -1097,6 +1108,13 @@
       // If store already holds an active session for this run, skip redundant loadRun
       if (store.run?.id === id && store.sessionAlive) {
         dbg("effect", "skip loadRun — session already alive for", id);
+        const scrollTo = $page.url.searchParams.get("scrollTo");
+        if (scrollTo) {
+          const clean = new URL($page.url);
+          clean.searchParams.delete("scrollTo");
+          replaceState(clean, {});
+          scrollToMessage(scrollTo);
+        }
         return;
       }
 
@@ -1212,22 +1230,32 @@
     });
 
     // Screenshot event listener (global hotkey → attachment injection)
-    const screenshotUnlisten = listen<ScreenshotPayload>("screenshot-taken", (event) => {
-      dbg("chat", "screenshot-taken", { filename: event.payload.filename });
-      const { contentBase64, mediaType, filename } = event.payload;
-      const bytes = Uint8Array.from(atob(contentBase64), (c) => c.charCodeAt(0));
-      const file = new File([bytes], filename, { type: mediaType });
-      promptRef?.addFiles([file]);
-    });
+    const chatTransport = getTransport();
+    const screenshotUnlisten = chatTransport.listen<ScreenshotPayload>(
+      "screenshot-taken",
+      (payload) => {
+        dbg("chat", "screenshot-taken", { filename: payload.filename });
+        const { contentBase64, mediaType, filename } = payload;
+        const bytes = Uint8Array.from(atob(contentBase64), (c) => c.charCodeAt(0));
+        const file = new File([bytes], filename, { type: mediaType });
+        promptRef?.addFiles([file]);
+      },
+    );
 
     // Tauri native drag-drop listeners (dragDropEnabled: true in tauri.conf.json)
-    const dragEnterUnlisten = listen<{ paths: string[] }>("tauri://drag-enter", () => {
-      pageDragActive = true;
-    });
-    const dragLeaveUnlisten = listen("tauri://drag-leave", () => {
+    const dragEnterUnlisten = chatTransport.listen<{ paths: string[] }>(
+      "tauri://drag-enter",
+      () => {
+        pageDragActive = true;
+      },
+    );
+    const dragLeaveUnlisten = chatTransport.listen("tauri://drag-leave", () => {
       pageDragActive = false;
     });
-    const dragDropUnlisten = listen<{ paths: string[] }>("tauri://drag-drop", handleTauriDrop);
+    const dragDropUnlisten = chatTransport.listen<{ paths: string[] }>(
+      "tauri://drag-drop",
+      handleTauriDrop,
+    );
 
     return () => {
       window.removeEventListener("ocv:statusbar-toggle", onStatusBarToggle);
@@ -1254,33 +1282,35 @@
 
   // Listen for auto-context snapshots from Rust backend
   onMount(() => {
-    const unlisten = listen<{ runId: string; content: string; turnIndex: number; ts: string }>(
-      "context-snapshot",
-      (event) => {
-        const { runId, content, turnIndex, ts } = event.payload;
-        dbg("chat", "context-snapshot-recv", { runId, turnIndex, len: content.length });
-        if (runId !== store.run?.id) return;
-        const data = parseContextMarkdown(content);
-        if (!data) {
-          dbgWarn("chat", "context-parse-failed", {
-            runId,
-            turnIndex,
-            head: content.slice(0, 200),
-          });
-          return;
-        }
-        // Upsert by turnIndex: same turn overwrites (not appends)
-        const prev = contextHistoryMap.get(runId) ?? [];
-        const existingIdx = prev.findIndex((s) => s.turnIndex === turnIndex);
-        const replaced = existingIdx >= 0;
-        const updated = replaced
-          ? prev.map((s, i) => (i === existingIdx ? { runId, turnIndex, ts, data } : s))
-          : [...prev, { runId, turnIndex, ts, data }];
-        contextHistoryMap.set(runId, updated);
-        contextHistoryMap = new Map(contextHistoryMap); // trigger reactivity
-        dbg("chat", "context-snapshot", { turn: turnIndex, pct: data.percentage, replaced });
-      },
-    );
+    const unlisten = getTransport().listen<{
+      runId: string;
+      content: string;
+      turnIndex: number;
+      ts: string;
+    }>("context-snapshot", (payload) => {
+      const { runId, content, turnIndex, ts } = payload;
+      dbg("chat", "context-snapshot-recv", { runId, turnIndex, len: content.length });
+      if (runId !== store.run?.id) return;
+      const data = parseContextMarkdown(content);
+      if (!data) {
+        dbgWarn("chat", "context-parse-failed", {
+          runId,
+          turnIndex,
+          head: content.slice(0, 200),
+        });
+        return;
+      }
+      // Upsert by turnIndex: same turn overwrites (not appends)
+      const prev = contextHistoryMap.get(runId) ?? [];
+      const existingIdx = prev.findIndex((s) => s.turnIndex === turnIndex);
+      const replaced = existingIdx >= 0;
+      const updated = replaced
+        ? prev.map((s, i) => (i === existingIdx ? { runId, turnIndex, ts, data } : s))
+        : [...prev, { runId, turnIndex, ts, data }];
+      contextHistoryMap.set(runId, updated);
+      contextHistoryMap = new Map(contextHistoryMap); // trigger reactivity
+      dbg("chat", "context-snapshot", { turn: turnIndex, pct: data.percentage, replaced });
+    });
     return () => {
       unlisten.then((f) => f());
     };
@@ -1496,15 +1526,22 @@
             : "";
 
         if (!cwd || cwd === "/") {
-          const { open } = await import("@tauri-apps/plugin-dialog");
-          const selected = await open({
-            directory: true,
-            title: t("layout_selectProjectFolder"),
-          });
-          if (!selected) return; // user cancelled → don't send
-          cwd = selected as string;
-          localStorage.setItem("ocv:project-cwd", cwd);
-          window.dispatchEvent(new Event("ocv:cwd-changed"));
+          const transport = getTransport();
+          if (transport.isDesktop()) {
+            // Desktop: native folder picker
+            const { open } = await import("@tauri-apps/plugin-dialog");
+            const selected = await open({
+              directory: true,
+              title: t("layout_selectProjectFolder"),
+            });
+            if (!selected) return; // user cancelled → don't send
+            cwd = selected as string;
+            localStorage.setItem("ocv:project-cwd", cwd);
+            window.dispatchEvent(new Event("ocv:cwd-changed"));
+          } else {
+            // Browser: use server-configured working_directory from settings
+            cwd = settings?.working_directory || "/";
+          }
         }
 
         // Set indicator AFTER all early-return points
@@ -1851,7 +1888,7 @@
       ...store.timeline,
       {
         kind: "command_output",
-        id: crypto.randomUUID(),
+        id: uuid(),
         content: text,
         ts: new Date().toISOString(),
       },
@@ -2234,6 +2271,8 @@
       } else {
         handleRewind();
       }
+    } else if (action === "open-permissions") {
+      window.dispatchEvent(new CustomEvent("ocv:open-permissions"));
     }
   }
 
@@ -2415,9 +2454,9 @@
     return results;
   }
 
-  async function handleTauriDrop(event: { payload: { paths: string[] } }) {
+  async function handleTauriDrop(payload: { paths: string[] }) {
     pageDragActive = false;
-    const paths = event.payload.paths;
+    const paths = payload.paths;
     const input = promptRef; // cache ref — promptRef may become undefined after awaits
     if (!paths?.length || !input) return;
 
@@ -2543,6 +2582,27 @@
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       el.classList.add("ring-2", "ring-primary/50");
       setTimeout(() => el.classList.remove("ring-2", "ring-primary/50"), 2000);
+    }
+  }
+
+  async function scrollToMessage(ts: string) {
+    // Cancel progressive rendering so full timeline is available
+    if (renderLimit !== Infinity) {
+      cancelProgressive();
+      await tick();
+    }
+    // Clear filter first (target message may be filtered out)
+    if (toolFilter) {
+      toolFilter = null;
+      await tick();
+    }
+    const el = document.getElementById("msg-" + ts);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary/50");
+      setTimeout(() => el.classList.remove("ring-2", "ring-primary/50"), 2000);
+    } else {
+      dbg("chat", "scrollToMessage: element not found", { ts });
     }
   }
 
@@ -3200,7 +3260,11 @@
               {/if}
               {#each visibleTimeline as entry, i (entry.id)}
                 {#if !(burstHiddenIndices.has(i) && !toolBursts.has(i))}
-                  <div class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"} class="group/msg">
+                  <div
+                    id="msg-{entry.ts}"
+                    class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
+                    class="group/msg"
+                  >
                     {#if batchGroups.has(i)}
                       {@const batch = batchGroups.get(i)}
                       {#if batch}
@@ -3852,7 +3916,7 @@
         platformId={store.platformId ?? "anthropic"}
         platformCredentials={settings?.platform_credentials ?? []}
         onSend={sendMessage}
-        onAgentChange={(a) => (store.agent = a)}
+        onAgentChange={undefined}
         onInterrupt={() => store.interrupt()}
         onModelSwitch={handleModelChange}
         onPermissionModeChange={store.agent === "claude" ? handlePermissionModeChange : undefined}
@@ -3926,7 +3990,7 @@
       rewindMarkers = [
         ...rewindMarkers,
         {
-          id: crypto.randomUUID(),
+          id: uuid(),
           ts: new Date().toISOString(),
           targetContent: truncate(info.targetContent, 80),
           filesReverted: info.filesReverted,

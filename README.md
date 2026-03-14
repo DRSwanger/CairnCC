@@ -45,25 +45,37 @@ AI coding CLIs like Claude Code are powerful, but they run inside a terminal. Th
 | Capability | What OpenCovibe adds |
 |------------|---------------------|
 | **Visual Tool Cards** | Every tool call (Read, Edit, Bash, Grep, Write, WebFetch, …) rendered as an inline card with syntax-highlighted diffs, structured output, and one-click copy |
-| **Run History & Replay** | Browse all past sessions, full event replay, resume / fork from any point |
+| **Run History & Replay** | Browse all past sessions, full event replay, resume / fork from any point, soft-delete with recovery |
 | **Multi-Provider Switching** | Use Claude Code with 15+ API providers (DeepSeek, Kimi, Zhipu, Bailian, DouBao, MiniMax, OpenRouter, Ollama, …) — hot-switch without restarting |
+| **Remote Browser Access** | Embedded web server for browser-based access over LAN or HTTP tunnels (ngrok / cloudflared) |
+| **File Explorer** | Browse and edit project files with syntax highlighting, markdown preview, image preview, and git diff view |
+| **Memory Editor** | Create and edit CLAUDE.md, project-scoped and user-scoped memory files with live preview |
 | **Agent Management** | Visual editor to create, edit, and manage custom agent definitions (.md files) with form and source modes |
-| **Usage Analytics** | Per-model token breakdown, cost tracking, daily heatmap, session-level stats |
+| **Permission Rules** | Manage CLI permission allow/deny rules at user and project level with a visual rule editor |
+| **Usage Analytics** | Per-model token breakdown, cost tracking, daily heatmap, stacked model chart, session-level stats |
 | **Team Dashboard** | Read-only view into Claude Code multi-agent teams — task lists, teammate status, message flow |
-| **Activity Monitor** | Real-time hook event stream, tool activity timeline, subagent tracking with nested tool cards |
+| **Activity Monitor** | Real-time hook event stream, tool activity timeline, file tracking panel, subagent tracking with nested tool cards |
 | **Plugin Marketplace** | Browse, install, and manage Claude Code plugins and skills from a visual marketplace |
 | **MCP Management** | Discover MCP servers, view per-server status, reconnect / toggle from a panel |
-| **Inline Permissions** | Rich permission review UI with Allow/Deny buttons, CLI-suggested "Always Allow" rules, and AskUserQuestion rendering |
+| **Inline Permissions** | Rich permission review UI with batch Allow/Deny panel, CLI-suggested "Always Allow" rules, and AskUserQuestion rendering |
+| **CLI Session Import** | Discover and import existing Claude Code CLI sessions into OpenCovibe |
+| **Rewind** | Checkpoint and selectively revert file changes with dry-run preview |
+| **Remote Hosts** | Configure SSH hosts for remote CLI execution with key generation wizard and connectivity testing |
+| **Doctor Diagnostics** | System health checks for CLI, platform, SSH, and proxy configuration |
 
 ### Features
 
-- **Rich Chat UI** — Markdown, syntax highlighting, thinking blocks, image attachments, file diffs, collapsible tool groups
-- **Session Control** — Create, resume, fork, rename sessions; plan mode toggle; model hot-switch
+- **Rich Chat UI** — Markdown, syntax highlighting, thinking blocks, image attachments, file diffs, collapsible tool burst groups
+- **Session Control** — Create, resume, fork, rename sessions; plan mode toggle; model hot-switch; context history tracking
+- **Drag & Drop** — Native file drag-drop for images, PDFs, directories, and path references
+- **Project Folders** — Sidebar project selector with per-project scoping for memory, permissions, and sessions
 - **Inline Slash Commands** — `/model`, `/diff`, `/todos`, `/tasks`, `/doctor`, `/copy`, `/stats`, and more — rendered natively in-app
 - **Keyboard Shortcuts** — Fully customizable keybindings with chord support and conflict detection
+- **Hook Manager** — Configure upstream CLI hooks for event-driven automation
 - **i18n** — English and Chinese (Simplified) with lightweight reactive runtime
 - **System Tray** — Hide to tray; background sessions keep running with native notifications
-- **Dark / Light Theme** — CSS variable-based theming
+- **Dark / Light Theme** — CSS variable-based theming with UI zoom control
+- **Auto Update** — In-app update checker with download links
 - **Setup Wizard** — Guided CLI detection, authentication, and provider configuration on first launch
 
 ## Quick Start
@@ -138,15 +150,16 @@ You can re-run the wizard anytime from **Settings > General > Setup Wizard**.
 | Provider | Endpoint | Auth |
 |----------|----------|------|
 | Anthropic | Official API | API Key |
-| DeepSeek | `api.deepseek.com/anthropic` | API Key |
+| DeepSeek | `api.deepseek.com/anthropic` | Bearer |
 | Kimi (Moonshot) | `api.moonshot.cn/anthropic` | Bearer |
-| Kimi For Coding | `api.kimi.com/coding/` | API Key |
-| Zhipu (智谱) | `open.bigmodel.cn/api/anthropic` | API Key |
-| Bailian (百炼) | `dashscope.aliyuncs.com/apps/anthropic` | Bearer |
-| DouBao (豆包) | `ark.cn-beijing.volces.com/api/coding` | API Key |
-| MiniMax | `api.minimax.io/anthropic` | API Key |
-| MiniMax (China) | `api.minimaxi.com/anthropic` | API Key |
-| Xiaomi MiMo (小米) | `api.xiaomimimo.com/anthropic` | API Key |
+| Kimi For Coding | `api.kimi.com/coding/` | Bearer |
+| Zhipu (智谱) | `open.bigmodel.cn/api/anthropic` | Bearer |
+| Zhipu (智谱 Intl) | `api.z.ai/api/anthropic` | Bearer |
+| Bailian (百炼) | `coding.dashscope.aliyuncs.com/apps/anthropic` | Bearer |
+| DouBao (豆包) | `ark.cn-beijing.volces.com/api/coding` | Bearer |
+| MiniMax | `api.minimax.io/anthropic` | Bearer |
+| MiniMax (China) | `api.minimaxi.com/anthropic` | Bearer |
+| Xiaomi MiMo (小米) | `api.xiaomimimo.com/anthropic` | Bearer |
 
 ### API Gateway
 
@@ -154,7 +167,8 @@ You can re-run the wizard anytime from **Settings > General > Setup Wizard**.
 |----------|----------|------|
 | Vercel AI Gateway | `ai-gateway.vercel.sh` | Bearer |
 | OpenRouter | `openrouter.ai/api` | Bearer |
-| AiHubMix | `aihubmix.com` | API Key |
+| AiHubMix | `aihubmix.com` | Bearer |
+| ZenMux | `zenmux.ai/api/anthropic` | Bearer |
 
 ### Local
 
@@ -185,7 +199,7 @@ You can re-run the wizard anytime from **Settings > General > Setup Wizard**.
 
 **Agent Communication:**
 
-The app communicates with Claude Code CLI via bidirectional stream-JSON protocol (stdin/stdout). Each session is a long-lived, multi-turn process managed by a per-run session actor. Four communication modes are supported: stream-JSON (primary), PTY (interactive terminal), pipe (Codex), and direct API (HTTP streaming).
+The app communicates with Claude Code CLI via bidirectional stream-JSON protocol (stdin/stdout). Each session is a long-lived, multi-turn process managed by a per-run session actor. Three communication modes are supported: stream-JSON (primary), PTY (interactive terminal), and pipe (Codex).
 
 **Data Storage:**
 

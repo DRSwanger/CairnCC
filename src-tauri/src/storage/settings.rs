@@ -376,6 +376,53 @@ pub fn get_user_settings() -> UserSettings {
     load().user
 }
 
+/// Save web server config fields. Called by restart_with_config on success.
+pub fn save_web_server_config(
+    enabled: bool,
+    port: u16,
+    bind: &str,
+    allowed_origins: &Option<Vec<String>>,
+    tunnel_url: &Option<String>,
+) -> Result<(), String> {
+    let mut all = load();
+    all.user.web_server_enabled = Some(enabled);
+    all.user.web_server_port = Some(port);
+    all.user.web_server_bind = Some(bind.to_string());
+    all.user.web_server_allowed_origins = allowed_origins.clone();
+    all.user.web_server_tunnel_url = tunnel_url.clone();
+    all.user.updated_at = crate::models::now_iso();
+    save(&all)?;
+    log::debug!(
+        "[storage/settings] web_server config saved: enabled={}, port={}, bind={}, tunnel={:?}",
+        enabled,
+        port,
+        bind,
+        tunnel_url,
+    );
+    Ok(())
+}
+
+/// Set only web_server_enabled, preserving all other web server fields.
+pub fn set_web_server_enabled(enabled: bool) -> Result<(), String> {
+    let mut all = load();
+    all.user.web_server_enabled = Some(enabled);
+    all.user.updated_at = crate::models::now_iso();
+    save(&all)?;
+    log::debug!("[storage/settings] web_server_enabled set to {}", enabled);
+    Ok(())
+}
+
+/// Partial disable: only set enabled=false, never touch other web server fields.
+/// Used by the disable path to ensure disable always succeeds regardless of form state.
+pub fn save_web_server_partial_disable() -> Result<(), String> {
+    let mut all = load();
+    all.user.web_server_enabled = Some(false);
+    all.user.updated_at = crate::models::now_iso();
+    save(&all)?;
+    log::debug!("[storage/settings] web_server partial disable saved");
+    Ok(())
+}
+
 fn validate_ui_zoom(v: &serde_json::Value) -> Result<Option<f64>, String> {
     if v.is_null() {
         return Ok(None);

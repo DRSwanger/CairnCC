@@ -7,8 +7,9 @@ use tokio::sync::Mutex;
 /// Protects actor lifecycle operations (start/stop/fork/approve) from
 /// concurrent execution on the same run_id. Data operations (send_message,
 /// send_control) go through the actor's channel and don't need this lock.
+#[derive(Clone)]
 pub struct SpawnLocks {
-    inner: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    inner: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
 }
 
 impl Default for SpawnLocks {
@@ -20,7 +21,7 @@ impl Default for SpawnLocks {
 impl SpawnLocks {
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(HashMap::new()),
+            inner: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
