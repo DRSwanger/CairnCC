@@ -184,6 +184,18 @@ export class SessionStore {
   /** Pending MCP elicitation prompts keyed by request_id. */
   pendingElicitations = $state<Map<string, ElicitationState>>(new Map());
   persistedFiles = $state<unknown[]>([]);
+
+  /** Ralph loop state — null when no loop has been active. */
+  ralphLoop = $state<{
+    active: boolean;
+    prompt: string;
+    iteration: number;
+    maxIterations: number;
+    completionPromise: string | null;
+    startedAt: string;
+    reason: import("$lib/types").RalphCompleteReason | "interrupted" | null;
+  } | null>(null);
+
   /** CLI slash commands from session_init (session-specific, includes custom commands). */
   sessionCommands = $state<CliCommand[]>([]);
   /** MCP servers from session_init (per-session state). */
@@ -1019,6 +1031,14 @@ export class SessionStore {
         this.run = { ...this.run, ...updates };
       }
     }
+
+    // Ralph: mark interrupted loops after replay
+    // If ralphLoop.active is true but session is not live, the loop was interrupted
+    if (this.ralphLoop?.active && replayOnly) {
+      this.ralphLoop = { ...this.ralphLoop, active: false, reason: "interrupted" };
+      dbg("store", "ralph loop marked interrupted after replay");
+    }
+
     return performance.now() - t0;
   }
 
@@ -1099,6 +1119,7 @@ export class SessionStore {
     this.taskNotifications = new Map();
     this.pendingElicitations = new Map();
     this.persistedFiles = [];
+    this.ralphLoop = null;
     this.sessionCommands = [];
     this.mcpServers = [];
     this.cliVersion = "";
@@ -3334,6 +3355,74 @@ export class SessionStore {
           elicUpdated.delete(ev.request_id);
           this.pendingElicitations = elicUpdated;
         }
+        break;
+      }
+
+      // ── Ralph Loop events ──
+      case "ralph_started": {
+        this.ralphLoop = {
+          active: true,
+          prompt: ev.prompt,
+          iteration: 0,
+          maxIterations: ev.max_iterations,
+          completionPromise: ev.completion_promise,
+          startedAt: ev.started_at,
+          reason: null,
+        };
+        dbg("store", "ralph_started", {
+          maxIterations: ev.max_iterations,
+          promise: ev.completion_promise,
+        });
+        break;
+      }
+      case "ralph_iteration": {
+        if (this.ralphLoop) {
+          this.ralphLoop = {
+            ...this.ralphLoop,
+            iteration: ev.iteration,
+            maxIterations: ev.max_iterations,
+          };
+        }
+        // Insert iteration separator in timeline
+        const iterLabel =
+          ev.max_iterations > 0
+            ? `Ralph iteration ${ev.iteration}/${ev.max_iterations}`
+            : `Ralph iteration ${ev.iteration}`;
+        this._pushTimeline(ctx, {
+          kind: "separator",
+          id: uuid(),
+          content: `🔄 ${iterLabel}`,
+          ts: eventTs(ev),
+        });
+        dbg("store", "ralph_iteration", { iteration: ev.iteration });
+        break;
+      }
+      case "ralph_complete": {
+        // Insert completion separator in timeline
+        const reasonLabels: Record<string, string> = {
+          max_iterations: "max iterations reached",
+          completion_promise: "completion promise matched",
+          cancelled: "cancelled",
+          fail_stopped: "stopped after consecutive failures",
+        };
+        const reasonText = reasonLabels[ev.reason] ?? ev.reason;
+        const completeIcon =
+          ev.reason === "cancelled" || ev.reason === "fail_stopped" ? "❌" : "✅";
+        this._pushTimeline(ctx, {
+          kind: "separator",
+          id: uuid(),
+          content: `${completeIcon} Ralph Loop completed · ${ev.iteration} iterations · ${reasonText}`,
+          ts: eventTs(ev),
+        });
+        if (this.ralphLoop) {
+          this.ralphLoop = {
+            ...this.ralphLoop,
+            active: false,
+            iteration: ev.iteration,
+            reason: ev.reason,
+          };
+        }
+        dbg("store", "ralph_complete", { reason: ev.reason, iteration: ev.iteration });
         break;
       }
 

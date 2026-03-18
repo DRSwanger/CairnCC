@@ -195,6 +195,9 @@ fn event_type_name(event: &BusEvent) -> &'static str {
         BusEvent::ControlCancelled { .. } => "control_cancelled",
         BusEvent::CommandOutput { .. } => "command_output",
         BusEvent::ElicitationPrompt { .. } => "elicitation_prompt",
+        BusEvent::RalphStarted { .. } => "ralph_started",
+        BusEvent::RalphIteration { .. } => "ralph_iteration",
+        BusEvent::RalphComplete { .. } => "ralph_complete",
         BusEvent::Raw { .. } => "raw",
     }
 }

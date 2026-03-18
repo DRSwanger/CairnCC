@@ -1116,3 +1116,27 @@ export async function deleteAgentFile(
     cwd: cwd ?? null,
   });
 }
+
+// ── Ralph Loop ──
+
+export async function startRalphLoop(
+  runId: string,
+  prompt: string,
+  maxIterations: number,
+  completionPromise: string | null,
+): Promise<void> {
+  dbg("api", "startRalphLoop", { runId, maxIterations, completionPromise });
+  return invoke<void>("start_ralph_loop", {
+    runId,
+    prompt,
+    maxIterations,
+    completionPromise,
+  });
+}
+
+export async function cancelRalphLoop(
+  runId: string,
+): Promise<{ iteration: number; immediate: boolean }> {
+  dbg("api", "cancelRalphLoop", { runId });
+  return invoke<{ iteration: number; immediate: boolean }>("cancel_ralph_loop", { runId });
+}

@@ -1,6 +1,6 @@
 use crate::agent::adapter::{self, ActorSessionMap};
 use crate::agent::claude_stream;
-use crate::agent::session_actor::{self, ActorCommand, AttachmentData};
+use crate::agent::session_actor::{self, ActorCommand, AttachmentData, RalphCancelResult};
 use crate::agent::spawn_locks::SpawnLocks;
 use crate::models::{BusEvent, RemoteHost, RunMeta, RunStatus, SessionMode, UserSettings};
 use crate::process_ext::HideConsole;
@@ -1989,6 +1989,72 @@ pub async fn side_question(
 
     log::debug!("[btw] spawned side question stream, btw_id={}", btw_id);
     Ok(btw_id)
+}
+
+// ── Ralph Loop commands ──
+
+#[tauri::command]
+pub async fn start_ralph_loop(
+    sessions: State<'_, ActorSessionMap>,
+    run_id: String,
+    prompt: String,
+    max_iterations: u32,
+    completion_promise: Option<String>,
+) -> Result<(), String> {
+    log::debug!(
+        "[session] start_ralph_loop: run_id={}, prompt_len={}, max_iterations={}, promise={:?}",
+        run_id,
+        prompt.len(),
+        max_iterations,
+        completion_promise
+    );
+
+    let cmd_tx = {
+        let map = sessions.lock().await;
+        map.get(&run_id)
+            .map(|h| h.cmd_tx.clone())
+            .ok_or_else(|| format!("Session {} not found", run_id))?
+    };
+
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    cmd_tx
+        .send(ActorCommand::StartRalphLoop {
+            prompt,
+            max_iterations,
+            completion_promise,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Actor dead".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Actor dropped reply".to_string())?
+}
+
+#[tauri::command]
+pub async fn cancel_ralph_loop(
+    sessions: State<'_, ActorSessionMap>,
+    run_id: String,
+) -> Result<RalphCancelResult, String> {
+    log::debug!("[session] cancel_ralph_loop: run_id={}", run_id);
+
+    let cmd_tx = {
+        let map = sessions.lock().await;
+        map.get(&run_id)
+            .map(|h| h.cmd_tx.clone())
+            .ok_or_else(|| format!("Session {} not found", run_id))?
+    };
+
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    cmd_tx
+        .send(ActorCommand::CancelRalphLoop { reply: reply_tx })
+        .await
+        .map_err(|_| "Actor dead".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Actor dropped reply".to_string())?
 }
 
 #[cfg(test)]

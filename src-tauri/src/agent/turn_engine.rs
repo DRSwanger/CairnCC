@@ -18,6 +18,8 @@ use super::session_actor::AttachmentData;
 pub enum TurnOrigin {
     User(UserTurnKind),
     Internal(InternalJobKind),
+    /// Ralph loop auto-resend turn. Does not trigger auto-context.
+    Ralph,
 }
 
 #[derive(Debug, Clone, PartialEq)]
