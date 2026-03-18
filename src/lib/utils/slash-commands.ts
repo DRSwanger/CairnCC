@@ -217,7 +217,59 @@ export const VIRTUAL_COMMANDS: CliCommand[] = [
     _virtual: true,
     _navigate: "/settings?tab=shortcuts",
   },
+  {
+    name: "ralph",
+    description: "Start a Ralph loop (auto-iterate same prompt until done)",
+    aliases: ["ralph-loop"],
+    _virtual: true,
+    _action: "start-ralph-loop",
+    argumentHint: "<prompt> [--max-iterations N] [--completion-promise TEXT]",
+  },
+  {
+    name: "cancel-ralph",
+    description: "Cancel active Ralph loop",
+    aliases: ["stop-ralph"],
+    _virtual: true,
+    _action: "cancel-ralph-loop",
+  },
 ];
+
+/**
+ * Parse /loop command arguments.
+ * Extracts: prompt, --max-iterations N, --completion-promise TEXT
+ */
+export function parseRalphArgs(args: string): {
+  prompt: string;
+  maxIterations: number;
+  completionPromise: string | null;
+} {
+  let maxIterations = 0;
+  let completionPromise: string | null = null;
+  const parts: string[] = [];
+
+  const tokens = args.split(/\s+/);
+  let i = 0;
+  while (i < tokens.length) {
+    if (tokens[i] === "--max-iterations" && i + 1 < tokens.length) {
+      maxIterations = parseInt(tokens[i + 1], 10) || 0;
+      i += 2;
+    } else if (tokens[i] === "--completion-promise" && i + 1 < tokens.length) {
+      // Collect until next flag or end
+      i += 1;
+      const promiseParts: string[] = [];
+      while (i < tokens.length && !tokens[i].startsWith("--")) {
+        promiseParts.push(tokens[i]);
+        i += 1;
+      }
+      completionPromise = promiseParts.join(" ") || null;
+    } else {
+      parts.push(tokens[i]);
+      i += 1;
+    }
+  }
+
+  return { prompt: parts.join(" "), maxIterations, completionPromise };
+}
 
 /**
  * Merge CLI commands with virtual commands and apply fallback descriptions.

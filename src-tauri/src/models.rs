@@ -884,6 +884,18 @@ pub struct McpServerInfo {
     pub error: Option<String>,
 }
 
+// ── Ralph Loop types ──
+
+/// Reason a Ralph loop ended. Serializes to snake_case for frontend union matching.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum RalphCompleteReason {
+    MaxIterations,
+    CompletionPromise,
+    Cancelled,
+    FailStopped,
+}
+
 // ── Event Bus types ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1177,6 +1189,27 @@ pub enum BusEvent {
         url: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         requested_schema: Option<Value>,
+    },
+    /// Ralph loop started — carries full config for replay.
+    RalphStarted {
+        run_id: String,
+        prompt: String,
+        max_iterations: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        completion_promise: Option<String>,
+        started_at: String,
+    },
+    /// Ralph loop iteration completed (not the final one).
+    RalphIteration {
+        run_id: String,
+        iteration: u32,
+        max_iterations: u32,
+    },
+    /// Ralph loop ended.
+    RalphComplete {
+        run_id: String,
+        reason: RalphCompleteReason,
+        iteration: u32,
     },
 }
 

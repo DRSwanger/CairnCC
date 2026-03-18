@@ -89,6 +89,7 @@
   let sidebarOpen = $state(true);
   let projectCwd = $state("");
   type ThemeMode = "light" | "dark" | "system";
+  type ColorScheme = "warm" | "neutral";
 
   function getInitialTheme(): ThemeMode {
     if (typeof window === "undefined") return "dark";
@@ -97,7 +98,14 @@
     return "dark";
   }
 
+  function getInitialScheme(): ColorScheme {
+    if (typeof window === "undefined") return "warm";
+    const saved = localStorage.getItem("ocv:colorScheme");
+    return saved === "neutral" ? "neutral" : "warm";
+  }
+
   let themeMode = $state<ThemeMode>(getInitialTheme());
+  let colorScheme = $state<ColorScheme>(getInitialScheme());
   let systemDark = $state(
     typeof window !== "undefined"
       ? window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -1012,10 +1020,21 @@
     dbg("layout", "theme cycled", { themeMode, effectiveDark });
   }
 
+  function cycleScheme() {
+    colorScheme = colorScheme === "warm" ? "neutral" : "warm";
+    dbg("layout", "color scheme cycled", { colorScheme });
+  }
+
   // Persist theme + apply class
   $effect(() => {
     localStorage.setItem("ocv:theme", themeMode);
     document.documentElement.classList.toggle("dark", effectiveDark);
+  });
+
+  // Persist color scheme + apply class
+  $effect(() => {
+    localStorage.setItem("ocv:colorScheme", colorScheme);
+    document.documentElement.classList.toggle("scheme-neutral", colorScheme === "neutral");
   });
 
   // Auto-expand folder containing selected run (chats tab only)
@@ -1357,6 +1376,37 @@
                 /><line x1="12" x2="12" y1="17" y2="21" /></svg
               >
             {/if}
+          </button>
+          <button
+            class="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors duration-150"
+            onclick={cycleScheme}
+            title={colorScheme === "warm"
+              ? t("layout_schemeTitle_warm")
+              : t("layout_schemeTitle_neutral")}
+          >
+            <!-- Palette icon -->
+            <svg
+              class="h-[18px] w-[18px]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><circle cx="13.5" cy="6.5" r=".5" fill="currentColor" /><circle
+                cx="17.5"
+                cy="10.5"
+                r=".5"
+                fill="currentColor"
+              /><circle cx="8.5" cy="7.5" r=".5" fill="currentColor" /><circle
+                cx="6.5"
+                cy="12"
+                r=".5"
+                fill="currentColor"
+              /><path
+                d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"
+              /></svg
+            >
           </button>
         </div>
       </div>

@@ -202,6 +202,8 @@ pub fn run() {
             commands::session::get_bus_events,
             commands::session::fork_session,
             commands::session::side_question,
+            commands::session::start_ralph_loop,
+            commands::session::cancel_ralph_loop,
             commands::session::approve_session_tool,
             commands::session::cancel_control_request,
             commands::session::respond_permission,

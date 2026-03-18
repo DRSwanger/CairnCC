@@ -54,6 +54,7 @@ import compactBoundaryEvents from "./__fixtures__/compact-boundary.json";
 import subagentTaskEvents from "./__fixtures__/subagent-task.json";
 import protocolEvents from "./__fixtures__/protocol-events.json";
 import teamSessionEvents from "./__fixtures__/team-session.json";
+import ralphLoopEvents from "./__fixtures__/ralph-loop.json";
 import malformedEvents from "./__fixtures__/malformed-events.json";
 
 // Import store and mocked modules after mocks
@@ -2018,6 +2019,68 @@ describe("SessionStore reducer", () => {
     });
   });
 
+  describe("ralph_loop events", () => {
+    it("ralph_started initializes ralphLoop state", () => {
+      store.run = makeRun("run-1");
+      store.phase = "running";
+      store.applyEvent({
+        type: "ralph_started",
+        run_id: "run-1",
+        prompt: "Build an API",
+        max_iterations: 10,
+        completion_promise: "DONE",
+        started_at: "2026-03-18T12:00:00Z",
+      } as BusEvent);
+      expect(store.ralphLoop).not.toBeNull();
+      expect(store.ralphLoop!.active).toBe(true);
+      expect(store.ralphLoop!.iteration).toBe(0);
+      expect(store.ralphLoop!.maxIterations).toBe(10);
+      expect(store.ralphLoop!.completionPromise).toBe("DONE");
+    });
+
+    it("ralph_iteration updates iteration count", () => {
+      store.run = makeRun("run-1");
+      store.phase = "running";
+      store.applyEvent({
+        type: "ralph_started",
+        run_id: "run-1",
+        prompt: "Build an API",
+        max_iterations: 10,
+        completion_promise: null,
+        started_at: "2026-03-18T12:00:00Z",
+      } as BusEvent);
+      store.applyEvent({
+        type: "ralph_iteration",
+        run_id: "run-1",
+        iteration: 3,
+        max_iterations: 10,
+      } as BusEvent);
+      expect(store.ralphLoop!.iteration).toBe(3);
+    });
+
+    it("ralph_complete marks loop as inactive with reason", () => {
+      store.run = makeRun("run-1");
+      store.phase = "running";
+      store.applyEvent({
+        type: "ralph_started",
+        run_id: "run-1",
+        prompt: "Build an API",
+        max_iterations: 5,
+        completion_promise: null,
+        started_at: "2026-03-18T12:00:00Z",
+      } as BusEvent);
+      store.applyEvent({
+        type: "ralph_complete",
+        run_id: "run-1",
+        reason: "max_iterations",
+        iteration: 5,
+      } as BusEvent);
+      expect(store.ralphLoop!.active).toBe(false);
+      expect(store.ralphLoop!.reason).toBe("max_iterations");
+      expect(store.ralphLoop!.iteration).toBe(5);
+    });
+  });
+
   describe("elicitation_prompt", () => {
     it("adds to pendingElicitations map keyed by request_id", () => {
       store.run = makeRun("run-1");
@@ -3659,6 +3722,7 @@ describe("SessionStore reducer", () => {
       { name: "subagent-task", runId: "run-sub", events: subagentTaskEvents },
       { name: "team-session", runId: "run-1", events: teamSessionEvents },
       { name: "protocol-events", runId: "run-1", events: protocolEvents },
+      { name: "ralph-loop", runId: "run-ralph-1", events: ralphLoopEvents },
     ];
 
     for (const { name, runId, events } of strictFixtures) {

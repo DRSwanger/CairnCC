@@ -15,7 +15,8 @@ use crate::agent::turn_engine::{
     QUARANTINE_DEADLINE, TICK_INTERVAL, USER_HARD_TIMEOUT, USER_SOFT_TIMEOUT,
 };
 use crate::models::{
-    max_attachment_size, now_iso, BusEvent, RunStatus, ALLOWED_DOC_TYPES, ALLOWED_IMAGE_TYPES,
+    max_attachment_size, now_iso, BusEvent, RalphCompleteReason, RunStatus, ALLOWED_DOC_TYPES,
+    ALLOWED_IMAGE_TYPES,
 };
 use crate::storage;
 use crate::storage::runs;
@@ -23,11 +24,22 @@ use crate::web_server::broadcaster::BroadcastEmitter;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+
+/// Extract content from `<promise>...</promise>` tag in text.
+fn extract_promise_tag(text: &str) -> Option<&str> {
+    let start = text.find("<promise>")?;
+    let end = text.find("</promise>")?;
+    if end <= start + 9 {
+        return None;
+    }
+    Some(text[start + 9..end].trim())
+}
 
 /// Truncate a string to at most `max` bytes, snapping to a char boundary.
 fn truncate_str(s: &str, max: usize) -> &str {
@@ -39,6 +51,37 @@ fn truncate_str(s: &str, max: usize) -> &str {
         end -= 1;
     }
     &s[..end]
+}
+
+// ── Ralph Loop types ──
+
+#[derive(Debug, Clone, PartialEq)]
+enum RalphPhase {
+    Running,
+    WaitingRetry,
+    PausedByUser { was: Box<RalphPhase> },
+    CancelPending,
+}
+
+#[allow(dead_code)] // started_at is stored for potential future use
+struct RalphLoopState {
+    prompt: String,
+    phase: RalphPhase,
+    iteration: u32,
+    max_iterations: u32,
+    completion_promise: Option<String>,
+    started_at: String,
+    consecutive_failures: u32,
+    max_consecutive_failures: u32,
+    retry_after: Option<Instant>,
+    turn_toplevel_texts: Vec<String>,
+}
+
+/// Result returned by cancel_ralph_loop IPC command.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RalphCancelResult {
+    pub iteration: u32,
+    pub immediate: bool,
 }
 
 // ── Public types ──
@@ -90,6 +133,17 @@ pub enum ActorCommand {
         request_id: String,
         response: Value,
         reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// Start a Ralph loop (auto-iterate same prompt until completion).
+    StartRalphLoop {
+        prompt: String,
+        max_iterations: u32,
+        completion_promise: Option<String>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// Cancel an active Ralph loop.
+    CancelRalphLoop {
+        reply: oneshot::Sender<Result<RalphCancelResult, String>>,
     },
 }
 
@@ -155,6 +209,12 @@ struct SessionActor {
     /// JSON parse failures in handle_stdout_line (before map_event).
     /// Complements ParserStats.parse_warn_count (field-level malformation).
     json_parse_fail_count: u32,
+
+    // ── Ralph Loop fields ──
+    /// Ralph loop state (None = inactive / completed).
+    ralph_loop: Option<RalphLoopState>,
+    /// Flag set by on_tick_timeout when WaitingRetry expires, consumed by main loop.
+    ralph_needs_dispatch: bool,
 }
 
 // ── Spawn entry point ──
@@ -222,6 +282,8 @@ pub fn spawn_actor(
         quarantine_from_internal: false,
         terminated: false,
         json_parse_fail_count: 0,
+        ralph_loop: None,
+        ralph_needs_dispatch: false,
     };
 
     let join_handle = tokio::spawn(async move {
@@ -302,6 +364,66 @@ impl SessionActor {
                             let result = self.write_control_response(&request_id, response).await;
                             let _ = reply.send(result);
                         }
+                        Some(ActorCommand::StartRalphLoop { prompt, max_iterations, completion_promise, reply }) => {
+                            if self.ralph_loop.is_some() {
+                                let _ = reply.send(Err("Ralph loop already active".into()));
+                            } else {
+                                let started_at = crate::models::now_iso();
+                                self.ralph_loop = Some(RalphLoopState {
+                                    prompt: prompt.clone(),
+                                    phase: RalphPhase::Running,
+                                    iteration: 0,
+                                    max_iterations,
+                                    completion_promise: completion_promise.clone(),
+                                    started_at: started_at.clone(),
+                                    consecutive_failures: 0,
+                                    max_consecutive_failures: 3,
+                                    retry_after: None,
+                                    turn_toplevel_texts: Vec::new(),
+                                });
+                                self.persist_and_emit(&BusEvent::RalphStarted {
+                                    run_id: self.run_id.clone(),
+                                    prompt,
+                                    max_iterations,
+                                    completion_promise,
+                                    started_at,
+                                });
+                                log::info!("[ralph] loop started: run_id={}, max_iterations={}", self.run_id, max_iterations);
+                                let _ = reply.send(Ok(()));
+                                self.try_dispatch().await;
+                            }
+                        }
+                        Some(ActorCommand::CancelRalphLoop { reply }) => {
+                            match &self.ralph_loop {
+                                None => {
+                                    let _ = reply.send(Err("No active ralph loop".into()));
+                                }
+                                Some(ralph) => {
+                                    let iteration = ralph.iteration;
+                                    let has_active_ralph_turn = self
+                                        .active_turn
+                                        .as_ref()
+                                        .map(|t| matches!(t.origin, TurnOrigin::Ralph))
+                                        .unwrap_or(false);
+
+                                    if has_active_ralph_turn {
+                                        self.ralph_loop.as_mut().unwrap().phase =
+                                            RalphPhase::CancelPending;
+                                        log::info!("[ralph] cancel pending (active turn running)");
+                                        let _ = reply.send(Ok(RalphCancelResult {
+                                            iteration,
+                                            immediate: false,
+                                        }));
+                                    } else {
+                                        let _ = reply.send(Ok(RalphCancelResult {
+                                            iteration,
+                                            immediate: true,
+                                        }));
+                                        self.emit_ralph_complete(RalphCompleteReason::Cancelled);
+                                    }
+                                }
+                            }
+                        }
                         None => {
                             // All senders dropped — actor should exit
                             log::debug!("[actor] cmd_rx closed, exiting: run_id={}", self.run_id);
@@ -342,6 +464,11 @@ impl SessionActor {
                 // 4. Independent timeout clock (HC #4)
                 _ = tick.tick() => {
                     self.on_tick_timeout().await;
+                    // Ralph: dispatch retry after backoff expires
+                    if self.ralph_needs_dispatch {
+                        self.ralph_needs_dispatch = false;
+                        self.try_dispatch().await;
+                    }
                 }
                 // 5. External cancellation (app exit)
                 _ = self.cancel.cancelled() => {
@@ -432,11 +559,53 @@ impl SessionActor {
             }
         }
 
-        // Try user queue first (unless barrier blocks)
+        // Try user queue first (unless barrier blocks). Ralph yields to user messages.
         if self.must_run_internal_for_turn.is_none() {
             if let Some(ticket) = self.queued_user.pop_front() {
+                // Pause Ralph if it's active
+                if let Some(ref mut ralph) = self.ralph_loop {
+                    match &ralph.phase {
+                        RalphPhase::Running => {
+                            ralph.phase = RalphPhase::PausedByUser {
+                                was: Box::new(RalphPhase::Running),
+                            };
+                            log::debug!("[ralph] paused by user message");
+                        }
+                        RalphPhase::WaitingRetry => {
+                            ralph.phase = RalphPhase::PausedByUser {
+                                was: Box::new(RalphPhase::WaitingRetry),
+                            };
+                            log::debug!("[ralph] paused by user message (was WaitingRetry)");
+                        }
+                        _ => {} // CancelPending — don't touch
+                    }
+                }
                 self.start_user_turn(ticket).await;
                 return;
+            }
+        }
+
+        // Ralph loop: dispatch ralph prompt when user queue is empty and phase is Running
+        if let Some(ref ralph) = self.ralph_loop {
+            match ralph.phase {
+                RalphPhase::Running => {
+                    let prompt = ralph.prompt.clone();
+                    self.start_ralph_turn(prompt).await;
+                    return;
+                }
+                RalphPhase::WaitingRetry => {
+                    if let Some(deadline) = ralph.retry_after {
+                        if Instant::now() >= deadline {
+                            // Backoff expired — transition to Running and dispatch
+                            self.ralph_loop.as_mut().unwrap().phase = RalphPhase::Running;
+                            self.ralph_loop.as_mut().unwrap().retry_after = None;
+                            let prompt = self.ralph_loop.as_ref().unwrap().prompt.clone();
+                            self.start_ralph_turn(prompt).await;
+                            return;
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -601,6 +770,210 @@ impl SessionActor {
         }
     }
 
+    // ── Ralph Loop methods ──
+
+    /// Start a Ralph loop turn: write prompt to stdin, set active_turn with TurnOrigin::Ralph.
+    async fn start_ralph_turn(&mut self, prompt: String) {
+        let turn_index = self.next_turn_index;
+        self.next_turn_index += 1;
+        // Ralph turns don't allocate auto_ctx_id (no auto-context)
+
+        let seq = self.next_turn_seq;
+        self.next_turn_seq += 1;
+
+        // Clear per-turn text buffer
+        if let Some(ref mut ralph) = self.ralph_loop {
+            ralph.turn_toplevel_texts.clear();
+        }
+
+        let user_uuid = match self.write_user_to_stdin(&prompt, &[]).await {
+            Ok(uuid) => uuid,
+            Err(e) => {
+                log::error!("[ralph] stdin write failed: {}", e);
+                // Compute action to avoid borrow conflict
+                let action = if let Some(ref mut ralph) = self.ralph_loop {
+                    ralph.consecutive_failures += 1;
+                    if ralph.consecutive_failures >= ralph.max_consecutive_failures {
+                        Some(RalphCompleteReason::FailStopped)
+                    } else {
+                        let backoff = Duration::from_secs(2 * ralph.consecutive_failures as u64);
+                        ralph.retry_after = Some(Instant::now() + backoff);
+                        ralph.phase = RalphPhase::WaitingRetry;
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(reason) = action {
+                    self.emit_ralph_complete(reason);
+                }
+                return;
+            }
+        };
+
+        self.persist_and_emit(&BusEvent::UserMessage {
+            run_id: self.run_id.clone(),
+            text: prompt,
+            uuid: Some(user_uuid),
+        });
+        self.emit_state("running", None, None, false);
+
+        let now = Instant::now();
+        self.active_turn = Some(ActiveTurn {
+            turn_seq: seq,
+            origin: TurnOrigin::Ralph,
+            phase: TurnPhase::Active,
+            started_at: now,
+            soft_deadline: now + USER_SOFT_TIMEOUT,
+            hard_deadline: now + USER_HARD_TIMEOUT,
+            turn_index,
+        });
+
+        log::debug!(
+            "[ralph] turn started: turn_index={}, seq={}, iteration={}",
+            turn_index,
+            seq,
+            self.ralph_loop.as_ref().map(|r| r.iteration).unwrap_or(0)
+        );
+    }
+
+    /// Emit RalphComplete and clean up ralph_loop. After this, self.ralph_loop == None.
+    fn emit_ralph_complete(&mut self, reason: RalphCompleteReason) {
+        let iteration = self.ralph_loop.as_ref().map(|r| r.iteration).unwrap_or(0);
+        self.ralph_loop = None;
+        self.persist_and_emit(&BusEvent::RalphComplete {
+            run_id: self.run_id.clone(),
+            reason,
+            iteration,
+        });
+        log::info!(
+            "[ralph] complete: reason={:?}, iteration={}",
+            reason,
+            iteration
+        );
+    }
+
+    /// Ralph state transition on turn end. Uses action-first pattern to avoid borrow conflicts.
+    fn ralph_on_turn_end(&mut self, turn: &ActiveTurn, state: &str) {
+        if self.ralph_loop.is_none() {
+            return;
+        }
+
+        // ── Step 1: compute action (borrows ralph_loop mutably, then drops) ──
+        enum RalphAction {
+            Complete(RalphCompleteReason),
+            EmitIteration { iteration: u32, max_iterations: u32 },
+            SetWaitingRetry { backoff: Duration },
+            ResumeFrom(RalphPhase),
+            Noop,
+        }
+
+        let action = {
+            let ralph = self.ralph_loop.as_mut().unwrap();
+
+            match turn.origin {
+                TurnOrigin::Ralph => {
+                    let is_cancel_pending = ralph.phase == RalphPhase::CancelPending;
+
+                    if state == "failed" {
+                        if is_cancel_pending {
+                            RalphAction::Complete(RalphCompleteReason::Cancelled)
+                        } else {
+                            ralph.consecutive_failures += 1;
+                            if ralph.consecutive_failures >= ralph.max_consecutive_failures {
+                                RalphAction::Complete(RalphCompleteReason::FailStopped)
+                            } else {
+                                let backoff =
+                                    Duration::from_secs(2 * ralph.consecutive_failures as u64);
+                                RalphAction::SetWaitingRetry { backoff }
+                            }
+                        }
+                    } else {
+                        // idle — process turn result normally
+                        ralph.consecutive_failures = 0;
+                        ralph.iteration += 1;
+
+                        // Check natural completion conditions first
+                        let natural_reason = if ralph.max_iterations > 0
+                            && ralph.iteration >= ralph.max_iterations
+                        {
+                            Some(RalphCompleteReason::MaxIterations)
+                        } else if let Some(ref promise) = ralph.completion_promise {
+                            let matched = ralph.turn_toplevel_texts.iter().any(|text| {
+                                extract_promise_tag(text)
+                                    .map(|found| found == promise.as_str())
+                                    .unwrap_or(false)
+                            });
+                            if matched {
+                                Some(RalphCompleteReason::CompletionPromise)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        if let Some(reason) = natural_reason {
+                            RalphAction::Complete(reason)
+                        } else if is_cancel_pending {
+                            RalphAction::Complete(RalphCompleteReason::Cancelled)
+                        } else {
+                            RalphAction::EmitIteration {
+                                iteration: ralph.iteration,
+                                max_iterations: ralph.max_iterations,
+                            }
+                        }
+                    }
+                }
+                TurnOrigin::User(_) => {
+                    if let RalphPhase::PausedByUser { ref was } = ralph.phase {
+                        RalphAction::ResumeFrom(*was.clone())
+                    } else {
+                        RalphAction::Noop
+                    }
+                }
+                _ => RalphAction::Noop,
+            }
+        };
+        // ← ralph_loop borrow ends here
+
+        // ── Step 2: execute action ──
+        match action {
+            RalphAction::Complete(reason) => {
+                self.emit_ralph_complete(reason);
+            }
+            RalphAction::EmitIteration {
+                iteration,
+                max_iterations,
+            } => {
+                self.persist_and_emit(&BusEvent::RalphIteration {
+                    run_id: self.run_id.clone(),
+                    iteration,
+                    max_iterations,
+                });
+            }
+            RalphAction::SetWaitingRetry { backoff } => {
+                if let Some(ref mut ralph) = self.ralph_loop {
+                    ralph.phase = RalphPhase::WaitingRetry;
+                    ralph.retry_after = Some(Instant::now() + backoff);
+                    log::warn!(
+                        "[ralph] turn failed ({}/{}), backing off {:?}",
+                        ralph.consecutive_failures,
+                        ralph.max_consecutive_failures,
+                        backoff
+                    );
+                }
+            }
+            RalphAction::ResumeFrom(phase) => {
+                if let Some(ref mut ralph) = self.ralph_loop {
+                    ralph.phase = phase;
+                    log::debug!("[ralph] resumed to {:?} after user turn", ralph.phase);
+                }
+            }
+            RalphAction::Noop => {}
+        }
+    }
+
     /// Independent timeout clock — checks soft/hard deadlines and quarantine. (HC #4)
     async fn on_tick_timeout(&mut self) {
         // Check quarantine deadline first
@@ -642,6 +1015,17 @@ impl SessionActor {
         }
 
         let Some(ref turn) = self.active_turn else {
+            // No active turn — check Ralph WaitingRetry backoff expiry
+            if let Some(ref ralph) = self.ralph_loop {
+                if ralph.phase == RalphPhase::WaitingRetry {
+                    if let Some(deadline) = ralph.retry_after {
+                        if Instant::now() >= deadline {
+                            log::debug!("[ralph] backoff expired, setting dispatch flag");
+                            self.ralph_needs_dispatch = true;
+                        }
+                    }
+                }
+            }
             return;
         };
         let now = Instant::now();
@@ -1086,9 +1470,31 @@ impl SessionActor {
                 match &event {
                     // Capture context data in both Active and Draining phases.
                     // Soft timeout only warns; data is still accepted until RunState ends the turn.
-                    BusEvent::CommandOutput { .. } | BusEvent::MessageComplete { .. } => {
+                    BusEvent::CommandOutput { .. } => {
                         if let Some(ref mut ext) = self.active_extractor {
                             ext.on_event(&event);
+                        }
+                    }
+                    BusEvent::MessageComplete {
+                        ref text,
+                        ref parent_tool_use_id,
+                        ..
+                    } => {
+                        if let Some(ref mut ext) = self.active_extractor {
+                            ext.on_event(&event);
+                        }
+                        // Ralph: accumulate top-level assistant text (only during ralph turns)
+                        if parent_tool_use_id.is_none() {
+                            let is_ralph_turn = self
+                                .active_turn
+                                .as_ref()
+                                .map(|t| matches!(t.origin, TurnOrigin::Ralph))
+                                .unwrap_or(false);
+                            if is_ralph_turn {
+                                if let Some(ref mut ralph) = self.ralph_loop {
+                                    ralph.turn_toplevel_texts.push(text.clone());
+                                }
+                            }
                         }
                     }
                     BusEvent::RunState { state, .. } => {
@@ -1152,16 +1558,19 @@ impl SessionActor {
                         }
                     }
 
-                    // Turn completion: idle or failed → on_user_turn_finished + end turn
+                    // Turn completion: idle or failed → on_user_turn_finished + ralph + end turn
                     if (emit_state == "idle" || emit_state == "failed")
                         && self.active_turn.is_some()
                     {
-                        // Take the active turn for on_user_turn_finished
                         let turn = self.active_turn.take().unwrap();
                         self.on_user_turn_finished(&turn);
                         self.active_turn = None;
                         self.active_extractor = None;
                         self.protocol.set_pending_slash_command(None);
+
+                        // Ralph loop: state transition on turn end
+                        self.ralph_on_turn_end(&turn, &emit_state);
+
                         self.try_dispatch().await;
                     }
 

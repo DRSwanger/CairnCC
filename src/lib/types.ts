@@ -966,7 +966,28 @@ export type BusEvent =
       mode?: string;
       url?: string;
       requested_schema?: ElicitationSchema;
+    }
+  | {
+      type: "ralph_started";
+      run_id: string;
+      prompt: string;
+      max_iterations: number;
+      completion_promise: string | null;
+      started_at: string;
+    }
+  | { type: "ralph_iteration"; run_id: string; iteration: number; max_iterations: number }
+  | {
+      type: "ralph_complete";
+      run_id: string;
+      reason: RalphCompleteReason;
+      iteration: number;
     };
+
+export type RalphCompleteReason =
+  | "max_iterations"
+  | "completion_promise"
+  | "cancelled"
+  | "fail_stopped";
 
 // ── MCP Elicitation types ──
 

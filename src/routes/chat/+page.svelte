@@ -75,6 +75,7 @@
     mergeWithVirtual,
     buildHelpText,
     CONTEXT_CLEARED_MARKER,
+    parseRalphArgs,
   } from "$lib/utils/slash-commands";
   import { executeAddDir } from "$lib/utils/add-dir";
   import { buildDoctorReport } from "$lib/utils/doctor";
@@ -2370,6 +2371,58 @@
         window.open(url, "_blank");
       }
       appendCommandOutput("Opening sticker page in browser…");
+    } else if (action === "start-ralph-loop") {
+      const parsed = parseRalphArgs(args);
+      if (!parsed.prompt) {
+        appendCommandOutput(
+          "Usage: /ralph <prompt> [--max-iterations N] [--completion-promise TEXT]",
+        );
+        return;
+      }
+      try {
+        // If no active session, send the prompt as a normal message first to bootstrap
+        if (!store.run?.id || !store.sessionAlive) {
+          await sendMessage(parsed.prompt, []);
+          // Wait briefly for session to be alive (actor created)
+          let retries = 0;
+          while (!store.sessionAlive && retries < 20) {
+            await new Promise((r) => setTimeout(r, 100));
+            retries++;
+          }
+          if (!store.run?.id || !store.sessionAlive) {
+            appendCommandOutput("Failed to start session for ralph loop.");
+            return;
+          }
+        }
+        await api.startRalphLoop(
+          store.run.id,
+          parsed.prompt,
+          parsed.maxIterations,
+          parsed.completionPromise,
+        );
+        appendCommandOutput(
+          `Ralph loop started (max: ${parsed.maxIterations || "unlimited"}, promise: ${parsed.completionPromise ?? "none"})`,
+        );
+      } catch (err) {
+        appendCommandOutput(
+          `Failed to start loop: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else if (action === "cancel-ralph-loop") {
+      try {
+        const result = await api.cancelRalphLoop(store.run!.id);
+        if (result.immediate) {
+          appendCommandOutput(`Loop cancelled (iteration ${result.iteration})`);
+        } else {
+          appendCommandOutput(
+            `Loop will stop after current iteration (iteration ${result.iteration})`,
+          );
+        }
+      } catch (err) {
+        appendCommandOutput(
+          `Failed to cancel loop: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
   }
 
@@ -4073,6 +4126,49 @@
     {/if}
 
     <!-- Input bar -->
+    <!-- Ralph Loop status bar -->
+    {#if store.ralphLoop?.active}
+      <div class="mx-auto w-full max-w-3xl px-4 pb-2">
+        <div
+          class="flex items-center justify-between rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm"
+        >
+          <div class="flex items-center gap-2 text-blue-400">
+            <span class="animate-pulse">🔄</span>
+            <span class="font-medium">Ralph Loop</span>
+            <span class="text-blue-400/70">
+              iteration {store.ralphLoop.iteration}/{store.ralphLoop.maxIterations || "∞"}
+            </span>
+            {#if store.ralphLoop.completionPromise}
+              <span class="text-blue-400/50">
+                · promise: "{store.ralphLoop.completionPromise}"
+              </span>
+            {/if}
+          </div>
+          <button
+            class="rounded px-2 py-0.5 text-xs text-red-400 hover:bg-red-500/20 transition-colors"
+            onclick={async () => {
+              try {
+                const result = await api.cancelRalphLoop(store.run!.id);
+                if (result.immediate) {
+                  appendCommandOutput(`Loop cancelled (iteration ${result.iteration})`);
+                } else {
+                  appendCommandOutput(
+                    `Loop will stop after current iteration (iteration ${result.iteration})`,
+                  );
+                }
+              } catch (err) {
+                appendCommandOutput(
+                  `Failed to cancel: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    {/if}
+
     {#if !store.ptySpawned || store.sessionAlive}
       <PromptInput
         bind:this={promptRef}

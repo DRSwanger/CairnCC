@@ -252,6 +252,8 @@
   "layout_themeTitle_dark": "主题：深色（点击切换为浅色）",
   "layout_themeTitle_light": "主题：浅色（点击切换为跟随系统）",
   "layout_themeTitle_system": "主题：跟随系统（点击切换为深色）",
+  "layout_schemeTitle_warm": "配色：暖色（点击切换为中性灰）",
+  "layout_schemeTitle_neutral": "配色：中性灰（点击切换为暖色）",
 
   "sidebar_skills": "技能",
   "sidebar_mcpServers": "MCP 服务器",

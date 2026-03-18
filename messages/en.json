@@ -252,6 +252,8 @@
   "layout_themeTitle_dark": "Theme: Dark (click for Light)",
   "layout_themeTitle_light": "Theme: Light (click for System)",
   "layout_themeTitle_system": "Theme: System (click for Dark)",
+  "layout_schemeTitle_warm": "Color scheme: Warm (click for Neutral)",
+  "layout_schemeTitle_neutral": "Color scheme: Neutral (click for Warm)",
 
   "sidebar_skills": "Skills",
   "sidebar_mcpServers": "MCP Servers",
