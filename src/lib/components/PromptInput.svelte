@@ -896,11 +896,10 @@
         // else: normal backspace (let it through)
         return;
       }
-      const models_ = models ?? [];
-      if (models_.length > 0) {
+      if (models.length > 0) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          slashSubSelectedIndex = Math.min(slashSubSelectedIndex + 1, models_.length - 1);
+          slashSubSelectedIndex = Math.min(slashSubSelectedIndex + 1, models.length - 1);
           return;
         }
         if (e.key === "ArrowUp") {
@@ -910,7 +909,7 @@
         }
         if (e.key === "Enter" || e.key === "Tab") {
           e.preventDefault();
-          handleSubModelSelect(models_[slashSubSelectedIndex]);
+          handleSubModelSelect(models[slashSubSelectedIndex]);
           return;
         }
       }
@@ -2016,8 +2015,8 @@
         anchorEl={textareaEl}
         triggerEl={slashBtnEl}
         phase={slashPhase}
-        models={models ?? []}
-        currentModel={currentModel ?? ""}
+        {models}
+        {currentModel}
         subSelectedIndex={slashSubSelectedIndex}
         {hintText}
         inputDisplay={inputText}

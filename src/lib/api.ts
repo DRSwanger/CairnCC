@@ -1162,11 +1162,6 @@ export async function closePreviewWindow(): Promise<void> {
   return invoke("close_preview_window");
 }
 
-export async function setPreviewPickMode(active: boolean): Promise<void> {
-  dbg("api", "setPreviewPickMode", { active });
-  return invoke("set_preview_pick_mode", { active });
-}
-
 // ── Ralph Loop ──
 
 export async function startRalphLoop(

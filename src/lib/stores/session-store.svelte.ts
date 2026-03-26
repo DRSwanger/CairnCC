@@ -17,7 +17,7 @@ import type {
   ElicitationSchema,
 } from "$lib/types";
 import { dbg, dbgWarn } from "$lib/utils/debug";
-import type { SessionMode, CliCommand } from "$lib/types";
+import type { SessionMode } from "$lib/types";
 import { IMAGE_TYPES } from "$lib/utils/file-types";
 import { uuid } from "$lib/utils/uuid";
 import {
@@ -134,6 +134,18 @@ function timelineAttachments(atts: Attachment[]): Attachment[] | undefined {
   return atts.map((a) =>
     (IMAGE_TYPES as readonly string[]).includes(a.type) ? a : { ...a, contentBase64: "" },
   );
+}
+
+/** Map frontend Attachment[] to backend AttachmentData format for IPC. */
+function mapAttachments(
+  atts: Attachment[],
+): Array<{ content_base64: string; media_type: string; filename: string }> | null {
+  if (atts.length === 0) return null;
+  return atts.map((a) => ({
+    content_base64: a.contentBase64,
+    media_type: a.type,
+    filename: a.name,
+  }));
 }
 
 // ── Exported types ──
@@ -993,7 +1005,7 @@ export class SessionStore {
       // Track WS sequence checkpoint
       const evSeq = ((ev as Record<string, unknown>)._seq as number) ?? 0;
       if (evSeq > 0) this._lastProcessedSeq = Math.max(this._lastProcessedSeq, evSeq);
-      this._reduceBatch(ev, ctx, replayOnly);
+      this._reduce(ev, ctx, replayOnly);
     }
     // If the session ended, resolve any leftover incomplete tools
     // (running, ask_pending, permission_prompt — these will never receive results)
@@ -1189,9 +1201,8 @@ export class SessionStore {
     this.sessionInitReceived = false;
     this.unknownEventCount = 0;
     this.rawFallbackCount = 0;
-    this.remoteHostName = null;
-    // NOTE: platformId is intentionally NOT cleared here — it's a user-level
-    // preference persisted in settings, not per-session state.
+    // NOTE: remoteHostName and platformId are intentionally NOT cleared here —
+    // they are run-level properties restored from run metadata, not per-session state.
     this._seenMessageIds.clear();
     this._seenToolIds.clear();
     this._lastProcessedSeq = 0;
@@ -1620,15 +1631,7 @@ export class SessionStore {
         mw.subscribeCurrent(run.id, this);
         this._wsSubscribeNewSession(run.id);
         dbg("store", "stream session start, run=", run.id);
-        // Map frontend Attachment[] to backend AttachmentData format
-        const backendAtt =
-          attachments.length > 0
-            ? attachments.map((a) => ({
-                content_base64: a.contentBase64,
-                media_type: a.type,
-                filename: a.name,
-              }))
-            : undefined;
+        const backendAtt = mapAttachments(attachments) ?? undefined;
         await api.startSession(
           run.id,
           undefined,
@@ -1683,16 +1686,7 @@ export class SessionStore {
           ts: new Date().toISOString(),
           ...(attachments.length > 0 ? { attachments: timelineAttachments(attachments) } : {}),
         });
-        // Map frontend Attachment[] to backend AttachmentData format
-        const backendAttachments =
-          attachments.length > 0
-            ? attachments.map((a) => ({
-                content_base64: a.contentBase64,
-                media_type: a.type,
-                filename: a.name,
-              }))
-            : undefined;
-        await api.sendSessionMessage(this.run.id, text, backendAttachments);
+        await api.sendSessionMessage(this.run.id, text, mapAttachments(attachments) ?? undefined);
         if (this.isKnownSlashCommand(text)) {
           dbg("store", "skip response timeout for slash command", { cmd: text.split(" ")[0] });
         } else {
@@ -1867,8 +1861,6 @@ export class SessionStore {
       this.agent = run.agent;
       this.platformId = run.platform_id ?? null;
       this._clearContentState();
-      // Restore remote host after clear (fix: _clearContentState nulls remoteHostName)
-      this.remoteHostName = run.remote_host_name ?? null;
 
       // ★ Phase 3: apply snapshot or events + force invalidate
       let reducerMs = 0;
@@ -1933,15 +1925,7 @@ export class SessionStore {
         targetRunId = await this._handleFork(runId);
       } else {
         const sessionId = run.session_id;
-        // Map frontend Attachment[] to backend AttachmentData format
-        const backendAtt =
-          attachments && attachments.length > 0
-            ? attachments.map((a) => ({
-                content_base64: a.contentBase64,
-                media_type: a.type,
-                filename: a.name,
-              }))
-            : undefined;
+        const backendAtt = attachments ? (mapAttachments(attachments) ?? undefined) : undefined;
         dbg("store", "resumeSession", {
           runId,
           targetRunId,
@@ -2015,8 +1999,6 @@ export class SessionStore {
     // Without this, the source session's timeline stays in state and
     // message_delta events accumulate as duplicate streamingText.
     this._clearContentState();
-    // Restore remote host after clear (fix: _clearContentState nulls remoteHostName)
-    this.remoteHostName = newRun.remote_host_name ?? null;
 
     // Replay copied parent events for immediate display
     const allForkEvents = await api.getBusEvents(newRunId);
@@ -3502,10 +3484,5 @@ export class SessionStore {
           throw new Error(`[STRICT] unknown event type: ${(ev as Record<string, unknown>).type}`);
         }
     }
-  }
-
-  /** Batch-mode reducer wrapper: delegates to _reduce with ctx. */
-  private _reduceBatch(ev: BusEvent, ctx: ReduceCtx, replayOnly = false): void {
-    this._reduce(ev, ctx, replayOnly);
   }
 }

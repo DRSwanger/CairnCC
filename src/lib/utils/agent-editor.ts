@@ -14,6 +14,7 @@ export interface AgentFormData {
   memory: string; // "" | memory file path/glob
   background: boolean;
   isolation: string; // "" | "worktree"
+  initialPrompt: string; // auto-submit first turn prompt
   systemPrompt: string;
 }
 
@@ -78,6 +79,9 @@ export function serializeAgentFile(data: AgentFormData): string {
   if (data.isolation === "worktree") {
     lines.push("isolation: worktree");
   }
+  if (data.initialPrompt) {
+    lines.push(`initialPrompt: ${yamlString(data.initialPrompt)}`);
+  }
 
   lines.push("---");
   lines.push("");
@@ -119,6 +123,7 @@ export function parseAgentFile(content: string): AgentFormData {
     memory: "",
     background: false,
     isolation: "",
+    initialPrompt: "",
     systemPrompt: "",
   };
 
@@ -151,6 +156,7 @@ export function parseAgentFile(content: string): AgentFormData {
     memory: fm.memory ?? "",
     background: fm.background ?? false,
     isolation: fm.isolation ?? "",
+    initialPrompt: fm.initialPrompt ?? "",
     systemPrompt: body,
   };
 }
@@ -167,6 +173,7 @@ interface SimpleFm {
   memory?: string;
   background?: boolean;
   isolation?: string;
+  initialPrompt?: string;
 }
 
 function parseSimpleYaml(yaml: string): SimpleFm {
@@ -224,6 +231,9 @@ function parseSimpleYaml(yaml: string): SimpleFm {
           break;
         case "isolation":
           result.isolation = value;
+          break;
+        case "initialPrompt":
+          result.initialPrompt = value;
           break;
         case "tools":
           if (!value) {
@@ -409,6 +419,7 @@ export function defaultFormData(): AgentFormData {
     memory: "",
     background: false,
     isolation: "",
+    initialPrompt: "",
     systemPrompt: "",
   };
 }

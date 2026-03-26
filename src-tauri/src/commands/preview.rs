@@ -11,10 +11,7 @@ pub async fn open_preview_window(
     url: String,
     instance_id: String,
 ) -> Result<(), String> {
-    validate_localhost(&url)?;
-    let parsed_url: url::Url = url
-        .parse()
-        .map_err(|e| format!("preview_invalid_url: {e}"))?;
+    let parsed_url = validate_localhost(&url)?;
 
     log::debug!(
         "[preview] open_preview_window: url={}, instance_id={}",
@@ -95,27 +92,8 @@ pub async fn close_preview_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn set_preview_pick_mode(app: AppHandle, active: bool) -> Result<(), String> {
-    log::debug!("[preview] set_preview_pick_mode: active={}", active);
-    let win = app
-        .get_webview_window(PREVIEW_LABEL)
-        .ok_or_else(|| "preview_not_ready: no preview window".to_string())?;
-    let js = if active {
-        "if(!window.__ocvPicker)throw new Error('preview_not_ready');window.__ocvPicker.activate()"
-    } else {
-        "if(window.__ocvPicker)window.__ocvPicker.deactivate()"
-    };
-    win.eval(js)
-        .map_err(|e| format!("preview_pick_failed: {}", e))?;
-    // Bring preview window to front when entering pick mode
-    if active {
-        let _ = win.set_focus();
-    }
-    Ok(())
-}
-
-fn validate_localhost(url: &str) -> Result<(), String> {
+/// Validate URL is localhost http/https, return parsed URL.
+fn validate_localhost(url: &str) -> Result<url::Url, String> {
     let parsed = url::Url::parse(url).map_err(|e| format!("preview_invalid_url: {e}"))?;
     let host = parsed.host_str().unwrap_or("");
     if !["localhost", "127.0.0.1", "0.0.0.0", "::1"].contains(&host) {
@@ -130,5 +108,5 @@ fn validate_localhost(url: &str) -> Result<(), String> {
             parsed.scheme()
         ));
     }
-    Ok(())
+    Ok(parsed)
 }

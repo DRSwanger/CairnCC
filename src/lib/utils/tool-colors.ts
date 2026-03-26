@@ -180,6 +180,12 @@ export const toolColors: Record<string, ToolColor> = {
     icon: "M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z",
     border: "border-violet-500/30",
   },
+  PowerShell: {
+    bg: "bg-blue-500/10",
+    text: "text-blue-600 dark:text-blue-400",
+    icon: "M5 3l7 9-7 9M14 21h7",
+    border: "border-blue-500/30",
+  },
 };
 
 export const defaultToolColor: ToolColor = {

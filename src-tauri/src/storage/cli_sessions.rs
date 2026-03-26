@@ -1500,16 +1500,12 @@ pub fn sync_session(
     };
 
     // Update RunMeta
-    let mut updated_meta =
-        super::runs::get_run(run_id).ok_or_else(|| format!("run {} not found", run_id))?;
-    updated_meta.cli_import_watermark = Some(new_watermark.clone());
-    // Warmup now tracks full usage completeness — use importer's authoritative state
-    updated_meta.cli_usage_incomplete = if importer.usage_incomplete {
-        Some(true)
-    } else {
-        None
-    };
-    super::runs::save_meta(&updated_meta)?;
+    let usage_incomplete = importer.usage_incomplete;
+    super::runs::with_meta(run_id, |meta| {
+        meta.cli_import_watermark = Some(new_watermark.clone());
+        meta.cli_usage_incomplete = if usage_incomplete { Some(true) } else { None };
+        Ok(())
+    })?;
 
     let elapsed = start.elapsed();
     log::debug!(
@@ -1612,15 +1608,12 @@ fn sync_reconcile(
     };
 
     // Update RunMeta
-    let mut meta =
-        super::runs::get_run(run_id).ok_or_else(|| format!("run {} not found", run_id))?;
-    meta.cli_import_watermark = Some(new_watermark.clone());
-    meta.cli_usage_incomplete = if importer.usage_incomplete {
-        Some(true)
-    } else {
-        None
-    };
-    super::runs::save_meta(&meta)?;
+    let usage_incomplete = importer.usage_incomplete;
+    super::runs::with_meta(run_id, |meta| {
+        meta.cli_import_watermark = Some(new_watermark.clone());
+        meta.cli_usage_incomplete = if usage_incomplete { Some(true) } else { None };
+        Ok(())
+    })?;
 
     log::debug!(
         "[cli_sessions] reconcile: done in {:?}, new_events={}",

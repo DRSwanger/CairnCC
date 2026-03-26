@@ -2,7 +2,7 @@
   import type { HookEvent, ContextSnapshot, SessionInfoData, FileEntry } from "$lib/types";
   import type { TimelineEntry, BusToolItem, TurnUsage } from "$lib/stores/types";
   import { getToolColor } from "$lib/utils/tool-colors";
-  import { splitPath } from "$lib/utils/format";
+  import { splitPath, truncate } from "$lib/utils/format";
   import { dbg } from "$lib/utils/debug";
   import { t } from "$lib/i18n/index.svelte";
   import ContextHistoryPanel from "$lib/components/ContextHistoryPanel.svelte";
@@ -69,10 +69,6 @@
     if (!v || typeof v !== "string") return "";
     const parts = splitPath(v);
     return parts.length > 2 ? "\u2026/" + parts.slice(-2).join("/") : v;
-  }
-
-  function truncate(s: string, max: number): string {
-    return s.length > max ? s.slice(0, max) + "\u2026" : s;
   }
 
   function getToolDetail(tool: BusToolItem): string {
@@ -232,8 +228,7 @@
     return `${Math.floor(ms / 1000)}s`;
   }
 
-  let hasTimelineTools = $derived(timeline.some((e) => e.kind === "tool"));
-  let useTimeline = $derived(hasTimelineTools);
+  let useTimeline = $derived(timeline.some((e) => e.kind === "tool"));
 
   // ── Turn grouping (timeline mode) ──
 
@@ -375,13 +370,6 @@
       totalToolCount: total,
     };
   });
-  // Template-compatible aliases
-  let toolSummary = $derived(toolStats.summary);
-  let doneCount = $derived(toolStats.doneCount);
-  let runningCount = $derived(toolStats.runningCount);
-  let errorCount = $derived(toolStats.errorCount);
-  let totalToolCount = $derived(toolStats.totalToolCount);
-
   // ── Per-turn usage lookup ──
 
   let usageByTurn = $derived(new Map(turnUsages.map((tu) => [tu.turnIndex, tu])));
@@ -422,7 +410,7 @@
       useTimeline,
       turns: turns.length,
       hookTools: hookToolEvents.length,
-      total: totalToolCount,
+      total: toolStats.totalToolCount,
       files: fileEntries.length,
     });
   });
@@ -824,9 +812,9 @@
     {:else}
       <!-- Tools panel -->
       <!-- Summary chips -->
-      {#if toolSummary.length > 1}
+      {#if toolStats.summary.length > 1}
         <div class="flex flex-wrap gap-1 px-2.5 py-1.5 border-b border-border/50">
-          {#each toolSummary as [name, count]}
+          {#each toolStats.summary as [name, count]}
             {@const style = getToolColor(name)}
             <span
               class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded {style.bg} {style.text} font-medium"
@@ -840,7 +828,7 @@
 
       <!-- Tool list -->
       <div class="flex-1 overflow-y-auto py-0.5">
-        {#if totalToolCount === 0}
+        {#if toolStats.totalToolCount === 0}
           <div class="flex items-center justify-center h-32 text-xs text-muted-foreground/50">
             {t("toolActivity_noToolCalls")}
           </div>
@@ -934,10 +922,10 @@
       </div>
 
       <!-- Stats footer (status counts only, tools tab only) -->
-      {#if totalToolCount > 0}
+      {#if toolStats.totalToolCount > 0}
         <div class="border-t border-border px-3 py-1.5">
           <div class="flex items-center gap-3 text-[11px]">
-            {#if doneCount > 0}
+            {#if toolStats.doneCount > 0}
               <span class="flex items-center gap-1 text-emerald-500 dark:text-emerald-400">
                 <svg
                   class="h-3 w-3"
@@ -948,18 +936,18 @@
                   stroke-linecap="round"
                   stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg
                 >
-                {doneCount}
+                {toolStats.doneCount}
               </span>
             {/if}
-            {#if runningCount > 0}
+            {#if toolStats.runningCount > 0}
               <span class="flex items-center gap-1 text-muted-foreground">
                 <div
                   class="h-3 w-3 rounded-full border-2 border-border border-t-muted-foreground animate-spin"
                 ></div>
-                {runningCount}
+                {toolStats.runningCount}
               </span>
             {/if}
-            {#if errorCount > 0}
+            {#if toolStats.errorCount > 0}
               <span class="flex items-center gap-1 text-destructive">
                 <svg
                   class="h-3 w-3"
@@ -971,7 +959,7 @@
                   stroke-linejoin="round"
                   ><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg
                 >
-                {errorCount}
+                {toolStats.errorCount}
               </span>
             {/if}
           </div>
@@ -1124,9 +1112,9 @@
         ></span>
       {/if}
     </button>
-    {#if totalToolCount > 0}
+    {#if toolStats.totalToolCount > 0}
       <span class="mt-1 text-[10px] text-muted-foreground" style="writing-mode: vertical-rl;"
-        >{totalToolCount}</span
+        >{toolStats.totalToolCount}</span
       >
     {/if}
   </div>

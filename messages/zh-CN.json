@@ -1384,6 +1384,7 @@
   "agent_permissionMode": "权限模式",
   "agent_maxTurns": "最大轮次",
   "agent_systemPrompt": "系统提示",
+  "agent_initialPrompt": "初始提示",
   "agent_background": "后台运行",
   "agent_isolation": "隔离模式",
   "agent_memory": "记忆文件",

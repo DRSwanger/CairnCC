@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { DirEntry } from "$lib/types";
   import { onMount } from "svelte";
+  import { formatBytes } from "$lib/utils/format";
 
   let {
     entries,
@@ -64,12 +65,6 @@
       document.removeEventListener("mousedown", handleMousedown, true);
     };
   });
-
-  function formatSize(size: number): string {
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-  }
 </script>
 
 <div
@@ -135,7 +130,7 @@
 
           {#if !entry.is_dir && entry.size > 0}
             <span class="shrink-0 text-[10px] text-muted-foreground">
-              {formatSize(entry.size)}
+              {formatBytes(entry.size)}
             </span>
           {/if}
         </button>

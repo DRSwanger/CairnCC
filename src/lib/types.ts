@@ -643,6 +643,8 @@ export interface InstalledPlugin {
   enabled?: boolean;
   marketplace?: string;
   pluginId?: string;
+  /** Project directory this plugin was installed in (project/local scope only). */
+  projectPath?: string;
   [key: string]: unknown;
 }
 
@@ -1104,10 +1106,13 @@ export type HookEventType =
   | "Elicitation"
   | "ElicitationResult"
   | "PostCompact"
-  | "StopFailure";
+  | "StopFailure"
+  | "TaskCreated"
+  | "CwdChanged"
+  | "FileChanged";
 
 export interface HookHandler {
-  type: "command" | "prompt";
+  type: "command" | "prompt" | "http";
   command?: string;
   prompt?: string;
   timeout?: number;

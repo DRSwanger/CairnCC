@@ -278,7 +278,6 @@ pub fn run() {
             commands::web_server::get_local_ip,
             commands::preview::open_preview_window,
             commands::preview::close_preview_window,
-            commands::preview::set_preview_pick_mode,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)

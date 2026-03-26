@@ -16,6 +16,7 @@
   var pendingData = null;
   var toolbar = null;
   var resultPanel = null;
+  var rafPending = false; // rAF gate for mousemove throttle
 
   var BTN = 'padding:5px 14px;border:none;border-radius:6px;cursor:pointer;font:500 12px/1 system-ui,sans-serif;';
   var BAR = 'position:fixed;bottom:0;left:0;right:0;z-index:1000001;' +
@@ -32,7 +33,6 @@
       '<span style="color:#a6adc8;flex:1;font-size:11px;">OpenCovibe Preview</span>' +
       '<button id="__ocv_btn_pick" style="' + BTN + 'background:#3b82f6;color:#fff;">Pick Element</button>';
     document.body.appendChild(bar);
-    // Reserve space so toolbar doesn't cover page content
     document.body.style.paddingBottom = (bar.offsetHeight) + 'px';
     toolbar = bar;
 
@@ -60,6 +60,12 @@
   // ── Hover overlay ──
 
   function createOverlay() {
+    // Guard against duplicate overlay elements
+    var existing = document.getElementById('__ocv_overlay');
+    if (existing) existing.remove();
+    var existingLb = document.getElementById('__ocv_label');
+    if (existingLb) existingLb.remove();
+
     var el = document.createElement('div');
     el.id = '__ocv_overlay';
     el.style.cssText = 'position:fixed;pointer-events:none;border:2px solid #3b82f6;' +
@@ -150,15 +156,18 @@
   // ── Result panel (replaces toolbar after selection) ──
 
   function esc(s) {
-    var d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function dismissResult() {
+    removeResult();
+    pendingData = null;
+    if (toolbar) toolbar.style.display = 'flex';
   }
 
   function showResult(data) {
     removeResult();
     pendingData = data;
-    // Hide toolbar, show result panel in its place
     if (toolbar) toolbar.style.display = 'none';
 
     var tag = esc(data.tagName);
@@ -184,22 +193,14 @@
     document.getElementById('__ocv_r_insert').onclick = function() {
       if (!pendingData) return;
       var json = encodeURIComponent(JSON.stringify(pendingData));
-      removeResult();
-      pendingData = null;
-      if (toolbar) toolbar.style.display = 'flex';
+      dismissResult();
       window.location.href = 'ocv-bridge://element-selected#' + json;
     };
     document.getElementById('__ocv_r_pick').onclick = function() {
-      removeResult();
-      pendingData = null;
-      if (toolbar) toolbar.style.display = 'flex';
+      dismissResult();
       activate();
     };
-    document.getElementById('__ocv_r_dismiss').onclick = function() {
-      removeResult();
-      pendingData = null;
-      if (toolbar) toolbar.style.display = 'flex';
-    };
+    document.getElementById('__ocv_r_dismiss').onclick = dismissResult;
   }
 
   function removeResult() {
@@ -217,9 +218,15 @@
   }
 
   function onMove(e) {
-    if (!active) return;
-    var el = document.elementFromPoint(e.clientX, e.clientY);
-    if (el && !isOcvEl(el)) highlight(el);
+    if (!active || rafPending) return;
+    rafPending = true;
+    var x = e.clientX, y = e.clientY;
+    requestAnimationFrame(function() {
+      rafPending = false;
+      if (!active) return;
+      var el = document.elementFromPoint(x, y);
+      if (el && !isOcvEl(el)) highlight(el);
+    });
   }
 
   function onClick(e) {
@@ -250,6 +257,7 @@
 
   function deactivate() {
     active = false;
+    rafPending = false;
     document.body.style.cursor = '';
     document.removeEventListener('mousemove', onMove, true);
     document.removeEventListener('click', onClick, true);
@@ -264,7 +272,6 @@
   }
 
   // ── Init: show toolbar as soon as body exists ──
-  // initialization_script runs before page JS, so document.body may not exist yet.
   function init() {
     if (document.body) {
       createToolbar();

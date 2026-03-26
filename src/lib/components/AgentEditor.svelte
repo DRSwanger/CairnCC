@@ -431,6 +431,21 @@
         </label>
       </div>
 
+      <!-- Initial Prompt -->
+      <div>
+        <label class="text-[11px] font-medium text-foreground block mb-1"
+          >{t("agent_initialPrompt")}</label
+        >
+        <input
+          type="text"
+          class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground
+            focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+          placeholder="Auto-submit prompt on first turn..."
+          bind:value={formData.initialPrompt}
+          disabled={mode === "edit"}
+        />
+      </div>
+
       <!-- System Prompt -->
       <div>
         <label class="text-[11px] font-medium text-foreground block mb-1"

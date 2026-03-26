@@ -30,6 +30,10 @@ export const HOOK_EVENT_TYPES: readonly HookEventType[] = [
   "Elicitation",
   "ElicitationResult",
   "PostCompact",
+  "StopFailure",
+  "TaskCreated",
+  "CwdChanged",
+  "FileChanged",
 ] satisfies readonly HookEventType[];
 
 export type { HookEventType };

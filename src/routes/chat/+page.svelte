@@ -58,7 +58,6 @@
   import type { PromptInputSnapshot } from "$lib/types";
   import MarkdownContent from "$lib/components/MarkdownContent.svelte";
   import HookReviewCard from "$lib/components/HookReviewCard.svelte";
-  import CliSessionBrowser from "$lib/components/CliSessionBrowser.svelte";
   import ContextUsageGrid from "$lib/components/ContextUsageGrid.svelte";
   import CostSummaryView from "$lib/components/CostSummaryView.svelte";
   import { parseContextMarkdown } from "$lib/utils/context-parser";
@@ -66,6 +65,7 @@
   import ReleaseNotesCard from "$lib/components/ReleaseNotesCard.svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { dbg, dbgWarn } from "$lib/utils/debug";
+  import { shouldAutoName } from "$lib/utils/auto-name";
   import { resolvePermissionOptimistic } from "$lib/utils/resolve-permission";
   import { getToolColor } from "$lib/utils/tool-colors";
   import { ansiToHtml, hasAnsiCodes } from "$lib/utils/ansi";
@@ -186,6 +186,17 @@
     if (!rewindModalOpen) rewindDirectTarget = null;
   });
 
+  // Auto-name one-shot latch: reset only on actual run ID change
+  let prevAutoNameRunId = "";
+  let autoNameDone = false;
+  $effect(() => {
+    const id = store.run?.id ?? "";
+    if (id !== prevAutoNameRunId) {
+      prevAutoNameRunId = id;
+      autoNameDone = false;
+    }
+  });
+
   // Clear markers on run switch (explicit prev-value check)
   let prevRewindRunId = "";
   $effect(() => {
@@ -196,26 +207,29 @@
     }
   });
 
+  // Lazy: only compute when rewind modal is open (avoids 3 array allocations per timeline change)
   let rewindCandidates = $derived(
-    store.timeline
-      .map((e, i) => ({ entry: e, idx: i }))
-      .filter(
-        (
-          x,
-        ): x is {
-          entry: Extract<TimelineEntry, { kind: "user" }> & { cliUuid: string };
-          idx: number;
-        } => x.entry.kind === "user" && !!x.entry.cliUuid,
-      )
-      .reverse()
-      .map(
-        ({ entry, idx }): RewindCandidate => ({
-          cliUuid: entry.cliUuid,
-          content: entry.content,
-          ts: entry.ts,
-          timelineIndex: idx,
-        }),
-      ),
+    rewindModalOpen
+      ? store.timeline
+          .map((e, i) => ({ entry: e, idx: i }))
+          .filter(
+            (
+              x,
+            ): x is {
+              entry: Extract<TimelineEntry, { kind: "user" }> & { cliUuid: string };
+              idx: number;
+            } => x.entry.kind === "user" && !!x.entry.cliUuid,
+          )
+          .reverse()
+          .map(
+            ({ entry, idx }): RewindCandidate => ({
+              cliUuid: entry.cliUuid,
+              content: entry.content,
+              ts: entry.ts,
+              timelineIndex: idx,
+            }),
+          )
+      : [],
   );
 
   // ── BTW side question ──
@@ -309,7 +323,6 @@
   let mcpPanelOpen = $state(false);
 
   // ── CLI session browser ──
-  let showCliBrowser = $state(false);
 
   // Track status bar expansion for MCP panel offset
   let statusBarExpanded = $state(
@@ -506,7 +519,12 @@
     };
   });
 
-  // ── Sidebar data availability (matches sidebar render condition) ──
+  // ── Sidebar data ──
+  let sidebarToolsCount = $derived(
+    store.timeline.some((e) => e.kind === "tool")
+      ? store.timeline.filter((e) => e.kind === "tool").length
+      : store.tools.filter((e) => e.tool_name).length,
+  );
   let hasSidebarData = $derived(
     !!(store.run || store.tools.length > 0 || store.timeline.some((e) => e.kind === "tool")),
   );
@@ -666,8 +684,6 @@
       });
     }
   }
-
-  let isExpandingTimeline = $derived(false);
 
   let welcomeVisible = $derived(
     store.timeline.length === 0 && !store.streamingText && !store.run && store.phase !== "loading",
@@ -1060,6 +1076,28 @@
     };
     window.addEventListener("ocv:project-changed", handler);
     return () => window.removeEventListener("ocv:project-changed", handler);
+  });
+
+  // Sync run name when sidebar/history renames the current run
+  onMount(() => {
+    function onRunsChanged() {
+      if (!store.run) return;
+      const id = store.run.id;
+      api
+        .getRun(id)
+        .then((fresh) => {
+          if (fresh && store.run?.id === id && fresh.name !== store.run.name) {
+            dbg("chat", "runs-changed: syncing name", { id, name: fresh.name });
+            store.run = { ...store.run, name: fresh.name ?? undefined };
+            if (fresh.name) autoNameDone = true;
+          }
+        })
+        .catch((e) => {
+          dbgWarn("chat", "runs-changed: failed to sync name", e);
+        });
+    }
+    window.addEventListener("ocv:runs-changed", onRunsChanged);
+    return () => window.removeEventListener("ocv:runs-changed", onRunsChanged);
   });
 
   // Check for pending plan from ExitPlanMode "clear context"
@@ -1504,7 +1542,6 @@
       const tl = store.timeline.length;
       const st = store.streamingText.length;
       const _rid = store.run?.id;
-      if (isExpandingTimeline) return; // progressive expansion handles its own scrolling
       const changed = tl !== prevTl || st !== prevSt;
       prevTl = tl;
       prevSt = st;
@@ -2127,14 +2164,18 @@
     }
   }
 
-  // Auto-name: on first idle, generate title from prompt
+  // Auto-name: on first idle, generate title from prompt (one-shot per run)
   $effect(() => {
-    if (store.phase === "idle" && store.run && !store.run.name && store.run.prompt) {
-      const firstLine = store.run.prompt.split("\n")[0].trim();
-      const autoName = firstLine.length > 40 ? firstLine.slice(0, 40) + "…" : firstLine;
-      if (autoName) {
-        handleRename(autoName);
-      }
+    const result = shouldAutoName({
+      phase: store.phase,
+      runId: store.run?.id,
+      runName: store.run?.name,
+      prompt: store.run?.prompt,
+      autoNameDone,
+    });
+    if (result.fire && result.autoName) {
+      autoNameDone = true;
+      handleRename(result.autoName);
     }
   });
 
@@ -2187,7 +2228,7 @@
     dbg("preview", "openPreview", { url });
     if (!isLocalhostUrl(url)) return "invalid_url";
 
-    const instanceId = crypto.randomUUID();
+    const instanceId = uuid();
     resetPreviewState();
     previewInstanceId = instanceId;
 
@@ -2214,6 +2255,17 @@
     previewInstanceId = "";
   }
 
+  /** Open preview + show result as command output. Returns true on success. */
+  async function openPreviewAndNotify(url: string): Promise<boolean> {
+    const result = await openPreview(url);
+    if (result === "ok") {
+      appendCommandOutput(t("preview_opened"));
+      return true;
+    }
+    appendCommandOutput(t(result === "invalid_url" ? "preview_invalidUrl" : "preview_openFailed"));
+    return false;
+  }
+
   function formatElementContext(sel: ElementSelection): string {
     const lines = [
       `[Page Element]`,
@@ -2233,6 +2285,24 @@
     if (styles) lines.push(`Styles: ${styles}`);
     lines.push(`HTML: ${sel.outerHtmlSnippet.slice(0, 500)}`);
     return lines.join("\n");
+  }
+
+  async function handleRalphCancel() {
+    if (!store.run?.id) return;
+    try {
+      const result = await api.cancelRalphLoop(store.run.id);
+      if (result.immediate) {
+        appendCommandOutput(`Loop cancelled (iteration ${result.iteration})`);
+      } else {
+        appendCommandOutput(
+          `Loop will stop after current iteration (iteration ${result.iteration})`,
+        );
+      }
+    } catch (err) {
+      appendCommandOutput(
+        `Failed to cancel loop: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async function handleVirtualCommand(action: string, args: string) {
@@ -2644,37 +2714,17 @@
         );
       }
     } else if (action === "cancel-ralph-loop") {
-      try {
-        const result = await api.cancelRalphLoop(store.run!.id);
-        if (result.immediate) {
-          appendCommandOutput(`Loop cancelled (iteration ${result.iteration})`);
-        } else {
-          appendCommandOutput(
-            `Loop will stop after current iteration (iteration ${result.iteration})`,
-          );
-        }
-      } catch (err) {
-        appendCommandOutput(
-          `Failed to cancel loop: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+      await handleRalphCancel();
     } else if (action === "toggle-preview") {
-      const doOpen = async (url: string) => {
-        const result = await openPreview(url);
-        if (result === "ok") appendCommandOutput(t("preview_opened"));
-        else if (result === "invalid_url") appendCommandOutput(t("preview_invalidUrl"));
-        else appendCommandOutput(t("preview_openFailed"));
-      };
-
       if (args) {
-        await doOpen(args);
+        await openPreviewAndNotify(args);
       } else if (previewOpen) {
         await closePreview();
         appendCommandOutput(t("preview_closed"));
       } else {
         const lastUrl = localStorage.getItem("ocv:preview-url");
         if (lastUrl) {
-          await doOpen(lastUrl);
+          await openPreviewAndNotify(lastUrl);
         } else {
           appendCommandOutput(t("preview_usage"));
         }
@@ -3545,11 +3595,7 @@
       turnUsages={store.turnUsages}
       activeTaskCount={store.activeBackgroundTasks.length}
       mode={store.run ? (store.useStreamSession ? "Stream" : "CLI") : ""}
-      toolsCount={sidebarCollapsed
-        ? store.timeline.some((e) => e.kind === "tool")
-          ? store.timeline.filter((e) => e.kind === "tool").length
-          : store.tools.filter((e) => e.tool_name).length
-        : 0}
+      toolsCount={sidebarCollapsed ? sidebarToolsCount : 0}
       onToolsClick={sidebarCollapsed ? toggleSidebar : undefined}
       remoteHostName={store.remoteHostName}
       onRename={store.run ? handleRename : undefined}
@@ -3618,12 +3664,8 @@
               e.preventDefault();
               const url = previewUrlInput.trim();
               if (url) {
-                openPreview(url).then((r) => {
-                  if (r === "ok") {
-                    previewUrlBarOpen = false;
-                    appendCommandOutput(t("preview_opened"));
-                  } else if (r === "invalid_url") appendCommandOutput(t("preview_invalidUrl"));
-                  else appendCommandOutput(t("preview_openFailed"));
+                openPreviewAndNotify(url).then((ok) => {
+                  if (ok) previewUrlBarOpen = false;
                 });
               }
             } else if (e.key === "Escape") {
@@ -4539,22 +4581,7 @@
           </div>
           <button
             class="rounded px-2 py-0.5 text-xs text-red-400 hover:bg-red-500/20 transition-colors"
-            onclick={async () => {
-              try {
-                const result = await api.cancelRalphLoop(store.run!.id);
-                if (result.immediate) {
-                  appendCommandOutput(`Loop cancelled (iteration ${result.iteration})`);
-                } else {
-                  appendCommandOutput(
-                    `Loop will stop after current iteration (iteration ${result.iteration})`,
-                  );
-                }
-              } catch (err) {
-                appendCommandOutput(
-                  `Failed to cancel: ${err instanceof Error ? err.message : String(err)}`,
-                );
-              }
-            }}
+            onclick={handleRalphCancel}
           >
             Cancel
           </button>
@@ -4638,18 +4665,6 @@
       bind:requestedTab={sidebarRequestedTab}
       backgroundTasks={store.taskNotifications}
       activeBackgroundTasks={store.activeBackgroundTasks}
-    />
-  {/if}
-
-  <!-- CLI session browser modal -->
-  {#if showCliBrowser}
-    <CliSessionBrowser
-      cwd="/"
-      onclose={() => (showCliBrowser = false)}
-      onimported={(runId) => {
-        showCliBrowser = false;
-        goto(`/chat?run=${runId}`);
-      }}
     />
   {/if}
 

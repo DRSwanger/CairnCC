@@ -1401,6 +1401,13 @@ pub struct InstalledPlugin {
     pub marketplace: Option<String>,
     #[serde(default, rename = "pluginId")]
     pub plugin_id: Option<String>,
+    /// Project directory this plugin was installed in (project/local scope only).
+    #[serde(
+        default,
+        rename = "projectPath",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub project_path: Option<String>,
     /// Catch-all for unknown fields
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,

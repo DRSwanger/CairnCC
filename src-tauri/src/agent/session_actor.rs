@@ -527,13 +527,13 @@ impl SessionActor {
         }
 
         // Allocate turn_index and determine kind
-        let trimmed = text.trim().to_string();
+        let trimmed = text.trim();
         let turn_index = self.next_turn_index;
         self.next_turn_index += 1;
 
         let kind = if trimmed.starts_with('/') {
             UserTurnKind::Slash {
-                command: trimmed.clone(),
+                command: trimmed.to_string(),
             }
         } else {
             let auto_ctx_id = self.next_auto_ctx_id;
@@ -1620,7 +1620,6 @@ impl SessionActor {
                     {
                         let turn = self.active_turn.take().unwrap();
                         self.on_user_turn_finished(&turn);
-                        self.active_turn = None;
                         self.active_extractor = None;
                         self.protocol.set_pending_slash_command(None);
 
@@ -2184,22 +2183,22 @@ impl SessionActor {
 
             // Clear error fields on new turn
             if new_state == "running" {
-                if let Some(mut meta) = runs::get_run(&self.run_id) {
+                if let Err(e) = runs::with_meta(&self.run_id, |meta| {
                     if meta.error_message.is_some() || meta.result_subtype.is_some() {
                         meta.error_message = None;
                         meta.result_subtype = None;
-                        if let Err(e) = runs::save_meta(&meta) {
-                            log::warn!(
-                                "[actor] clear error fields failed: run={} err={}",
-                                self.run_id,
-                                e
-                            );
-                        }
                         log::debug!(
                             "[actor] cleared error_message/result_subtype for new turn: run={}",
                             self.run_id
                         );
                     }
+                    Ok(())
+                }) {
+                    log::warn!(
+                        "[actor] clear error fields failed: run={} err={}",
+                        self.run_id,
+                        e
+                    );
                 }
             }
 
@@ -2224,43 +2223,38 @@ impl SessionActor {
     /// Finalize meta.json on EOF when result event already set RunState.
     /// Determines terminal status from result_subtype + exit_code.
     fn finalize_meta(&self, exit_code: Option<i32>) {
-        match runs::get_run(&self.run_id) {
-            Some(mut meta) => {
-                let had_result_error = meta
-                    .result_subtype
-                    .as_ref()
-                    .map(|s| s.starts_with("error"))
-                    .unwrap_or(false);
-                let terminal_status = if had_result_error {
-                    RunStatus::Failed
-                } else {
-                    match exit_code {
-                        Some(0) => RunStatus::Completed,
-                        _ => RunStatus::Failed,
-                    }
-                };
-                meta.status = terminal_status.clone();
-                meta.exit_code = exit_code;
-                if meta.ended_at.is_none() {
-                    meta.ended_at = Some(now_iso());
+        if let Err(e) = runs::with_meta(&self.run_id, |meta| {
+            let had_result_error = meta
+                .result_subtype
+                .as_ref()
+                .map(|s| s.starts_with("error"))
+                .unwrap_or(false);
+            let terminal_status = if had_result_error {
+                RunStatus::Failed
+            } else {
+                match exit_code {
+                    Some(0) => RunStatus::Completed,
+                    _ => RunStatus::Failed,
                 }
-                if let Err(e) = runs::save_meta(&meta) {
-                    log::warn!(
-                        "[actor] finalize_meta failed: run={} err={}",
-                        self.run_id,
-                        e
-                    );
-                }
-                log::debug!(
-                    "[actor] finalize_meta: run={} status={:?} exit_code={:?}",
-                    self.run_id,
-                    terminal_status,
-                    exit_code
-                );
+            };
+            meta.status = terminal_status.clone();
+            meta.exit_code = exit_code;
+            if meta.ended_at.is_none() {
+                meta.ended_at = Some(now_iso());
             }
-            None => {
-                log::warn!("[actor] finalize_meta: run={} not found", self.run_id);
-            }
+            log::debug!(
+                "[actor] finalize_meta: run={} status={:?} exit_code={:?}",
+                self.run_id,
+                terminal_status,
+                exit_code
+            );
+            Ok(())
+        }) {
+            log::warn!(
+                "[actor] finalize_meta failed: run={} err={}",
+                self.run_id,
+                e
+            );
         }
     }
 

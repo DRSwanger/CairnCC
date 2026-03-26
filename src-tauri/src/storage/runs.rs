@@ -1,5 +1,35 @@
 use crate::models::{now_iso, RunMeta, RunStatus, TaskRun};
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::fs;
+use std::sync::{Arc, Mutex};
+
+// ── Per-run mutex for serializing read-modify-write on meta.json ──
+
+static META_LOCKS: Lazy<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn meta_lock(id: &str) -> Arc<Mutex<()>> {
+    META_LOCKS
+        .lock()
+        .unwrap()
+        .entry(id.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
+
+/// Execute a read-modify-write on RunMeta under a per-run lock.
+/// Covers active-session hot paths that can race (rename, status, sync).
+pub fn with_meta<F>(id: &str, f: F) -> Result<(), String>
+where
+    F: FnOnce(&mut RunMeta) -> Result<(), String>,
+{
+    let lock = meta_lock(id);
+    let _guard = lock.lock().map_err(|e| format!("meta lock: {e}"))?;
+    let mut meta = get_run(id).ok_or_else(|| format!("Run {} not found", id))?;
+    f(&mut meta)?;
+    save_meta(&meta)
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn create_run(
@@ -100,7 +130,25 @@ pub fn save_meta(meta: &RunMeta) -> Result<(), String> {
         use std::os::unix::fs::PermissionsExt;
         let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
     }
-    fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))
+    for attempt in 0..3u8 {
+        match fs::rename(&tmp, &path) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && attempt < 2 => {
+                log::debug!(
+                    "[storage/runs] save_meta rename PermissionDenied, retry {}",
+                    attempt + 1
+                );
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(format!("rename: {e}"));
+            }
+        }
+    }
+    // All retries exhausted (should not reach here, but clean up just in case)
+    let _ = fs::remove_file(&tmp);
+    Err("rename: PermissionDenied after 3 retries".to_string())
 }
 
 /// Read meta.json without deleted_at filtering (internal use).
@@ -127,30 +175,32 @@ pub fn update_session_id(id: &str, session_id: &str) -> Result<(), String> {
         log::debug!("[storage/runs] update_session_id: empty session_id, skipping");
         return Ok(());
     }
-    let mut meta = get_run(id).ok_or_else(|| format!("Run {} not found", id))?;
-    if meta.session_id.as_deref() == Some(session_id) {
-        log::debug!("[storage/runs] update_session_id: unchanged, skipping");
-        return Ok(());
-    }
-    log::debug!(
-        "[storage/runs] update_session_id: id={}, old={:?}, new={}",
-        id,
-        meta.session_id,
-        session_id
-    );
-    meta.session_id = Some(session_id.to_string());
-    save_meta(&meta)
+    with_meta(id, |meta| {
+        if meta.session_id.as_deref() == Some(session_id) {
+            log::debug!("[storage/runs] update_session_id: unchanged, skipping");
+            return Ok(());
+        }
+        log::debug!(
+            "[storage/runs] update_session_id: id={}, old={:?}, new={}",
+            id,
+            meta.session_id,
+            session_id
+        );
+        meta.session_id = Some(session_id.to_string());
+        Ok(())
+    })
 }
 
 pub fn rename_run(id: &str, name: &str) -> Result<(), String> {
     log::debug!("[storage/runs] rename_run: id={}, name={}", id, name);
-    let mut meta = get_run(id).ok_or_else(|| format!("Run {} not found", id))?;
-    meta.name = if name.is_empty() {
-        None
-    } else {
-        Some(name.to_string())
-    };
-    save_meta(&meta)
+    with_meta(id, |meta| {
+        meta.name = if name.is_empty() {
+            None
+        } else {
+            Some(name.to_string())
+        };
+        Ok(())
+    })
 }
 
 pub fn update_run_model(id: &str, model: &str) -> Result<(), String> {
@@ -159,9 +209,10 @@ pub fn update_run_model(id: &str, model: &str) -> Result<(), String> {
         id,
         model
     );
-    let mut meta = get_run(id).ok_or_else(|| format!("Run {} not found", id))?;
-    meta.model = Some(model.to_string());
-    save_meta(&meta)
+    with_meta(id, |meta| {
+        meta.model = Some(model.to_string());
+        Ok(())
+    })
 }
 
 pub fn update_status(
@@ -176,21 +227,21 @@ pub fn update_status(
         status,
         exit_code
     );
-    let mut meta = get_run(id).ok_or_else(|| format!("Run {} not found", id))?;
-    meta.status = status.clone();
-    let is_terminal = matches!(
-        status,
-        RunStatus::Completed | RunStatus::Failed | RunStatus::Stopped
-    );
-    if is_terminal {
-        meta.ended_at = Some(now_iso());
-    } else {
-        // Clear stale ended_at when re-activating (e.g. resume after orphan recovery)
-        meta.ended_at = None;
-    }
-    meta.exit_code = exit_code;
-    meta.error_message = error_message;
-    save_meta(&meta)
+    with_meta(id, |meta| {
+        meta.status = status.clone();
+        let is_terminal = matches!(
+            status,
+            RunStatus::Completed | RunStatus::Failed | RunStatus::Stopped
+        );
+        if is_terminal {
+            meta.ended_at = Some(now_iso());
+        } else {
+            meta.ended_at = None;
+        }
+        meta.exit_code = exit_code;
+        meta.error_message = error_message;
+        Ok(())
+    })
 }
 
 /// Persist only error_message and result_subtype without changing status or ended_at.
@@ -207,10 +258,11 @@ pub fn persist_result_error(
         error_message,
         result_subtype
     );
-    let mut meta = get_run(id).ok_or_else(|| format!("Run {} not found", id))?;
-    meta.error_message = error_message;
-    meta.result_subtype = result_subtype;
-    save_meta(&meta)
+    with_meta(id, |meta| {
+        meta.error_message = error_message;
+        meta.result_subtype = result_subtype;
+        Ok(())
+    })
 }
 
 pub fn list_runs() -> Vec<TaskRun> {

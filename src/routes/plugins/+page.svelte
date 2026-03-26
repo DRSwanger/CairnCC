@@ -279,6 +279,26 @@
       .catch(() => {});
   });
 
+  // Sync project cwd when user switches projects (like Memory page)
+  onMount(() => {
+    function onProjectChanged(e: Event) {
+      const cwd = (e as CustomEvent).detail?.cwd ?? "";
+      if (cwd === projectCwd) return;
+      dbg("plugins", "project-changed", { old: projectCwd, new: cwd });
+      projectCwd = cwd;
+      // Re-fetch skills for the new project context
+      listStandaloneSkills(projectCwd || undefined)
+        .then((s) => {
+          skills = s;
+        })
+        .catch((err) => {
+          dbgWarn("plugins", "skills reload on project-change failed", err);
+        });
+    }
+    window.addEventListener("ocv:project-changed", onProjectChanged);
+    return () => window.removeEventListener("ocv:project-changed", onProjectChanged);
+  });
+
   // ── Helpers ──
 
   function hasComponent(
@@ -533,6 +553,15 @@
     return scope === "project" || scope === "local";
   }
 
+  /** Resolve the correct cwd for a plugin operation.
+   *  Prefers the plugin's own projectPath (from CLI metadata) over the page-level projectCwd.
+   *  This prevents "not installed in project scope" when the plugin belongs to a different project. */
+  function resolvePluginCwd(plugin: InstalledPlugin): string | undefined {
+    const scope = (plugin.scope as string) ?? "user";
+    if (!needsCwd(scope)) return undefined;
+    return plugin.projectPath || projectCwd || undefined;
+  }
+
   async function handleInstall(pluginName: string) {
     operationLoading = pluginName;
     dbg("plugins", "install", { name: pluginName, scope: installScope });
@@ -557,23 +586,21 @@
     }
   }
 
-  async function handleUninstall(pluginName: string, scope: string) {
+  async function handleUninstall(plugin: InstalledPlugin) {
+    const scope = (plugin.scope as string) ?? "user";
+    const cwd = resolvePluginCwd(plugin);
     confirmAction = {
       title: t("plugin_uninstallTitle"),
-      message: t("plugin_uninstallMsg", { name: pluginName }),
+      message: t("plugin_uninstallMsg", { name: plugin.name }),
       onConfirm: async () => {
-        operationLoading = pluginName;
-        dbg("plugins", "uninstall", { name: pluginName, scope });
+        operationLoading = plugin.name;
+        dbg("plugins", "uninstall", { name: plugin.name, scope, cwd });
         try {
-          const result = await uninstallPlugin(
-            pluginName,
-            scope,
-            needsCwd(scope) ? projectCwd : undefined,
-          );
+          const result = await uninstallPlugin(plugin.name, scope, cwd);
           dbg("plugins", "uninstall result", result);
           showToast(
             result.success
-              ? t("plugin_uninstalledPlugin", { name: pluginName })
+              ? t("plugin_uninstalledPlugin", { name: plugin.name })
               : t("plugin_failedOp", { error: result.message }),
             result.success ? "success" : "error",
           );
@@ -590,11 +617,12 @@
   async function handleToggleEnabled(plugin: InstalledPlugin) {
     const action = plugin.enabled !== false ? "disable" : "enable";
     const scope = (plugin.scope as string) ?? "user";
+    const cwd = resolvePluginCwd(plugin);
     operationLoading = plugin.name;
-    dbg("plugins", action, { name: plugin.name, scope });
+    dbg("plugins", action, { name: plugin.name, scope, cwd });
     try {
       const fn = plugin.enabled !== false ? disablePlugin : enablePlugin;
-      const result = await fn(plugin.name, scope, needsCwd(scope) ? projectCwd : undefined);
+      const result = await fn(plugin.name, scope, cwd);
       dbg("plugins", `${action} result`, result);
       showToast(
         result.success
@@ -612,19 +640,17 @@
     }
   }
 
-  async function handleUpdate(pluginName: string, scope: string) {
-    operationLoading = pluginName;
-    dbg("plugins", "update", { name: pluginName, scope });
+  async function handleUpdate(plugin: InstalledPlugin) {
+    const scope = (plugin.scope as string) ?? "user";
+    const cwd = resolvePluginCwd(plugin);
+    operationLoading = plugin.name;
+    dbg("plugins", "update", { name: plugin.name, scope, cwd });
     try {
-      const result = await updatePlugin(
-        pluginName,
-        scope,
-        needsCwd(scope) ? projectCwd : undefined,
-      );
+      const result = await updatePlugin(plugin.name, scope, cwd);
       dbg("plugins", "update result", result);
       showToast(
         result.success
-          ? t("plugin_updatedName", { name: pluginName })
+          ? t("plugin_updatedName", { name: plugin.name })
           : t("plugin_failedOp", { error: result.message }),
         result.success ? "success" : "error",
       );
@@ -1739,7 +1765,7 @@
                   <!-- Update button -->
                   <button
                     class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-                    onclick={() => handleUpdate(plugin.name, (plugin.scope as string) ?? "user")}
+                    onclick={() => handleUpdate(plugin)}
                     disabled={operationLoading === plugin.name}
                     title="Update plugin"
                   >
@@ -1748,7 +1774,7 @@
                   <!-- Uninstall button -->
                   <button
                     class="rounded-md border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-                    onclick={() => handleUninstall(plugin.name, (plugin.scope as string) ?? "user")}
+                    onclick={() => handleUninstall(plugin)}
                     disabled={operationLoading === plugin.name}
                   >
                     {t("plugin_uninstall")}

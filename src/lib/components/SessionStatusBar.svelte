@@ -7,6 +7,7 @@
   import { getCliModels } from "$lib/stores/cli-info.svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { fmtNumber } from "$lib/i18n/format";
+  import { truncate } from "$lib/utils/format";
 
   let {
     run = null,
@@ -167,10 +168,6 @@
   let titleEditing = $state(false);
   let titleEditValue = $state("");
   let titleInputEl: HTMLInputElement | undefined = $state();
-
-  function truncate(s: string, max: number): string {
-    return s.length > max ? s.slice(0, max) + "…" : s;
-  }
 
   function startTitleEdit() {
     if (!onRename || !run) return;
