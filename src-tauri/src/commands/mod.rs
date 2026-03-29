@@ -17,6 +17,7 @@ pub mod mcp;
 pub mod onboarding;
 pub mod plugins;
 pub mod preview;
+pub mod pty;
 pub mod runs;
 pub mod screenshot;
 pub mod session;

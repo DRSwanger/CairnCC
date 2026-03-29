@@ -116,6 +116,7 @@ pub async fn stop_run(
     id: String,
     sessions: tauri::State<'_, ActorSessionMap>,
     process_map: tauri::State<'_, crate::agent::stream::ProcessMap>,
+    pty_map: tauri::State<'_, crate::agent::pty::PtyMap>,
 ) -> Result<bool, String> {
     log::debug!("[runs] stop_run: id={}", id);
 
@@ -127,8 +128,11 @@ pub async fn stop_run(
     if actor_stopped {
         log::debug!("[runs] stop_run: stopped actor session for id={}", id);
     } else {
-        // Fall through to pipe mode (Codex)
-        crate::agent::stream::stop_process(&process_map, &id).await;
+        // Fall through to PTY / pipe
+        let pty_killed = crate::agent::pty::close_pty(pty_map.inner(), &id).unwrap_or(false);
+        if !pty_killed {
+            crate::agent::stream::stop_process(&process_map, &id).await;
+        }
     }
 
     // Update status regardless of which path stopped the process

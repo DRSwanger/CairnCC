@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::agent::adapter::ActorSessionMap;
 use crate::agent::control::CliInfoCache;
+use crate::agent::pty::PtyMap;
 use crate::agent::spawn_locks::SpawnLocks;
 use crate::agent::stream::ProcessMap;
 use crate::storage::events::EventWriter;
@@ -24,6 +25,7 @@ pub struct SessionEntry {
 #[derive(Clone)]
 pub struct AppState {
     pub process_map: ProcessMap,
+    pub pty_map: PtyMap,
     pub sessions: ActorSessionMap,
     pub writer: Arc<EventWriter>,
     pub spawn_locks: SpawnLocks,

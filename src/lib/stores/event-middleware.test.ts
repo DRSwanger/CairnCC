@@ -102,10 +102,12 @@ describe("EventMiddleware", () => {
   // ── Lifecycle ──
 
   describe("lifecycle", () => {
-    it("registers all 7 listeners on start() (6 core + _full_reload for non-desktop)", async () => {
+    it("registers all 9 listeners on start() (8 core + _full_reload for non-desktop)", async () => {
       await mw.start();
-      expect(_transportListeners.size).toBe(7);
+      expect(_transportListeners.size).toBe(9);
       expect(_transportListeners.has("bus-event")).toBe(true);
+      expect(_transportListeners.has("pty-output")).toBe(true);
+      expect(_transportListeners.has("pty-exit")).toBe(true);
       expect(_transportListeners.has("chat-delta")).toBe(true);
       expect(_transportListeners.has("chat-done")).toBe(true);
       expect(_transportListeners.has("run-event")).toBe(true);
@@ -338,9 +340,20 @@ describe("EventMiddleware", () => {
     });
   });
 
-  // ── Handler routing (Pipe) ──
+  // ── Handler routing (PTY, Pipe, Permission) ──
 
   describe("handler routing", () => {
+    it("routes pty-output to PTY handler", async () => {
+      await mw.start();
+      const onOutput = vi.fn();
+      mw.setPtyHandler({ onOutput, onExit: vi.fn() });
+
+      const handler = _transportListeners.get("pty-output")!;
+      handler({ run_id: "run-1", data: "base64data" });
+
+      expect(onOutput).toHaveBeenCalledWith({ run_id: "run-1", data: "base64data" });
+    });
+
     it("routes chat-delta to pipe handler", async () => {
       await mw.start();
       const onDelta = vi.fn();
@@ -352,11 +365,11 @@ describe("EventMiddleware", () => {
       expect(onDelta).toHaveBeenCalledWith({ text: "hello" });
     });
 
-    it("no-op when pipe handler is null", async () => {
+    it("no-op when handler is null", async () => {
       await mw.start();
       // Don't set any handlers — should not throw
-      const handler = _transportListeners.get("chat-delta")!;
-      expect(() => handler({ text: "x" })).not.toThrow();
+      const handler = _transportListeners.get("pty-output")!;
+      expect(() => handler({ run_id: "run-1", data: "x" })).not.toThrow();
     });
   });
 
@@ -369,7 +382,7 @@ describe("EventMiddleware", () => {
         callCount++;
         if (callCount === 3) {
           // Fail the 3rd listener registration
-          throw new Error("listen failed for chat-done");
+          throw new Error("listen failed for pty-exit");
         }
         _transportListeners.set(name, handler);
         const unlisten = vi.fn();
@@ -379,8 +392,8 @@ describe("EventMiddleware", () => {
 
       await mw.start();
 
-      // Should have 6 listeners (7 total including _full_reload, minus 1 failed)
-      expect(_transportListeners.size).toBe(6);
+      // Should have 8 listeners (9 total including _full_reload, minus 1 failed)
+      expect(_transportListeners.size).toBe(8);
       expect(dbgWarn).toHaveBeenCalledWith(
         "middleware",
         expect.stringContaining("failed to register listener"),

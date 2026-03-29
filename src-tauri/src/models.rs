@@ -762,6 +762,18 @@ pub struct ModelTokens {
     pub cache_write_tokens: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PtyOutput {
+    pub run_id: String,
+    pub data: String, // base64 encoded
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PtyExit {
+    pub run_id: String,
+    pub exit_code: i32,
+}
+
 // ── CLI Control Protocol types ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
