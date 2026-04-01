@@ -12,7 +12,7 @@
     getCliCurrentModel,
     getCliCommands,
     getCliModels,
-    canResumeRun,
+    canResumeNow,
     getResumeWarning,
     loadCliVersionInfo,
     getCliVersionInfo_cached,
@@ -1150,7 +1150,7 @@
     middleware.setRunEventHandler({
       onRunEvent(event) {
         if (
-          store.run?.agent === "codex" &&
+          store.run?.execution_path === "pipe_exec" &&
           store.run &&
           event.run_id === store.run.id &&
           xtermRef
@@ -3480,8 +3480,8 @@
       onEndSession={handleStop}
       onFork={forkOverlay ? undefined : () => handleResume("fork")}
       onModelChange={handleModelChange}
-      effort={store.agent === "claude" ? currentEffort : undefined}
-      onEffortChange={store.agent === "claude" ? handleEffortChange : undefined}
+      effort={store.features.effortSelector ? currentEffort : undefined}
+      onEffortChange={store.features.effortSelector ? handleEffortChange : undefined}
       onNavigateParent={store.run?.parent_run_id
         ? () => goto(`/chat?run=${store.run!.parent_run_id}`)
         : undefined}
@@ -4405,7 +4405,7 @@
     </div>
 
     <!-- Resume warning (if applicable) -->
-    {#if canResumeRun(store.run, store.phase, agentSettings?.no_session_persistence ?? false) && getResumeWarning(store.run)}
+    {#if canResumeNow(store.run, store.phase, agentSettings?.no_session_persistence ?? false) && getResumeWarning(store.run)}
       <div
         class="mx-3 mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-400"
       >
@@ -4509,7 +4509,8 @@
         pendingPermission={store.hasInlinePermission}
         hasRun={!!store.run}
         sessionAlive={store.sessionAlive}
-        canResume={!store.sessionAlive && !!store.run?.session_id && store.useStreamSession}
+        canResume={!store.sessionAlive &&
+          canResumeNow(store.run, store.phase, agentSettings?.no_session_persistence ?? false)}
         useStreamSession={store.useStreamSession}
         isRemote={store.isRemote}
         cliCommands={store.sessionInitReceived && store.sessionCommands.length > 0
@@ -4530,7 +4531,9 @@
         onAgentChange={undefined}
         onInterrupt={() => store.interrupt()}
         onModelSwitch={handleModelChange}
-        onPermissionModeChange={store.agent === "claude" ? handlePermissionModeChange : undefined}
+        onPermissionModeChange={store.features.permissionModeSwitch
+          ? handlePermissionModeChange
+          : undefined}
         onVirtualCommand={handleVirtualCommand}
         fastModeState={store.fastModeState}
         onFastModeSwitch={handleFastModeSwitch}

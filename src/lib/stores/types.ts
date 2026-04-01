@@ -190,13 +190,37 @@ export function classifyError(subtype?: string, errorMsg?: string): ClassifiedEr
 }
 
 /** Whether a finished run can be resumed/continued/forked. */
-export function canResumeRun(
-  run: { session_id?: string; status?: string } | null,
+/** Structural prerequisites for resume (conversation identity + execution path + phase). */
+export function canResumeStructurally(
+  run: {
+    session_id?: string;
+    status?: string;
+    execution_path?: string;
+    conversation_ref?: { kind: string; id: string };
+  } | null,
   phase: SessionPhase,
-  noSessionPersistence: boolean,
 ): boolean {
-  if (!run?.session_id) return false;
-  if (noSessionPersistence) return false;
+  const hasRef = run?.conversation_ref != null || !!run?.session_id;
+  if (!hasRef) return false;
+  // Resume UI currently only implemented for session_actor
+  const path = run?.execution_path ?? (run?.session_id ? "session_actor" : null);
+  if (path !== "session_actor") return false;
   if (ACTIVE_PHASES.includes(phase)) return false;
   return TERMINAL_PHASES.includes(phase);
 }
+
+/**
+ * Whether a run can be resumed RIGHT NOW (structural + current settings).
+ * Use in contexts that have access to current agent settings (chat page, layout).
+ */
+export function canResumeNow(
+  run: Parameters<typeof canResumeStructurally>[0],
+  phase: SessionPhase,
+  currentNoSessionPersistence: boolean,
+): boolean {
+  if (currentNoSessionPersistence) return false;
+  return canResumeStructurally(run, phase);
+}
+
+/** @deprecated Use canResumeStructurally or canResumeNow. Alias kept for backward compat. */
+export const canResumeRun = canResumeStructurally;

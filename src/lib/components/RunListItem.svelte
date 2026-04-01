@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TaskRun } from "$lib/types";
-  import { TERMINAL_PHASES } from "$lib/stores";
+  import { canResumeNow } from "$lib/stores";
+  import { getNoSessionPersistence } from "$lib/stores/agent-settings-cache.svelte";
   import StatusBadge from "./StatusBadge.svelte";
   import { relativeTime, truncate } from "$lib/utils/format";
   import { PLATFORM_PRESETS } from "$lib/utils/platform-presets";
@@ -29,7 +30,9 @@
 
   const label = $derived(truncate(run.name || run.prompt, 28));
   const time = $derived(relativeTime(run.last_activity_at ?? run.started_at));
-  const canResume = $derived(!!run.session_id && TERMINAL_PHASES.includes(run.status as any));
+  const canResume = $derived(
+    canResumeNow(run, run.status as any, getNoSessionPersistence(run.agent)),
+  );
   const needsAttention = $derived(hasAttention(run.id));
 
   let editing = $state(false);

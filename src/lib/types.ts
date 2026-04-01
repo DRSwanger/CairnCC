@@ -9,6 +9,14 @@ export type RunStatus = "pending" | "running" | "completed" | "failed" | "stoppe
 
 export type RunEventType = "system" | "stdout" | "stderr" | "command" | "user" | "assistant";
 
+/** App-internal execution path for a run (materialized in TaskRun, never undefined). */
+export type ExecutionPath = "session_actor" | "pipe_exec";
+
+/** Unified resume/fork identity across agents. */
+export type ConversationRef =
+  | { kind: "claude_session"; id: string }
+  | { kind: "codex_thread"; id: string };
+
 export interface TaskRun {
   id: string;
   prompt: string;
@@ -47,6 +55,12 @@ export interface TaskRun {
   cli_session_path?: string;
   /** True when CLI import couldn't reconstruct complete usage data. */
   cli_usage_incomplete?: boolean;
+  /** Snapshot of no_session_persistence at run creation time. */
+  no_session_persistence?: boolean;
+  /** Resolved execution path (session_actor or pipe_exec). Always present in API output. */
+  execution_path: ExecutionPath;
+  /** Unified resume identity. Undefined = not resumable. */
+  conversation_ref?: ConversationRef;
 }
 
 export interface ImportWatermark {
@@ -820,6 +834,19 @@ export type BusEvent =
       skills?: string[];
       plugins?: unknown[];
       fast_mode_state?: string;
+    }
+  | {
+      type: "rate_limit_event";
+      run_id: string;
+      /** Rate limit status: "allowed", "allowed_warning", "rejected" */
+      status: string;
+      /** When the rate limit window resets (epoch seconds). */
+      resets_at?: number;
+      /** Which limit: "five_hour", "seven_day", etc. */
+      rate_limit_type?: string;
+      /** Utilization percentage (0.0-1.0). */
+      utilization?: number;
+      data: Record<string, unknown>;
     }
   | { type: "message_delta"; run_id: string; text: string; parent_tool_use_id?: string }
   | {

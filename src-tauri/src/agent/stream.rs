@@ -1,4 +1,4 @@
-use crate::agent::codex_parser::extract_codex_delta;
+use crate::agent::pipe_parser::{CodexStdoutParser, PipeStdoutParser};
 use crate::models::{ChatDelta, ChatDone, RunEventType};
 use crate::process_ext::HideConsole;
 use crate::storage;
@@ -101,6 +101,7 @@ pub async fn run_agent(
         let is_codex = agent_clone == "codex";
 
         if is_codex {
+            let mut parser = CodexStdoutParser;
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
@@ -125,15 +126,33 @@ pub async fn run_agent(
                     continue;
                 }
                 if let Ok(payload) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                    if let Some(delta) = extract_codex_delta(&payload) {
-                        assistant_text.push_str(&delta);
-                        let _ = app_out.emit("chat-delta", ChatDelta { text: delta });
-                    } else {
-                        let evt = payload
-                            .get("type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        log::debug!("[codex] unhandled event: type={}", evt);
+                    // Capture thread_id as ConversationRef for Codex resume
+                    let type_str = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    if type_str == "thread.started" {
+                        if let Some(tid) = payload.get("thread_id").and_then(|v| v.as_str()) {
+                            log::debug!("[codex] captured thread_id={} as conversation_ref", tid);
+                            let tid_str = tid.to_string();
+                            let rid = run_id_out.clone();
+                            if let Err(e) = crate::storage::runs::with_meta(&rid, |meta| {
+                                meta.conversation_ref =
+                                    Some(crate::models::ConversationRef::CodexThread(tid_str));
+                                Ok(())
+                            }) {
+                                log::warn!("[codex] failed to persist conversation_ref: {}", e);
+                            }
+                        }
+                    }
+
+                    // Use PipeStdoutParser trait for structured event → BusEvent
+                    let events = parser.parse_line(&run_id_out, &payload);
+                    for ev in &events {
+                        if let crate::models::BusEvent::MessageDelta { text, .. } = ev {
+                            assistant_text.push_str(text);
+                            let _ = app_out.emit("chat-delta", ChatDelta { text: text.clone() });
+                        }
+                    }
+                    if events.is_empty() && !type_str.is_empty() {
+                        log::debug!("[codex] unhandled event: type={}", type_str);
                     }
                 }
             }

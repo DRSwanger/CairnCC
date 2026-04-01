@@ -44,6 +44,7 @@
   import { onMount, setContext, untrack } from "svelte";
   import { dbg, dbgWarn } from "$lib/utils/debug";
   import { PLATFORM_PRESETS } from "$lib/utils/platform-presets";
+  import { loadAgentSettingsCache } from "$lib/stores/agent-settings-cache.svelte";
   import type { PlatformCredential } from "$lib/types";
   import { TeamStore } from "$lib/stores/team-store.svelte";
   import { KeybindingStore } from "$lib/stores/keybindings.svelte";
@@ -128,6 +129,44 @@
   let searching = $state(false);
   let searchRequestId = $state(0);
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // ── Sidebar resize ──
+  function loadSidebarWidth(): number {
+    if (typeof window === "undefined") return 280;
+    const raw = parseInt(localStorage.getItem("ocv:sidebar-width") ?? "", 10);
+    return Number.isFinite(raw) ? Math.min(500, Math.max(180, raw)) : 280;
+  }
+  let sidebarWidth = $state(loadSidebarWidth());
+  let resizeCleanup: (() => void) | null = null;
+
+  function startResize(e: MouseEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    dbg("layout", "sidebar resize start", { startWidth });
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+
+    function onMove(ev: MouseEvent) {
+      sidebarWidth = Math.min(500, Math.max(180, startWidth + (ev.clientX - startX)));
+    }
+    function cleanup() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      resizeCleanup = null;
+      localStorage.setItem("ocv:sidebar-width", String(sidebarWidth));
+      dbg("layout", "sidebar resize end", { width: sidebarWidth });
+    }
+    function onUp() {
+      cleanup();
+    }
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    resizeCleanup = cleanup;
+  }
 
   // ── File tree state (shown in sidebar when on /explorer) ──
   interface TreeNode {
@@ -513,6 +552,7 @@
     loadRuns();
     loadSettings();
     loadSidebarFavorites();
+    loadAgentSettingsCache();
 
     // Load saved CWD and pinned folders from localStorage
     const saved = localStorage.getItem("ocv:project-cwd");
@@ -721,7 +761,14 @@
     document.addEventListener("click", handleExternalLink, true);
     dbg("layout", "external-link interceptor mounted");
 
+    // Explorer → layout: sync sidebar highlight when explorer restores cached file
+    function onExplorerFileSelected(e: Event) {
+      explorerSelectedFile = (e as CustomEvent).detail?.path ?? "";
+    }
+    window.addEventListener("ocv:explorer-file-selected", onExplorerFileSelected);
+
     return () => {
+      resizeCleanup?.(); // Clean up resize drag if component unmounts mid-drag
       clearInterval(interval);
       clearInterval(teamPollInterval);
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -741,6 +788,7 @@
       window.removeEventListener("ocv:memory-file-saved", onMemoryFileSaved);
       window.removeEventListener("ocv:open-permissions", onOpenPermissions);
       document.removeEventListener("click", handleExternalLink, true);
+      window.removeEventListener("ocv:explorer-file-selected", onExplorerFileSelected);
     };
   });
 
@@ -1414,7 +1462,10 @@
       </div>
 
       <!-- B. Content Panel -->
-      <div class="flex w-[280px] flex-col overflow-hidden border-r border-sidebar-border">
+      <div
+        class="flex flex-none flex-col overflow-hidden border-r border-sidebar-border relative"
+        style:width="{sidebarWidth}px"
+      >
         <!-- Panel header: Project selector + new chat -->
         <div class="flex h-14 items-center gap-1.5 border-b border-sidebar-border px-3">
           <span class="flex-1 min-w-0 truncate text-sm font-medium text-sidebar-foreground"
@@ -2150,6 +2201,12 @@
             </div>
           {/if}
         {/if}
+        <!-- Resize handle -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors z-10"
+          onmousedown={startResize}
+        ></div>
       </div>
     </aside>
   {/if}

@@ -1596,8 +1596,18 @@ impl SessionActor {
                     ..
                 } => {
                     log::debug!("[actor] captured session_id={}", sid);
-                    if let Err(e) = storage::runs::update_session_id(&self.run_id, sid) {
-                        log::warn!("[actor] failed to persist session_id: {}", e);
+                    // Single with_meta write: session_id + conversation_ref (avoid double write + intermediate state)
+                    let sid_clone = sid.clone();
+                    if let Err(e) = storage::runs::with_meta(&self.run_id, |meta| {
+                        meta.session_id = Some(sid_clone.clone());
+                        meta.conversation_ref =
+                            Some(crate::models::ConversationRef::ClaudeSession(sid_clone));
+                        Ok(())
+                    }) {
+                        log::warn!(
+                            "[actor] failed to persist session_id + conversation_ref: {}",
+                            e
+                        );
                     }
                     self.persist_and_emit(&event);
                 }

@@ -18,6 +18,7 @@ function makeRun(overrides: Partial<TaskRun> = {}): TaskRun {
     auth_mode: "cli",
     status: "completed",
     started_at: "2024-01-01T00:00:00Z",
+    execution_path: "session_actor",
     ...overrides,
   };
 }

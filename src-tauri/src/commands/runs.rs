@@ -1,7 +1,28 @@
 use crate::agent::adapter::ActorSessionMap;
-use crate::models::{PromptFavorite, PromptSearchResult, RunStatus, TaskRun};
+use crate::models::{ExecutionPath, PromptFavorite, PromptSearchResult, RunStatus, TaskRun};
 use crate::storage;
 use std::collections::{HashMap, HashSet};
+
+/// Validate that agent supports the requested execution path.
+fn validate_agent_path(agent: &str, path: &ExecutionPath) -> Result<(), String> {
+    match agent {
+        "claude" => Ok(()), // Claude supports both session_actor and pipe_exec
+        "codex" => {
+            if *path == ExecutionPath::PipeExec {
+                Ok(())
+            } else {
+                Err(format!(
+                    "agent 'codex' does not support execution_path {:?}",
+                    path
+                ))
+            }
+        }
+        _ => Err(format!(
+            "unknown agent '{}': supported agents are 'claude' and 'codex'",
+            agent
+        )),
+    }
+}
 
 #[tauri::command]
 pub async fn list_runs() -> Result<Vec<TaskRun>, String> {
@@ -51,16 +72,38 @@ pub fn start_run(
     model: Option<String>,
     remote_host_name: Option<String>,
     platform_id: Option<String>,
+    execution_path: Option<String>,
 ) -> Result<TaskRun, String> {
     log::debug!(
-        "[runs] start_run: agent={}, model={:?}, remote={:?}, platform={:?}, prompt_len={}, cwd={}",
+        "[runs] start_run: agent={}, model={:?}, remote={:?}, platform={:?}, path={:?}, prompt_len={}, cwd={}",
         agent,
         model,
         remote_host_name,
         platform_id,
+        execution_path,
         prompt.len(),
         cwd
     );
+
+    // Resolve execution_path: explicit (must be valid) > agent-based default
+    let path: ExecutionPath = match execution_path {
+        Some(s) => serde_json::from_value(serde_json::Value::String(s.clone())).map_err(|_| {
+            format!(
+                "invalid execution_path '{}': expected 'session_actor' or 'pipe_exec'",
+                s
+            )
+        })?,
+        None => {
+            if agent == "claude" {
+                ExecutionPath::SessionActor
+            } else {
+                ExecutionPath::PipeExec
+            }
+        }
+    };
+
+    // Validate agent/path combination
+    validate_agent_path(&agent, &path)?;
 
     // Snapshot remote host config at creation time (self-contained — survives renames/deletions)
     let (remote_cwd, remote_host_snapshot) = if let Some(ref name) = remote_host_name {
@@ -76,7 +119,7 @@ pub fn start_run(
     };
 
     let id = uuid::Uuid::new_v4().to_string();
-    let meta = storage::runs::create_run(
+    let mut meta = storage::runs::create_run(
         &id,
         &prompt,
         &cwd,
@@ -89,6 +132,8 @@ pub fn start_run(
         remote_host_snapshot,
         platform_id,
     )?;
+    meta.execution_path = Some(path);
+    storage::runs::save_meta(&meta)?;
     log::debug!("[runs] start_run: created id={}", id);
     Ok(meta.to_task_run(None, None, None))
 }

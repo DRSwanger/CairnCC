@@ -5,6 +5,7 @@
     lineNumbers,
     highlightActiveLineGutter,
     highlightActiveLine,
+    drawSelection,
     keymap,
   } from "@codemirror/view";
   import { EditorState, Compartment, type Extension } from "@codemirror/state";
@@ -135,6 +136,7 @@
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
+        drawSelection(), // Renders CM6 cursor (native caret is hidden via caret-color: transparent in app.css)
         bracketMatching(),
         history(),
         keymap.of([
