@@ -69,8 +69,16 @@ export async function startRun(
   model?: string,
   remoteHostName?: string,
   platformId?: string,
+  executionPath?: string,
 ): Promise<TaskRun> {
-  dbg("api", "startRun", { prompt: prompt.slice(0, 80), agent, cwd, remoteHostName, platformId });
+  dbg("api", "startRun", {
+    prompt: prompt.slice(0, 80),
+    agent,
+    cwd,
+    remoteHostName,
+    platformId,
+    executionPath,
+  });
   const result = await invoke<TaskRun>("start_run", {
     prompt,
     cwd,
@@ -78,6 +86,7 @@ export async function startRun(
     model,
     remoteHostName: remoteHostName ?? null,
     platformId: platformId ?? null,
+    executionPath: executionPath ?? null,
   });
   dbg("api", "startRun →", result.id);
   return result;
@@ -223,7 +232,10 @@ export async function updateAgentSettings(
   patch: Partial<AgentSettings>,
 ): Promise<AgentSettings> {
   dbg("api", "updateAgentSettings", agent);
-  return invoke<AgentSettings>("update_agent_settings", { agent, patch });
+  const result = await invoke<AgentSettings>("update_agent_settings", { agent, patch });
+  // Sync sidebar resume-gate cache with updated settings
+  import("$lib/stores/agent-settings-cache.svelte").then((m) => m.refreshAgentSettingsCache(agent));
+  return result;
 }
 
 // Filesystem

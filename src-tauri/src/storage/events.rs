@@ -33,6 +33,7 @@ pub const REPLAY_TYPES: &[&str] = &[
     "hook_progress",
     "hook_callback",
     "elicitation_prompt",
+    "rate_limit_event",
 ];
 
 /// Check if a BusEvent's serde tag is in REPLAY_TYPES.

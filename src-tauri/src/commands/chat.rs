@@ -73,6 +73,15 @@ pub async fn send_chat_message(
     );
     let run = storage::runs::get_run(&run_id).ok_or_else(|| format!("Run {} not found", run_id))?;
 
+    // Validate execution path — send_chat_message is the pipe_exec path
+    let exec_path = run.resolved_execution_path();
+    if exec_path != crate::models::ExecutionPath::PipeExec {
+        return Err(format!(
+            "send_chat_message requires execution_path=pipe_exec, got {:?} for run {}",
+            exec_path, run_id
+        ));
+    }
+
     let message = message.trim().to_string();
     if message.is_empty() {
         return Err("message is required".to_string());

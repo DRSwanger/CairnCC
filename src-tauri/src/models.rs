@@ -95,6 +95,30 @@ impl std::fmt::Display for RunEventType {
     }
 }
 
+/// App-internal execution path — which backend subsystem handles this run.
+/// NOT a protocol description; a single agent may support multiple paths.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionPath {
+    /// Long-lived process with bidirectional control protocol (Claude stream-json via session_actor)
+    SessionActor,
+    /// Single-shot process, stdout only (Codex exec, Claude --print via stream.rs)
+    PipeExec,
+}
+
+/// Unified resume/fork identity across agents.
+/// Claude = session_id from system/init; Codex = thread_id from thread.started.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", content = "id")]
+pub enum ConversationRef {
+    /// Claude Code session ID (from system/init event)
+    #[serde(rename = "claude_session")]
+    ClaudeSession(String),
+    /// Codex thread ID (from thread.started event)
+    #[serde(rename = "codex_thread")]
+    CodexThread(String),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskRun {
     pub id: String,
@@ -153,6 +177,14 @@ pub struct TaskRun {
     /// True when CLI import couldn't reconstruct complete usage data.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cli_usage_incomplete: Option<bool>,
+    /// Snapshot of no_session_persistence at run creation time.
+    #[serde(default)]
+    pub no_session_persistence: bool,
+    /// Resolved execution path (materialized from RunMeta, never None in API output).
+    pub execution_path: ExecutionPath,
+    /// Resolved conversation identity (None = not resumable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_ref: Option<ConversationRef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -470,9 +502,41 @@ pub struct RunMeta {
     /// Soft-delete timestamp (ISO 8601). When set, run is hidden from all read paths.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deleted_at: Option<String>,
+    /// Snapshot of no_session_persistence at run creation time (metadata only — runtime
+    /// resume gate uses current agent settings, not this snapshot).
+    #[serde(default)]
+    pub no_session_persistence: bool,
+    /// App execution path for this run. Option on disk (backward compat); resolved via agent heuristic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_path: Option<ExecutionPath>,
+    /// Unified resume identity. None = not resumable. Written by runtime events (session_init / thread.started).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_ref: Option<ConversationRef>,
 }
 
 impl RunMeta {
+    /// Resolve execution_path for old runs that don't have it on disk.
+    /// Migration assumption: historically, Claude runs used session_actor,
+    /// Codex runs used pipe_exec. Based on shipped product paths, not a protocol guarantee.
+    pub fn resolved_execution_path(&self) -> ExecutionPath {
+        self.execution_path.clone().unwrap_or_else(|| {
+            if self.agent == "claude" {
+                ExecutionPath::SessionActor
+            } else {
+                ExecutionPath::PipeExec
+            }
+        })
+    }
+
+    /// Resolve conversation_ref for old runs. Falls back to session_id → ClaudeSession.
+    pub fn resolved_conversation_ref(&self) -> Option<ConversationRef> {
+        self.conversation_ref.clone().or_else(|| {
+            self.session_id
+                .as_ref()
+                .map(|sid| ConversationRef::ClaudeSession(sid.clone()))
+        })
+    }
+
     pub fn to_task_run(
         &self,
         last_activity_at: Option<String>,
@@ -506,6 +570,9 @@ impl RunMeta {
             cli_import_watermark: self.cli_import_watermark.clone(),
             cli_session_path: self.cli_session_path.clone(),
             cli_usage_incomplete: self.cli_usage_incomplete,
+            no_session_persistence: self.no_session_persistence,
+            execution_path: self.resolved_execution_path(),
+            conversation_ref: self.resolved_conversation_ref(),
         }
     }
 }
@@ -1188,6 +1255,22 @@ pub enum BusEvent {
         url: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         requested_schema: Option<Value>,
+    },
+    /// Rate limit event — emitted when API rate limit status changes.
+    RateLimitEvent {
+        run_id: String,
+        /// Rate limit status: "allowed", "allowed_warning", "rejected"
+        status: String,
+        /// When the rate limit window resets (epoch seconds).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resets_at: Option<f64>,
+        /// Which limit: "five_hour", "seven_day", etc.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rate_limit_type: Option<String>,
+        /// Utilization percentage (0.0-1.0).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        utilization: Option<f64>,
+        data: Value,
     },
     /// Ralph loop started — carries full config for replay.
     RalphStarted {

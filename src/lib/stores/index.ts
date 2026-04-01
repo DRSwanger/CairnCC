@@ -9,6 +9,8 @@ export {
   TERMINAL_PHASES,
   SESSION_ALIVE_PHASES,
   canResumeRun,
+  canResumeStructurally,
+  canResumeNow,
   getResumeWarning,
 } from "./types";
 export {

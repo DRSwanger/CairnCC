@@ -79,6 +79,10 @@ pub fn create_run(
         })
         .or_else(|| settings.anthropic_base_url.clone());
 
+    // Snapshot no_session_persistence from agent settings at creation time
+    let agent_settings = super::settings::get_agent_settings(agent);
+    let no_session_persistence = agent_settings.no_session_persistence.unwrap_or(false);
+
     let meta = RunMeta {
         id: id.to_string(),
         prompt: prompt.to_string(),
@@ -105,6 +109,9 @@ pub fn create_run(
         cli_session_path: None,
         cli_usage_incomplete: None,
         deleted_at: None,
+        no_session_persistence,
+        execution_path: None,   // Caller sets after create_run
+        conversation_ref: None, // Written by runtime events (session_init / thread.started)
     };
 
     save_meta(&meta)?;

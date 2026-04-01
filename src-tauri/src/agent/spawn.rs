@@ -1,6 +1,6 @@
 use crate::agent::adapter::{self, AdapterSettings};
 
-/// Build the command + args for a given agent (pipe/PTY mode, not stream session)
+/// Build the command + args for a given agent (pipe-exec mode, not stream session)
 pub fn build_agent_command(
     agent: &str,
     prompt: &str,

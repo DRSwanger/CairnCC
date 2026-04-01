@@ -1,11 +1,12 @@
 <script lang="ts">
   import { getGitDiff, readTextFile, readFileBase64, writeTextFile } from "$lib/api";
-  import { dbg } from "$lib/utils/debug";
+  import { dbg, dbgWarn } from "$lib/utils/debug";
   import { fileName as pathFileName } from "$lib/utils/format";
   import { t } from "$lib/i18n/index.svelte";
   import { onMount } from "svelte";
   import CodeEditor from "$lib/components/CodeEditor.svelte";
   import MarkdownContent from "$lib/components/MarkdownContent.svelte";
+  import { getCachedFile, setCachedFile, clearCachedFile } from "$lib/utils/explorer-state";
 
   // ── State ──
 
@@ -97,8 +98,15 @@
 
   // ── File preview ──
 
-  async function loadFilePreview(path: string) {
-    if (fileDirty && !confirm(t("explorer_discardConfirm"))) return;
+  type LoadResult = "loaded" | "failed" | "stale";
+  let loadSeq = 0;
+
+  async function loadFilePreview(path: string, skipDirtyCheck = false): Promise<LoadResult> {
+    if (!skipDirtyCheck && fileDirty && !confirm(t("explorer_discardConfirm"))) return "stale";
+
+    const seq = ++loadSeq;
+    const requestedCwd = projectCwd;
+
     selectedFilePath = path;
     activeView = "preview";
     fileError = "";
@@ -107,25 +115,32 @@
     fileLoading = true;
     fileDirty = false;
     imageDataUrl = "";
+
     try {
       if (IMAGE_EXTENSIONS.has(ext)) {
-        const [base64, mime] = await readFileBase64(path, projectCwd);
+        const [base64, mime] = await readFileBase64(path, requestedCwd);
+        if (seq !== loadSeq) return "stale";
         imageDataUrl = `data:${mime};base64,${base64}`;
         fileContent = "";
         originalContent = "";
-        dbg("explorer", "image loaded", { path, mime });
       } else {
-        fileContent = await readTextFile(path, projectCwd);
-        originalContent = fileContent;
-        dbg("explorer", "file loaded", { path, size: fileContent.length });
+        const content = await readTextFile(path, requestedCwd);
+        if (seq !== loadSeq) return "stale";
+        fileContent = content;
+        originalContent = content;
       }
+      setCachedFile(requestedCwd, path);
+      dbg("explorer", "file loaded", { path, size: fileContent.length });
+      return "loaded";
     } catch (e) {
+      if (seq !== loadSeq) return "stale";
       fileContent = "";
       originalContent = "";
       imageDataUrl = "";
       fileError = String(e);
+      return "failed";
     } finally {
-      fileLoading = false;
+      if (seq === loadSeq) fileLoading = false;
     }
   }
 
@@ -199,22 +214,97 @@
     // Listen for project cwd changes from layout
     function onProjectChanged(e: Event) {
       const cwd = (e as CustomEvent).detail?.cwd ?? "";
-      if (cwd !== projectCwd) {
-        if (fileDirty && !confirm(t("explorer_discardConfirm"))) return;
-        projectCwd = cwd;
+      if (cwd === projectCwd) return;
+      if (fileDirty && !confirm(t("explorer_discardConfirm"))) return;
+
+      // Save current project state
+      if (projectCwd && selectedFilePath) {
+        setCachedFile(projectCwd, selectedFilePath);
+      }
+
+      // Invalidate in-flight async loads
+      ++loadSeq;
+      fileLoading = false;
+
+      // Clear dirty state
+      fileDirty = false;
+      originalContent = fileContent;
+
+      // Switch project
+      projectCwd = cwd;
+      diffViewFile = null;
+      diffViewContent = "";
+      activeView = "preview";
+      fileError = "";
+      imageDataUrl = "";
+
+      // Restore cached state
+      const cached = getCachedFile(cwd);
+      if (cached) {
+        const restoreCwd = cwd;
+        dbg("explorer", "restoring cached file on project switch", { cwd, cached });
+        window.dispatchEvent(
+          new CustomEvent("ocv:explorer-file-selected", { detail: { path: cached } }),
+        );
+        loadFilePreview(cached, true).then((result) => {
+          if (result === "failed") {
+            dbgWarn("explorer", "cache restore failed, clearing", { cwd: restoreCwd, cached });
+            clearCachedFile(restoreCwd);
+            selectedFilePath = "";
+            fileContent = "";
+            originalContent = "";
+            imageDataUrl = "";
+            fileError = "";
+            window.dispatchEvent(
+              new CustomEvent("ocv:explorer-file-selected", { detail: { path: "" } }),
+            );
+          }
+        });
+      } else {
+        dbg("explorer", "no cache for project, clearing", { cwd });
         selectedFilePath = "";
         fileContent = "";
         originalContent = "";
-        imageDataUrl = "";
-        fileDirty = false;
-        fileError = "";
-        diffViewFile = null;
-        diffViewContent = "";
+        window.dispatchEvent(
+          new CustomEvent("ocv:explorer-file-selected", { detail: { path: "" } }),
+        );
       }
     }
     window.addEventListener("ocv:project-changed", onProjectChanged);
 
+    // Restore cached file state on mount (e.g. navigating back to /explorer)
+    const cached = getCachedFile(projectCwd);
+    if (cached && !selectedFilePath) {
+      const restoreCwd = projectCwd;
+      dbg("explorer", "restoring cached file on mount", { cwd: projectCwd, cached });
+      window.dispatchEvent(
+        new CustomEvent("ocv:explorer-file-selected", { detail: { path: cached } }),
+      );
+      loadFilePreview(cached, true).then((result) => {
+        if (result === "failed") {
+          dbgWarn("explorer", "mount cache restore failed, clearing", { cwd: restoreCwd, cached });
+          clearCachedFile(restoreCwd);
+          selectedFilePath = "";
+          fileContent = "";
+          originalContent = "";
+          imageDataUrl = "";
+          fileError = "";
+          window.dispatchEvent(
+            new CustomEvent("ocv:explorer-file-selected", { detail: { path: "" } }),
+          );
+        }
+      });
+    }
+
     return () => {
+      // Save state on unmount (leaving /explorer)
+      if (projectCwd && selectedFilePath) {
+        dbg("explorer", "saving file state on unmount", {
+          cwd: projectCwd,
+          file: selectedFilePath,
+        });
+        setCachedFile(projectCwd, selectedFilePath);
+      }
       window.removeEventListener("ocv:explorer-file", onExplorerFile);
       window.removeEventListener("ocv:explorer-diff", onExplorerDiff);
       window.removeEventListener("ocv:project-changed", onProjectChanged);

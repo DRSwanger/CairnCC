@@ -1257,6 +1257,40 @@ impl ProtocolState {
                 });
             }
 
+            // ── rate limit event (top-level) ──
+            "rate_limit_event" => {
+                let info = raw.get("rate_limit_info");
+                let status = info
+                    .and_then(|v| v.get("status"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("allowed")
+                    .to_string();
+                let resets_at = info
+                    .and_then(|v| v.get("resetsAt"))
+                    .and_then(|v| v.as_f64());
+                let rate_limit_type = info
+                    .and_then(|v| v.get("rateLimitType"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let utilization = info
+                    .and_then(|v| v.get("utilization"))
+                    .and_then(|v| v.as_f64());
+                log::debug!(
+                    "[protocol] rate_limit_event: status={}, type={:?}, utilization={:?}",
+                    status,
+                    rate_limit_type,
+                    utilization
+                );
+                events.push(BusEvent::RateLimitEvent {
+                    run_id: run_id.to_string(),
+                    status,
+                    resets_at,
+                    rate_limit_type,
+                    utilization,
+                    data: raw.clone(),
+                });
+            }
+
             // ── fallback: raw ──
             _ => {
                 if !event_type.is_empty() {
@@ -2190,6 +2224,43 @@ mod tests {
             }
             other => panic!("expected ToolUseSummary, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_rate_limit_event() {
+        let mut ps = ProtocolState::new(false);
+        let raw = json!({
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "status": "allowed_warning",
+                "resetsAt": 1711900000.0,
+                "rateLimitType": "five_hour",
+                "utilization": 0.85
+            },
+            "uuid": "abc123",
+            "session_id": "sess1"
+        });
+        let events = ps.map_event(RUN, &raw);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            BusEvent::RateLimitEvent {
+                status,
+                resets_at,
+                rate_limit_type,
+                utilization,
+                ..
+            } => {
+                assert_eq!(status, "allowed_warning");
+                assert!((resets_at.unwrap() - 1711900000.0).abs() < 0.1);
+                assert_eq!(rate_limit_type.as_deref(), Some("five_hour"));
+                assert!((utilization.unwrap() - 0.85).abs() < 0.01);
+            }
+            other => panic!("expected RateLimitEvent, got {:?}", other),
+        }
+        assert_eq!(
+            ps.stats.unknown_event_count, 0,
+            "rate_limit_event should NOT increment unknown counter"
+        );
     }
 
     #[test]

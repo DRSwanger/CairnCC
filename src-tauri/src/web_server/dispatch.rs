@@ -45,6 +45,10 @@ pub async fn dispatch_command(
                 .get("platform_id")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let execution_path = params
+                .get("execution_path")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let run = crate::commands::runs::start_run(
                 prompt,
                 cwd,
@@ -52,6 +56,7 @@ pub async fn dispatch_command(
                 model,
                 remote_host_name,
                 platform_id,
+                execution_path,
             )?;
             serde_json::to_value(run).map_err(|e| e.to_string())
         }

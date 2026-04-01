@@ -504,14 +504,22 @@ pub(crate) async fn start_session_impl(
         att_list.len()
     );
 
-    // 1. Read run metadata
+    // 1. Read run metadata + validate execution path
     let meta =
         storage::runs::get_run(&run_id).ok_or_else(|| format!("Run {} not found", run_id))?;
+    let exec_path = meta.resolved_execution_path();
+    if exec_path != crate::models::ExecutionPath::SessionActor {
+        return Err(format!(
+            "start_session requires execution_path=session_actor, got {:?} for run {}",
+            exec_path, run_id
+        ));
+    }
     log::debug!(
-        "[session] meta loaded: agent={}, prompt={:?}, cwd={}",
+        "[session] meta loaded: agent={}, prompt={:?}, cwd={}, exec_path={:?}",
         meta.agent,
         truncate_str(&meta.prompt, 80),
-        meta.cwd
+        meta.cwd,
+        exec_path
     );
 
     // 2. Read settings and build unified adapter settings
@@ -994,8 +1002,11 @@ pub(crate) async fn fork_session_impl(
     // 4. Copy parent events
     storage::events::copy_bus_events(&run_id, &new_id)?;
 
-    // 5. Set parent session_id on fork run
+    // 5. Set parent session_id on fork run; inherit execution_path, but NOT conversation_ref
+    //    (fork creates a new session — conversation_ref is written after fork_oneshot returns new ID)
     meta.session_id = Some(session_id.clone());
+    meta.execution_path = Some(source.resolved_execution_path());
+    // conversation_ref intentionally None — will be set in step 8 with new session_id
     storage::runs::save_meta(&meta)?;
 
     // 6. Build adapter settings + resolve remote (audit #3)
@@ -1059,8 +1070,11 @@ pub(crate) async fn fork_session_impl(
         new_session_id
     );
 
-    // 8. Persist new session_id
-    meta.session_id = Some(new_session_id);
+    // 8. Persist new session_id + conversation_ref (one write)
+    meta.session_id = Some(new_session_id.clone());
+    meta.conversation_ref = Some(crate::models::ConversationRef::ClaudeSession(
+        new_session_id,
+    ));
     storage::runs::save_meta(&meta)?;
 
     log::debug!(

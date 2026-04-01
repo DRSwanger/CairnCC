@@ -71,6 +71,7 @@ function makeRun(id: string, overrides: Record<string, unknown> = {}) {
     auth_mode: "cli",
     status: "running" as const,
     started_at: new Date().toISOString(),
+    execution_path: "session_actor" as const,
     ...overrides,
   };
 }
@@ -3148,42 +3149,54 @@ describe("SessionStore reducer", () => {
 
   describe("canResumeRun", () => {
     it("returns true for terminal run with session_id", () => {
-      expect(canResumeRun({ session_id: "sess-1", status: "completed" }, "completed", false)).toBe(
-        true,
-      );
-      expect(canResumeRun({ session_id: "sess-1", status: "failed" }, "failed", false)).toBe(true);
-      expect(canResumeRun({ session_id: "sess-1", status: "stopped" }, "stopped", false)).toBe(
-        true,
-      );
+      expect(canResumeRun({ session_id: "sess-1", status: "completed" }, "completed")).toBe(true);
+      expect(canResumeRun({ session_id: "sess-1", status: "failed" }, "failed")).toBe(true);
+      expect(canResumeRun({ session_id: "sess-1", status: "stopped" }, "stopped")).toBe(true);
     });
 
     it("returns false without session_id", () => {
-      expect(canResumeRun({ status: "completed" }, "completed", false)).toBe(false);
+      expect(canResumeRun({ status: "completed" }, "completed")).toBe(false);
     });
 
     it("returns false for active phases", () => {
-      expect(canResumeRun({ session_id: "sess-1", status: "running" }, "running", false)).toBe(
-        false,
-      );
-      expect(canResumeRun({ session_id: "sess-1", status: "running" }, "spawning", false)).toBe(
-        false,
-      );
+      expect(canResumeRun({ session_id: "sess-1", status: "running" }, "running")).toBe(false);
+      expect(canResumeRun({ session_id: "sess-1", status: "running" }, "spawning")).toBe(false);
     });
 
-    it("returns false when noSessionPersistence is true", () => {
-      expect(canResumeRun({ session_id: "sess-1", status: "completed" }, "completed", true)).toBe(
-        false,
-      );
+    it("returns true for conversation_ref without session_id (session_actor path)", () => {
+      expect(
+        canResumeRun(
+          {
+            conversation_ref: { kind: "claude_session", id: "s1" },
+            execution_path: "session_actor",
+            status: "completed",
+          },
+          "completed",
+        ),
+      ).toBe(true);
+    });
+
+    it("returns false for codex thread (resume UI not implemented)", () => {
+      expect(
+        canResumeRun(
+          {
+            conversation_ref: { kind: "codex_thread", id: "t1" },
+            execution_path: "pipe_exec",
+            status: "completed",
+          },
+          "completed",
+        ),
+      ).toBe(false);
     });
 
     it("returns false for null run", () => {
-      expect(canResumeRun(null, "completed", false)).toBe(false);
+      expect(canResumeRun(null, "completed")).toBe(false);
     });
 
     it("returns false for non-terminal phases (idle, ready, empty)", () => {
-      expect(canResumeRun({ session_id: "sess-1", status: "running" }, "idle", false)).toBe(false);
-      expect(canResumeRun({ session_id: "sess-1" }, "ready", false)).toBe(false);
-      expect(canResumeRun({ session_id: "sess-1" }, "empty", false)).toBe(false);
+      expect(canResumeRun({ session_id: "sess-1", status: "running" }, "idle")).toBe(false);
+      expect(canResumeRun({ session_id: "sess-1" }, "ready")).toBe(false);
+      expect(canResumeRun({ session_id: "sess-1" }, "empty")).toBe(false);
     });
   });
 

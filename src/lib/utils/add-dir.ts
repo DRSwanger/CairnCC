@@ -1,5 +1,6 @@
 import { quoteCliArg, normalizeDirPath, pathsEqual } from "./path-utils";
 import { dbg } from "./debug";
+import { getAgentFeatures } from "./agent-features";
 
 export interface AddDirDeps {
   openDirectoryDialog: (title: string) => Promise<string | null>;
@@ -17,7 +18,7 @@ export interface AddDirContext {
 }
 
 export async function executeAddDir(ctx: AddDirContext, deps: AddDirDeps): Promise<void> {
-  if (ctx.agent !== "claude") {
+  if (!getAgentFeatures(ctx.agent).addDirAction) {
     deps.appendOutput(deps.t("chat_addDirUnsupported"));
     return;
   }

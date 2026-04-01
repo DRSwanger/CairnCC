@@ -33,6 +33,7 @@ import { getEventMiddleware } from "./event-middleware";
 import { updateInstalledVersion, getCliCommands } from "./cli-info.svelte";
 import * as snapshotCache from "$lib/utils/snapshot-cache";
 import { getTransport } from "$lib/transport";
+import { getAgentFeatures, type AgentFeatures } from "$lib/utils/agent-features";
 
 // ── CLI permission mode normalization ──
 // CLI may return different names for the same mode across versions.
@@ -252,6 +253,14 @@ export class SessionStore {
   availableAgents = $state<string[]>([]);
   availableSkills = $state<string[]>([]);
   availablePlugins = $state<unknown[]>([]);
+  /** Rate limit status: "allowed", "allowed_warning", "rejected" */
+  rateLimitStatus = $state<string>("");
+  /** Which rate limit: "five_hour", "seven_day", etc. */
+  rateLimitType = $state<string>("");
+  /** Utilization 0.0-1.0 */
+  rateLimitUtilization = $state<number | null>(null);
+  /** When the rate limit resets (epoch seconds) */
+  rateLimitResetsAt = $state<number | null>(null);
   /** CLI's current working directory (updated from session_init). */
   sessionCwd = $state<string>("");
   /** CLI's available tools (updated from session_init). */
@@ -605,8 +614,15 @@ export class SessionStore {
   }
 
   get useStreamSession(): boolean {
-    // Both OAuth (auth_mode=cli) and API Key (auth_mode=api) go through CLI stream-json
+    // Run-level: check execution_path if run exists (resolved, non-undefined)
+    if (this.run) return this.run.execution_path === "session_actor";
+    // Pre-run: predict from agent (startSession decides which IPC to call)
     return this.agent === "claude";
+  }
+
+  /** Per-agent UI feature flags. */
+  get features(): AgentFeatures {
+    return getAgentFeatures(this.agent);
   }
 
   /** CLI-reported authentication source label. Empty before session_init. */
@@ -1200,6 +1216,10 @@ export class SessionStore {
     }
     this.fastModeState = "";
     this.apiKeySource = "";
+    this.rateLimitStatus = "";
+    this.rateLimitType = "";
+    this.rateLimitUtilization = null;
+    this.rateLimitResetsAt = null;
     this.availableAgents = [];
     this.availableSkills = [];
     this.availablePlugins = [];
@@ -1673,6 +1693,8 @@ export class SessionStore {
         // Non-fatal: fall through with current store values
       }
 
+      // Explicitly pass execution_path — source of truth for run mode
+      const executionPath = this.useStreamSession ? "session_actor" : "pipe_exec";
       const run = await api.startRun(
         prompt,
         cwd,
@@ -1680,6 +1702,7 @@ export class SessionStore {
         this.model || undefined,
         this.remoteHostName || undefined,
         this.platformId || undefined,
+        executionPath,
       );
       this.run = run;
 
@@ -1885,7 +1908,7 @@ export class SessionStore {
       const resumeT0 = performance.now();
 
       // ★ Phase 1: async data fetch BEFORE clearing state (avoids flash)
-      const isStream = run.agent === "claude"; // use run.agent, not this.useStreamSession
+      const isStream = run.execution_path === "session_actor"; // run-level, not agent identity
       let snapshotBody: string | null = null;
       let busEvents: BusEvent[] = [];
 
@@ -2212,21 +2235,21 @@ export class SessionStore {
   handleChatDone(_done: { ok: boolean; code: number; error?: string }): void {
     if (!this.run) return;
 
-    if (this.run.agent === "codex") {
+    if (!this.useStreamSession) {
       this._setPhase("completed");
       api
         .getRun(this.run.id)
         .then((r) => {
           this.run = r;
         })
-        .catch((e) => dbgWarn("store", "getRun after codex done failed:", e));
+        .catch((e) => dbgWarn("store", "getRun after pipe-exec done failed:", e));
     }
   }
 
-  /** Handle chat-delta event (pipe mode). */
+  /** Handle chat-delta event (pipe-exec mode). */
   handleChatDelta(text: string, xtermRef?: { writeText(s: string): void }): void {
     if (!this.run) return;
-    if (this.run.agent === "codex" && xtermRef) {
+    if (!this.useStreamSession && xtermRef) {
       xtermRef.writeText(text);
     }
   }
@@ -2393,6 +2416,18 @@ export class SessionStore {
           sessionCwd: this.sessionCwd,
           sessionTools: this.sessionTools.length,
           outputStyle: this.outputStyle,
+        });
+        break;
+
+      case "rate_limit_event":
+        this.rateLimitStatus = ev.status;
+        this.rateLimitType = ev.rate_limit_type ?? "";
+        this.rateLimitUtilization = ev.utilization ?? null;
+        this.rateLimitResetsAt = ev.resets_at ?? null;
+        dbg("store", "rate_limit_event", {
+          status: ev.status,
+          type: ev.rate_limit_type,
+          utilization: ev.utilization,
         });
         break;
 
