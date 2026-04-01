@@ -550,7 +550,7 @@ export async function respondPermission(
 export async function respondHookCallback(
   runId: string,
   requestId: string,
-  decision: "allow" | "deny",
+  decision: "allow" | "deny" | "defer",
 ): Promise<void> {
   dbg("api", "respondHookCallback", { runId, requestId, decision });
   return invoke("respond_hook_callback", { runId, requestId, decision });

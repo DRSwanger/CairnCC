@@ -34,6 +34,7 @@ export const HOOK_EVENT_TYPES: readonly HookEventType[] = [
   "TaskCreated",
   "CwdChanged",
   "FileChanged",
+  "PermissionDenied",
 ] satisfies readonly HookEventType[];
 
 export type { HookEventType };

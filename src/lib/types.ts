@@ -1146,7 +1146,8 @@ export type HookEventType =
   | "StopFailure"
   | "TaskCreated"
   | "CwdChanged"
-  | "FileChanged";
+  | "FileChanged"
+  | "PermissionDenied";
 
 export interface HookHandler {
   type: "command" | "prompt" | "http";

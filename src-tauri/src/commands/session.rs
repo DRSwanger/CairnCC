@@ -1375,7 +1375,7 @@ pub async fn respond_hook_callback(
     sessions: State<'_, ActorSessionMap>,
     run_id: String,
     request_id: String,
-    decision: String, // "allow" or "deny"
+    decision: String, // "allow", "deny", or "defer" (defer pauses tool call in headless sessions)
 ) -> Result<(), String> {
     log::debug!(
         "[session] respond_hook_callback: run_id={}, req_id={}, decision={}",
