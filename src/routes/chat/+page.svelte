@@ -2822,12 +2822,53 @@
   let dragProcessingCount = $state(0);
   let dragProcessing = $derived(dragProcessingCount > 0);
 
+  // ── Remote transfer choice overlay ──
+  type PendingTransferFiles = { paths: string[]; filenames: string[] };
+  let pendingTransfer = $state<PendingTransferFiles | null>(null);
+  let transferring = $state(false);
+
+  /** Execute the SCP transfer for files the user chose to send to the remote host. */
+  async function executeRemoteTransfer(paths: string[]) {
+    const activeHost = remoteHosts.find((h) => h.name === store.remoteHostName);
+    if (!activeHost) return;
+    const remoteDir = activeHost.remote_cwd ?? "~";
+    transferring = true;
+    pendingTransfer = null;
+    let ok = 0;
+    let fail = 0;
+    for (const p of paths) {
+      try {
+        await api.scpTransferFile(p, activeHost, remoteDir);
+        ok++;
+      } catch (e) {
+        fail++;
+        dbgWarn("chat", "scp-transfer-failed", { path: p, error: e });
+      }
+    }
+    transferring = false;
+    if (fail === 0) {
+      showChatToast(t("drag_transferSuccess", { count: String(ok), host: activeHost.host }));
+    } else if (ok === 0) {
+      showChatToast(t("drag_transferFailed", { error: String(fail) + " file(s)" }));
+    } else {
+      showChatToast(t("drag_transferPartial", { ok: String(ok), fail: String(fail) }));
+    }
+  }
+
   /** Concurrency-limited parallel map returning PromiseSettledResult for each item. */
-  async function handleTauriDrop(payload: { paths: string[] }) {
+  async function handleTauriDrop(payload: { paths: string[] }, forceAttach = false) {
     pageDragActive = false;
     const paths = payload.paths;
     const input = promptRef; // cache ref — promptRef may become undefined after awaits
     if (!paths?.length || !input) return;
+
+    // When on a remote session, show a choice: attach vs transfer
+    // forceAttach=true skips this (user chose "Attach to prompt" from the overlay)
+    if (store.isRemote && !forceAttach) {
+      const filenames = paths.map((p) => p.split(/[/\\]/).pop() || p);
+      pendingTransfer = { paths, filenames };
+      return;
+    }
 
     dragProcessingCount++;
     dbg("chat", "tauri-drop", { count: paths.length });
@@ -3459,6 +3500,94 @@
             <line x1="12" x2="12" y1="3" y2="15" />
           </svg>
           <span class="text-sm font-medium text-primary/70">{t("prompt_dropFiles")}</span>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Remote file transfer choice overlay -->
+  {#if pendingTransfer || transferring}
+    <div
+      class="absolute inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-[2px]"
+    >
+      <div
+        class="flex flex-col gap-4 rounded-xl border border-border bg-background shadow-xl px-8 py-6 min-w-[340px] max-w-[480px]"
+      >
+        {#if transferring}
+          <!-- Transfer in progress -->
+          <div class="flex flex-col items-center gap-3 py-2">
+            <svg
+              class="h-8 w-8 text-primary/60 animate-spin"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <span class="text-sm font-medium text-foreground">{t("drag_transferring")}</span>
+          </div>
+        {:else if pendingTransfer}
+          <!-- Choice: attach vs transfer -->
+          <div class="flex flex-col gap-1">
+            <p class="text-sm font-semibold text-foreground">{t("drag_transferTitle")}</p>
+            <p class="text-xs text-muted-foreground">{t("drag_transferSubtitle")}</p>
+          </div>
+          <!-- File list preview (max 4 shown) -->
+          <ul class="flex flex-col gap-0.5 text-xs text-muted-foreground">
+            {#each pendingTransfer.filenames.slice(0, 4) as name}
+              <li class="flex items-center gap-1.5">
+                <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span class="truncate">{name}</span>
+              </li>
+            {/each}
+            {#if pendingTransfer.filenames.length > 4}
+              <li class="text-muted-foreground/60">+{pendingTransfer.filenames.length - 4} more</li>
+            {/if}
+          </ul>
+          <!-- Action buttons -->
+          <div class="flex gap-3">
+            <button
+              class="flex flex-1 flex-col gap-0.5 rounded-lg border border-border bg-muted/40 px-4 py-3 text-left hover:bg-muted/70 transition-colors"
+              onclick={() => {
+                const captured = pendingTransfer;
+                pendingTransfer = null;
+                if (captured) {
+                  // Re-dispatch bypassing the remote choice gate
+                  handleTauriDrop({ paths: captured.paths }, true);
+                }
+              }}
+            >
+              <span class="text-xs font-medium text-foreground">{t("drag_actionAttach")}</span>
+              <span class="text-[11px] text-muted-foreground">{t("drag_actionAttachDesc")}</span>
+            </button>
+            <button
+              class="flex flex-1 flex-col gap-0.5 rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 text-left hover:bg-primary/10 transition-colors"
+              onclick={() => {
+                if (pendingTransfer) executeRemoteTransfer(pendingTransfer.paths);
+              }}
+            >
+              <span class="text-xs font-medium text-foreground">{t("drag_actionTransfer")}</span>
+              <span class="text-[11px] text-muted-foreground">
+                {t("drag_actionTransferDesc", {
+                  host: remoteHosts.find((h) => h.name === store.remoteHostName)?.host ?? store.remoteHostName ?? "",
+                  dir: remoteHosts.find((h) => h.name === store.remoteHostName)?.remote_cwd ?? "~",
+                })}
+              </span>
+            </button>
+          </div>
+          <!-- Dismiss -->
+          <button
+            class="text-xs text-muted-foreground/60 hover:text-muted-foreground text-center transition-colors"
+            onclick={() => { pendingTransfer = null; }}
+          >
+            Cancel
+          </button>
         {/if}
       </div>
     </div>

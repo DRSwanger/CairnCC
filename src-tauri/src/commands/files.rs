@@ -1,6 +1,78 @@
 use std::fs;
 use std::path::PathBuf;
 
+/// Transfer a local file to a remote host via SCP.
+///
+/// Uses the system `scp` binary — no extra crate dependencies.
+/// Returns the remote path where the file landed.
+#[tauri::command]
+pub async fn scp_transfer_file(
+    local_path: String,
+    remote_host: crate::models::RemoteHost,
+    remote_dir: String,
+) -> Result<String, String> {
+    use tokio::process::Command;
+
+    let local = std::path::Path::new(&local_path);
+    let filename = local
+        .file_name()
+        .ok_or_else(|| format!("Invalid local path (no filename): {}", local_path))?
+        .to_string_lossy()
+        .to_string();
+
+    // Reject path traversal
+    if local_path.contains("..") {
+        return Err("Path traversal not allowed".to_string());
+    }
+
+    // Build remote destination: user@host:remote_dir/filename
+    let remote_file_path = if remote_dir.ends_with('/') {
+        format!("{}{}", remote_dir, filename)
+    } else {
+        format!("{}/{}", remote_dir, filename)
+    };
+    let remote_dest = format!("{}@{}:{}", remote_host.user, remote_host.host, remote_file_path);
+
+    let mut cmd = Command::new("scp");
+    cmd.arg("-o").arg("BatchMode=yes");
+    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
+    cmd.arg("-o").arg("ServerAliveInterval=30");
+
+    if remote_host.port != 22 {
+        // SCP uses -P (uppercase) unlike ssh -p
+        cmd.arg("-P").arg(remote_host.port.to_string());
+    }
+    if let Some(ref key) = remote_host.key_path {
+        cmd.arg("-i")
+            .arg(crate::agent::ssh::expand_local_tilde(key));
+    }
+
+    cmd.arg(&local_path);
+    cmd.arg(&remote_dest);
+
+    log::info!(
+        "[scp] transfer: {} → {}@{}:{}",
+        local_path,
+        remote_host.user,
+        remote_host.host,
+        remote_file_path
+    );
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run scp: {}", e))?;
+
+    if output.status.success() {
+        log::info!("[scp] transfer complete: {}", remote_file_path);
+        Ok(remote_file_path)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        log::error!("[scp] transfer failed: {}", stderr);
+        Err(format!("SCP transfer failed: {}", stderr.trim()))
+    }
+}
+
 /// Canonicalize a path for `starts_with` comparison. If the path doesn't exist,
 /// canonicalize the parent and re-append the final component. Falls back to
 /// the path as-is if neither exist. Sufficient for `~/.opencovibe` / `~/.claude`
