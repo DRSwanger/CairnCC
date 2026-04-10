@@ -1471,6 +1471,21 @@
     processFiles(files);
   }
 
+  export function addFilePath(path: string) {
+    // Append the file path as an @-reference in the text area so Claude Code
+    // can read it directly. Works for both local and remote working directories.
+    const ref = `@${path}`;
+    if (inputText && !inputText.endsWith(" ") && !inputText.endsWith("\n")) {
+      inputText = inputText + " " + ref;
+    } else {
+      inputText = inputText + ref;
+    }
+    requestAnimationFrame(() => {
+      autoResize();
+      textareaEl?.focus();
+    });
+  }
+
   export function getInputSnapshot(): PromptInputSnapshot {
     return {
       text: inputText,

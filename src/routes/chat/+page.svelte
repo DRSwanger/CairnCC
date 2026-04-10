@@ -145,7 +145,7 @@
   let statusBarRef: SessionStatusBar | undefined = $state();
   let stashedInput: PromptInputSnapshot | null = $state(null);
   let taskPanelCollapsed = $state(false);
-  let sidebarRequestedTab = $state<"tools" | "context" | "files" | "info" | null>(null);
+  let sidebarRequestedTab = $state<"tools" | "context" | "files" | "info" | "shared" | null>(null);
 
   // ── Verbose state (chat page level) ──
   let verboseEnabled = $state(false);
@@ -3312,6 +3312,8 @@
       onToggle={toggleSidebar}
       onScrollToTool={scrollToTool}
       bind:requestedTab={sidebarRequestedTab}
+      cwd={store.effectiveCwd || localStorage.getItem("ocv:project-cwd") || "/"}
+      onAddFile={(path) => promptRef?.addFilePath(path)}
     />
   {/if}
 

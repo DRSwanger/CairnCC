@@ -7,6 +7,7 @@
   import { t } from "$lib/i18n/index.svelte";
   import ContextHistoryPanel from "$lib/components/ContextHistoryPanel.svelte";
   import FilesPanel from "$lib/components/FilesPanel.svelte";
+  import SharedFolderBrowser from "$lib/components/SharedFolderBrowser.svelte";
   import SessionInfoPanel from "$lib/components/SessionInfoPanel.svelte";
   import {
     extractFilesFromTimeline,
@@ -26,7 +27,9 @@
     collapsed = false,
     onToggle,
     onScrollToTool,
-    requestedTab = $bindable(null as "tools" | "context" | "files" | "info" | null),
+    requestedTab = $bindable(null as "tools" | "context" | "files" | "info" | "shared" | null),
+    cwd = "",
+    onAddFile = undefined as ((path: string) => void) | undefined,
   }: {
     timeline: TimelineEntry[];
     tools: HookEvent[];
@@ -37,11 +40,13 @@
     collapsed: boolean;
     onToggle: () => void;
     onScrollToTool?: (toolUseId: string) => void;
-    requestedTab?: "tools" | "context" | "files" | "info" | null;
+    requestedTab?: "tools" | "context" | "files" | "info" | "shared" | null;
+    cwd?: string;
+    onAddFile?: (path: string) => void;
   } = $props();
 
   // ── Tab state ──
-  type SidebarPanel = "tools" | "context" | "files" | "info";
+  type SidebarPanel = "tools" | "context" | "files" | "info" | "shared";
   let activeTab: SidebarPanel = $state("tools");
 
   // ── External tab request ──
@@ -579,6 +584,28 @@
               <line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
           </button>
+          <!-- Shared folder icon -->
+          <button
+            class="p-1.5 rounded transition-colors {activeTab === 'shared'
+              ? 'bg-accent text-foreground'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'}"
+            onclick={() => (activeTab = "shared")}
+            title="Shared folder"
+          >
+            <svg
+              class="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              <line x1="12" y1="11" x2="12" y2="17" />
+              <line x1="9" y1="14" x2="15" y2="14" />
+            </svg>
+          </button>
         </div>
         <button
           class="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-accent"
@@ -604,6 +631,11 @@
       <ContextHistoryPanel history={contextHistory} {turnUsages} {sessionInfo} />
     {:else if activeTab === "files"}
       <FilesPanel {fileEntries} {onScrollToTool} />
+    {:else if activeTab === "shared"}
+      <SharedFolderBrowser
+        cwd={cwd || "/"}
+        onAddFile={onAddFile ?? (() => {})}
+      />
     {:else if activeTab === "info"}
       <!-- Subagents section (shown above session info when Task tools exist) -->
       {#if subagents.length > 0}
