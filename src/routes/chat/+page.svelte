@@ -4465,8 +4465,12 @@
                 </div>
               {/if}
 
-              <!-- Inline thinking indicator — shown below existing messages during tool use / processing -->
-              {#if store.isRunning && !store.streamingText && !store.thinkingText}
+              <!-- Inline thinking indicator — shown below existing messages during tool use / processing.
+                   Gated on thinkingVisible (300ms debounce) so it never flashes at turn-start
+                   before the first thinking delta, or at message_complete when both
+                   streamingText and thinkingText clear briefly before isRunning drops.
+                   !hasThinkingThisTurn retires it once the dedicated thinking panel is active. -->
+              {#if thinkingVisible && !store.thinkingText && !hasThinkingThisTurn}
                 <div
                   class="w-full"
                   in:fly={{ y: 10, duration: 280, easing: cubicOut }}
