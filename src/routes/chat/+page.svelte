@@ -791,7 +791,7 @@
 
   // ── Thinking timer + panel ──
   let thinkingElapsed = $state(0);
-  let thinkingExpanded = $state(true);
+  let thinkingExpanded = $state(false);
   let spinnerVerb = $state(randomSpinnerVerb());
   /** Plain flag (not $state) — avoids $effect dependency cycle with thinkingElapsed. */
   let thinkingVerbPicked = false;
@@ -1190,9 +1190,13 @@
     }
   });
 
-  /** True while the greeting is pending or actively running. */
+  /** True while the greeting is pending or actively running (first turn only). */
   let isGreetingActive = $derived(
-    greetingStarted && (greetingRunId === null || (store.run?.id === greetingRunId && store.isRunning))
+    greetingStarted &&
+    (greetingRunId === null ||
+      (store.run?.id === greetingRunId &&
+        store.isRunning &&
+        store.timeline.filter((e) => e.kind === "user").length <= 1))
   );
   /** True after greeting finishes but before user sends a second message. */
   let isGreetingDone = $derived(
