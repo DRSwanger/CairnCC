@@ -71,12 +71,12 @@ pub fn run() {
     // Initialize logging — our crate at debug level by default
     // Override with RUST_LOG env var, e.g. RUST_LOG=warn cargo tauri dev
     env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("opencovibe_desktop_lib=debug,warn"),
+        env_logger::Env::default().default_filter_or("cairncc_desktop_lib=debug,warn"),
     )
     .format_timestamp_millis()
     .init();
 
-    log::info!("OpenCovibe Desktop starting");
+    log::info!("CairnCC Desktop starting");
 
     // Set up Windows Job Object so child processes are killed on crash/force-quit.
     // No-op on non-Windows.

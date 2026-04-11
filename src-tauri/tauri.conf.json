@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/.github/schemas/tauri-v2.json",
-  "productName": "OpenCovibe",
+  "productName": "CairnCC",
   "version": "0.1.50",
-  "identifier": "com.opencovibe.desktop",
+  "identifier": "com.cairncc.desktop",
   "build": {
     "frontendDist": "../build",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "OpenCovibe",
+        "title": "CairnCC",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
@@ -38,8 +38,8 @@
       "icons/icon.ico"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "AI-assisted vibe coding desktop app",
-    "longDescription": "OpenCovibe wraps AI coding CLIs (Claude Code, Codex) with a visual chat interface, run management, and activity monitoring. Local-first, no cloud required.",
+    "shortDescription": "AI-assisted coding desktop app for Claude Code",
+    "longDescription": "CairnCC is a local-first desktop app wrapping Claude Code and other AI coding CLIs with a rich visual interface, memory recall, run management, and activity monitoring. Your waypoint for AI-assisted development.",
     "macOS": {
       "entitlements": "entitlements.plist",
       "minimumSystemVersion": "13.0"

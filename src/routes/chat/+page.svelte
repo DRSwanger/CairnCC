@@ -2,6 +2,8 @@
   import { page } from "$app/stores";
   import { goto, replaceState } from "$app/navigation";
   import { tick, onMount, untrack, getContext } from "svelte";
+  import { fly } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import { getTransport } from "$lib/transport";
   import * as api from "$lib/api";
   import {
@@ -351,8 +353,14 @@
   });
 
   let filteredTimeline = $derived.by(() => {
-    if (!toolFilter) return store.timeline;
-    return store.timeline.filter((e) => e.kind !== "tool" || e.tool.tool_name === toolFilter);
+    let tl = store.timeline;
+    // Hide the user's greeting prompt — keep Claude's response visible
+    if (greetingRunId && store.run?.id === greetingRunId) {
+      const userCount = tl.filter((e) => e.kind === "user").length;
+      if (userCount <= 1) tl = tl.filter((e) => e.kind !== "user");
+    }
+    if (!toolFilter) return tl;
+    return tl.filter((e) => e.kind !== "tool" || e.tool.tool_name === toolFilter);
   });
 
   let visibleTimeline = $derived.by(() => {
@@ -1092,6 +1100,72 @@
     }
     window.addEventListener("ocv:runs-changed", onRunsChanged);
     return () => window.removeEventListener("ocv:runs-changed", onRunsChanged);
+  });
+
+  // Auto-greeting: on fresh app open with no active run, start a session and have Claude confirm memory
+  const GREETING_PROMPT = "Review your memory files and greet me. Confirm memory recall is working.";
+  let greetingRunId = $state<string | null>(null);
+  let greetingStarted = $state(false);
+
+  onMount(() => {
+    if (!runId && !store.run) {
+      tick().then(async () => {
+        try {
+          // Purge any stale greeting runs from previous sessions
+          const allRuns = await api.listRuns();
+          const staleGreetings = allRuns
+            .filter((r) => r.prompt?.startsWith("Review your memory files and greet me"))
+            .map((r) => r.id);
+          if (staleGreetings.length > 0) {
+            await api.softDeleteRuns(staleGreetings);
+            window.dispatchEvent(new Event("ocv:runs-changed"));
+          }
+
+          const freshSettings = await api.getUserSettings();
+          const cwd =
+            localStorage.getItem("ocv:project-cwd") ||
+            localStorage.getItem("ocv:settings-cwd") ||
+            freshSettings.working_directory ||
+            "";
+          if (!cwd || cwd === "/") return;
+          greetingStarted = true;
+          const newRunId = await store.startSession(GREETING_PROMPT, cwd, []);
+          greetingRunId = newRunId;
+          goto(`/chat?run=${newRunId}`, { replaceState: true });
+          window.dispatchEvent(new Event("ocv:runs-changed"));
+        } catch (e) {
+          dbgWarn("chat", "auto-greeting failed:", e);
+          greetingStarted = false;
+        }
+      });
+    }
+  });
+
+  /** True while the greeting is pending or actively running. */
+  let isGreetingActive = $derived(
+    greetingStarted && (greetingRunId === null || (store.run?.id === greetingRunId && store.isRunning))
+  );
+  /** True after greeting finishes but before user sends a second message. */
+  let isGreetingDone = $derived(
+    greetingRunId !== null &&
+    store.run?.id === greetingRunId &&
+    !store.isRunning &&
+    store.timeline.filter((e) => e.kind === "user").length <= 1
+  );
+
+  // Delete the greeting run from history as soon as it finishes
+  $effect(() => {
+    if (!greetingRunId) return;
+    if (store.run?.id !== greetingRunId) return;
+    if (store.isRunning) return; // still in progress
+    const userCount = store.timeline.filter((e) => e.kind === "user").length;
+    if (userCount >= 1 && !store.isRunning) {
+      const id = greetingRunId;
+      // Don't null greetingRunId yet — isGreetingDone still needs it for the badge
+      api.softDeleteRuns([id]).then(() => {
+        window.dispatchEvent(new Event("ocv:runs-changed"));
+      }).catch(() => {});
+    }
   });
 
   // Check for pending plan from ExitPlanMode "clear context"
@@ -3834,10 +3908,39 @@
                 class="h-5 w-5 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin"
               ></div>
             </div>
+          {:else if isGreetingActive}
+            <!-- Boot screen — shown while memory recall is running -->
+            <div class="flex h-full items-center justify-center">
+              <div class="ocv-boot-screen animate-fade-in">
+                <!-- Glowing logo mark -->
+                <div class="ocv-logo-ring">
+                  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="ocv-logo-svg">
+                    <circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="2" class="ocv-ring-outer"/>
+                    <circle cx="32" cy="32" r="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" class="ocv-ring-inner"/>
+                    <path d="M22 32 L28 26 L36 34 L42 28" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ocv-logo-path"/>
+                    <circle cx="32" cy="32" r="3" fill="currentColor" class="ocv-logo-dot"/>
+                  </svg>
+                </div>
+                <div class="ocv-boot-label">CairnCC</div>
+                <div class="ocv-boot-status">
+                  <span class="ocv-boot-dot"></span>
+                  <span>loading memory</span>
+                </div>
+              </div>
+            </div>
           {:else}
             <!-- Timeline: chat messages + inline tool cards -->
             <div>
-              {#if store.run?.parent_run_id}
+              {#if isGreetingDone}
+                <!-- Memory status banner -->
+                <div class="chat-content-width pt-6 pb-2" in:fly={{ y: 8, duration: 400, easing: cubicOut }}>
+                  <div class="ocv-memory-banner">
+                    <div class="ocv-memory-dot"></div>
+                    <span class="ocv-memory-label">Memory active</span>
+                  </div>
+                </div>
+              {/if}
+              {#if store.run?.parent_run_id && !isGreetingDone}
                 <div class="chat-content-width py-2">
                   <div
                     class="flex items-center gap-2 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-400"
@@ -3918,6 +4021,7 @@
                     id="msg-{entry.anchorId}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
+                    in:fly={{ y: 14, duration: 320, delay: Math.min(i * 25, 120), easing: cubicOut }}
                     class:opacity-40={lastClearSepId !== null &&
                       (timelineIdIndex.get(entry.id) ?? 0) <
                         (timelineIdIndex.get(lastClearSepId) ?? 0)}
