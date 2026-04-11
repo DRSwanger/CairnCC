@@ -13,10 +13,13 @@ pub fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Shell-escape a path, preserving leading `~/` for shell tilde expansion on the remote host.
+/// Shell-escape a path, preserving leading `~` for shell tilde expansion on the remote host.
 /// `~/projects/my app` → `~/'projects/my app'` (tilde outside quotes, rest escaped).
+/// Bare `~` is passed through unquoted so the shell expands it to $HOME.
 fn shell_escape_path(s: &str) -> String {
-    if let Some(rest) = s.strip_prefix("~/") {
+    if s == "~" {
+        "~".to_string()
+    } else if let Some(rest) = s.strip_prefix("~/") {
         format!("~/{}", shell_escape(rest))
     } else {
         shell_escape(s)
@@ -218,8 +221,14 @@ mod tests {
     }
 
     #[test]
+    fn escape_path_tilde_bare() {
+        // bare "~" must stay unquoted so the shell expands it to $HOME
+        assert_eq!(shell_escape_path("~"), "~");
+    }
+
+    #[test]
     fn escape_path_tilde_only() {
-        // "~/" strips "~/" → rest is "" → shell_escape("") → "''" → "~/"+  "''" = "~/''"
+        // "~/" strips "~/" → rest is "" → shell_escape("") → "''" → "~/" + "''" = "~/''"
         assert_eq!(shell_escape_path("~/"), "~/''"  );
     }
 
