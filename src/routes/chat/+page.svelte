@@ -1152,7 +1152,7 @@
   });
 
   // Auto-greeting: on fresh app open with no active run, start a session and have Claude confirm memory
-  const GREETING_PROMPT = "Review your memory files and greet me. Confirm memory recall is working.";
+  const GREETING_PROMPT = "Review your memory files silently, then greet me in 1-2 sentences confirming memory recall is working. Do not list everything — just confirm and say hi.";
   let greetingRunId = $state<string | null>(null);
   let greetingStarted = $state(false);
 
