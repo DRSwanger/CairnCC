@@ -1,5 +1,4 @@
 <script lang="ts">
-  import "@xterm/xterm/css/xterm.css";
   import { onMount } from "svelte";
   import { dbg } from "$lib/utils/debug";
 
