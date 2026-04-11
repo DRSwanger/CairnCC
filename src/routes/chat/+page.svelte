@@ -2,7 +2,7 @@
   import { page } from "$app/stores";
   import { goto, replaceState } from "$app/navigation";
   import { tick, onMount, untrack, getContext } from "svelte";
-  import { fly } from "svelte/transition";
+  import { fly, fade } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import { getTransport } from "$lib/transport";
   import * as api from "$lib/api";
@@ -792,6 +792,26 @@
   // ── Thinking timer + panel ──
   let thinkingElapsed = $state(0);
   let thinkingExpanded = $state(false);
+  /**
+   * Persists the last seen thinking text so the panel stays visible during the response
+   * and only disappears when the next user turn starts. Avoids the mount/unmount flicker
+   * that happened when store.thinkingText was cleared at message_complete.
+   */
+  let displayThinkingText = $state("");
+  let _thinkingUserCount = $state(0);
+
+  $effect(() => {
+    // Latch: keep displayThinkingText alive after store.thinkingText is cleared
+    if (store.thinkingText) displayThinkingText = store.thinkingText;
+  });
+  $effect(() => {
+    // Reset display when the user sends the next message (new turn begins)
+    const userCount = store.timeline.filter((e) => e.kind === "user").length;
+    if (userCount > _thinkingUserCount) {
+      _thinkingUserCount = userCount;
+      displayThinkingText = "";
+    }
+  });
   let spinnerVerb = $state(randomSpinnerVerb());
   /** Plain flag (not $state) — avoids $effect dependency cycle with thinkingElapsed. */
   let thinkingVerbPicked = false;
@@ -4336,8 +4356,8 @@
               {/each}
 
               <!-- Thinking panel (extended thinking) -->
-              {#if store.thinkingText}
-                <div class="w-full animate-fade-in">
+              {#if displayThinkingText}
+                <div class="w-full" transition:fade={{ duration: 150 }}>
                   <div class="chat-content-width py-2">
                     <button
                       class="w-full text-left rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 transition-colors group"
@@ -4385,7 +4405,7 @@
                       {#if thinkingExpanded}
                         <div class="mt-2 pl-7 max-h-60 overflow-y-auto">
                           <pre
-                            class="text-xs font-mono whitespace-pre-wrap break-words text-blue-300/70 leading-relaxed">{store.thinkingText.trimEnd()}</pre>
+                            class="text-xs font-mono whitespace-pre-wrap break-words text-blue-300/70 leading-relaxed">{displayThinkingText.trimEnd()}</pre>
                         </div>
                       {/if}
                     </button>
