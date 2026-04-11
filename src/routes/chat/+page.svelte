@@ -1844,7 +1844,7 @@
         try {
           await store.sendMessage(text, attachments);
           requestAnimationFrame(() => promptRef?.focus());
-        } catch {
+        } catch (sendErr) {
           // If sendMessage transitioned the session to stopped (actor gone after app restart)
           // and there's a session_id to resume from, auto-resume instead of surfacing the error.
           if (store.useStreamSession && !store.sessionAlive && store.run?.session_id) {
@@ -1852,7 +1852,7 @@
             store.error = "";
             await handleResume("resume", undefined, text, attachments);
           } else {
-            throw; // propagate to outer catch
+            throw sendErr; // propagate to outer catch
           }
         }
       }
