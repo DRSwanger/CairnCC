@@ -43,6 +43,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
             librsvg2-dev \
             patchelf
 
@@ -54,8 +55,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: "CairnCC v__VERSION__"
+          tagName: v__VERSION__-draft
+          releaseName: "CairnCC v__VERSION__-draft"
           releaseBody: "Draft build — not for public release."
           releaseDraft: true
           prerelease: false
