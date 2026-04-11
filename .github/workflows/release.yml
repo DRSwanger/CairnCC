@@ -8,6 +8,10 @@ on:
       tag:
         description: "Version tag to release (e.g. v0.2.0)"
         required: true
+      platforms:
+        description: "Platforms to build (all | windows | macos | linux)"
+        required: false
+        default: "all"
 
 concurrency:
   group: release-${{ github.ref }}
@@ -23,13 +27,21 @@ jobs:
         include:
           - os: macos-latest
             target: universal-apple-darwin
+            platform: macos
             asset_glob: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            platform: windows
             asset_glob: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            platform: linux
             asset_glob: src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+    # Skip platforms not requested (only applies to workflow_dispatch)
+    if: |
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == matrix.platform
 
     steps:
       - uses: actions/checkout@v4

@@ -952,11 +952,12 @@
       if (!store.run && remoteHosts.length > 0) {
         try {
           const lastTarget = localStorage.getItem("ocv:last-target");
-          if (lastTarget && remoteHosts.some((h) => h.name === lastTarget)) {
-            store.remoteHostName = lastTarget;
-          } else if (lastTarget === null && remoteHosts.length === 1) {
-            // First launch with exactly one remote host configured → auto-select it.
-            // "null" means never chosen (vs "" which means user explicitly chose Local).
+          const savedIsValid = !!lastTarget && remoteHosts.some((h) => h.name === lastTarget);
+          if (savedIsValid) {
+            store.remoteHostName = lastTarget!;
+          } else if (remoteHosts.length === 1) {
+            // No valid saved selection + exactly one configured host → auto-select it.
+            // Handles: null (first launch), "" (stale Local click), deleted host name.
             store.remoteHostName = remoteHosts[0].name;
             localStorage.setItem("ocv:last-target", remoteHosts[0].name);
           }
@@ -1099,10 +1100,12 @@
         // Auto-select if a remote host was just configured and none is selected yet
         if (!store.run && !store.remoteHostName && remoteHosts.length > 0) {
           const lastTarget = localStorage.getItem("ocv:last-target");
-          if (lastTarget && remoteHosts.some((h) => h.name === lastTarget)) {
-            store.remoteHostName = lastTarget;
-          } else if ((lastTarget === null || lastTarget === "") && remoteHosts.length === 1) {
+          const savedIsValid = !!lastTarget && remoteHosts.some((h) => h.name === lastTarget);
+          if (savedIsValid) {
+            store.remoteHostName = lastTarget!;
+          } else if (remoteHosts.length === 1) {
             store.remoteHostName = remoteHosts[0].name;
+            localStorage.setItem("ocv:last-target", remoteHosts[0].name);
           }
         }
       } catch {
