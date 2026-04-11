@@ -1818,6 +1818,23 @@
           slashCmdSeenRunning = false;
         }
         await handleResume("resume", undefined, text, attachments);
+      } else if (store.useStreamSession && !store.sessionAlive) {
+        // Session_actor died before saving a session_id (e.g. spawn failed) — start fresh
+        dbg("chat", "session_actor dead with no session_id, starting new session");
+        let cwd =
+          typeof window !== "undefined"
+            ? localStorage.getItem("ocv:project-cwd") ||
+              localStorage.getItem("ocv:settings-cwd") ||
+              ""
+            : "";
+        if (!cwd) cwd = settings?.working_directory || "";
+        if (slashCmd) {
+          processingSlashCmd = slashCmd;
+          slashCmdSeenRunning = false;
+        }
+        const newRunId = await store.startSession(text, cwd, attachments);
+        goto(`/chat?run=${newRunId}`, { replaceState: true });
+        window.dispatchEvent(new Event("ocv:runs-changed"));
       } else {
         // Subsequent message
         if (slashCmd) {

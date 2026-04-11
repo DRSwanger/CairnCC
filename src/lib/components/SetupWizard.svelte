@@ -532,7 +532,7 @@
               {/if}
               {#if remoteFormHost.trim() && remoteFormUser.trim() && sshKeyInfo}
                 <div class="flex flex-col gap-1.5">
-                  <p class="text-xs text-muted-foreground">Run this on <strong>this machine</strong> to authorize the key on your server:</p>
+                  <p class="text-xs text-muted-foreground">Run this on <strong>this machine</strong> to authorize the key on your server{IS_WINDOWS ? ' — paste into <strong>PowerShell</strong>, not Command Prompt' : ''}:</p>
                   <div class="flex items-center gap-2 rounded-md bg-background border border-border p-2">
                     <code class="flex-1 text-[10px] font-mono text-foreground/80 break-all select-all">{buildCopyCommand(sshKeyInfo)}</code>
                     <button

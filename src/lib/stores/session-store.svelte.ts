@@ -1769,6 +1769,10 @@ export class SessionStore {
         } else {
           this._startResponseTimeout(this.run.id);
         }
+      } else if (this.useStreamSession) {
+        // session_actor run but session is dead — caller (chat page) should handle restart.
+        // Guard here prevents falling through to sendChatMessage (pipe_exec-only path).
+        throw new Error("Session has ended — start a new chat to continue.");
       } else {
         this._setPhase("running");
         await api.sendChatMessage(
