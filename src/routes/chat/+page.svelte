@@ -4724,15 +4724,9 @@
           onclick={() => (thinkingExpanded = !thinkingExpanded)}
         >
           <div class="flex items-center gap-2">
-            <!-- Brain icon -->
-            <div class="relative flex h-5 w-5 shrink-0 items-center justify-center rounded bg-blue-500/10">
-              {#if store.isRunning}
-                <div class="absolute inset-0 rounded animate-ping opacity-30 bg-blue-500"></div>
-              {/if}
-              <svg class="h-3 w-3 text-blue-400 relative" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2a8 8 0 0 0-8 8c0 3.4 2.1 6.3 5 7.4V19a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.6c2.9-1.1 5-4 5-7.4a8 8 0 0 0-8-8z" />
-                <path d="M10 22h4" />
-              </svg>
+            <!-- Small neural net animation -->
+            <div class="shrink-0 rounded overflow-hidden" style="width:28px;height:28px;">
+              <ThinkingAnimation size={28} />
             </div>
 
             <!-- Status label (three states) -->
