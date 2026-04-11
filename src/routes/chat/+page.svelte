@@ -793,31 +793,37 @@
   let thinkingElapsed = $state(0);
   let thinkingExpanded = $state(false);
   /**
-   * displayThinkingText — latches the live thinking text so the panel content
-   * persists after store.thinkingText is cleared at message_complete.
+   * Thinking popup panel — appears above the input bar when extended thinking
+   * starts, stays up for the entire run (across all tool calls and thinking phases),
+   * and flies out when store.isRunning goes false.
    *
-   * hasThinkingThisTurn — boolean flag that controls panel VISIBILITY. Using a
-   * boolean (not the text itself) guarantees the panel never flashes off between
-   * thinking phases even if reactive effects run in an awkward order.
+   * thinkingPanelVisible: the single source of truth for whether the popup is shown.
+   *   - set TRUE  when: store.thinkingText is non-empty AND store.isRunning
+   *   - set FALSE when: store.isRunning becomes false (run complete)
+   *   Never toggled mid-turn — no flicker.
+   *
+   * displayThinkingText: latches the last thinking content for the exit animation.
+   *   - updated whenever store.thinkingText is non-empty
+   *   - cleared when next user turn begins (clean slate for next run)
    */
   let displayThinkingText = $state("");
-  let hasThinkingThisTurn = $state(false);
+  let thinkingPanelVisible = $state(false);
   let _thinkingUserCount = $state(0);
 
   $effect(() => {
-    // Latch: keep content alive after store.thinkingText is cleared
-    if (store.thinkingText) {
-      displayThinkingText = store.thinkingText;
-      hasThinkingThisTurn = true;
-    }
+    // Appear on first thinking delta; stay up while running
+    if (store.thinkingText && store.isRunning) thinkingPanelVisible = true;
+    // Latch content so it's still readable during the exit animation
+    if (store.thinkingText) displayThinkingText = store.thinkingText;
+    // Fly out as soon as the run is fully done
+    if (!store.isRunning) thinkingPanelVisible = false;
   });
   $effect(() => {
-    // Reset ONLY when the next user message lands (new turn begins)
+    // Clean slate for next turn
     const userCount = store.timeline.filter((e) => e.kind === "user").length;
     if (userCount > _thinkingUserCount) {
       _thinkingUserCount = userCount;
       displayThinkingText = "";
-      hasThinkingThisTurn = false;
     }
   });
   let spinnerVerb = $state(randomSpinnerVerb());
@@ -4363,76 +4369,7 @@
                 </div>
               {/each}
 
-              <!-- Thinking panel (extended thinking) —
-                   Visibility is controlled by hasThinkingThisTurn (boolean), NOT
-                   displayThinkingText, so the panel never mounts/unmounts between
-                   tool-use phases within a single turn. It fades in once when
-                   thinking first arrives, stays mounted across all jobs, and fades
-                   out smoothly only when the next user message starts. -->
-              {#if hasThinkingThisTurn}
-                <div class="w-full" transition:fade={{ duration: 200 }}>
-                  <div class="chat-content-width py-2">
-                    <button
-                      class="w-full text-left rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 transition-colors group"
-                      onclick={() => (thinkingExpanded = !thinkingExpanded)}
-                    >
-                      <div class="flex items-center gap-2">
-                        <!-- Brain icon -->
-                        <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-blue-500/10">
-                          <svg
-                            class="h-3 w-3 text-blue-400"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M12 2a8 8 0 0 0-8 8c0 3.4 2.1 6.3 5 7.4V19a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.6c2.9-1.1 5-4 5-7.4a8 8 0 0 0-8-8z" />
-                            <path d="M10 22h4" />
-                          </svg>
-                        </div>
-
-                        <!-- Label: three states -->
-                        {#if store.thinkingText && store.isRunning}
-                          <!-- Actively thinking: shimmer label + bouncing dots -->
-                          <span class="text-xs font-medium thinking-shimmer">{t("chat_thinking")}</span>
-                          <span class="thinking-bounce-dots" aria-hidden="true">
-                            <span></span><span></span><span></span>
-                          </span>
-                        {:else if store.isRunning && !store.streamingText}
-                          <!-- Between thinking phases (tool running / processing) -->
-                          <span class="text-xs font-medium text-blue-400/70">{t("chat_thinking")}</span>
-                          <div class="h-2 w-2 rounded-full border border-blue-400/30 border-t-blue-400 animate-spin"></div>
-                        {:else}
-                          <!-- Responding or complete: dim label, no spinner -->
-                          <span class="text-xs font-medium text-blue-400/50">{t("chat_thinking")}</span>
-                        {/if}
-
-                        <!-- Collapse chevron -->
-                        <svg
-                          class="h-3 w-3 text-muted-foreground/30 shrink-0 transition-transform ml-auto {thinkingExpanded ? 'rotate-180' : ''}"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d="m6 9 6 6 6-6" />
-                        </svg>
-                      </div>
-
-                      <!-- Expandable thinking text -->
-                      {#if thinkingExpanded}
-                        <div class="mt-2 pl-7 max-h-60 overflow-y-auto">
-                          <pre class="text-xs font-mono whitespace-pre-wrap break-words text-blue-300/70 leading-relaxed">{displayThinkingText.trimEnd()}</pre>
-                        </div>
-                      {/if}
-                    </button>
-                  </div>
-                </div>
-              {/if}
+              <!-- Thinking popup moved above PromptInput — see below -->
 
               <!-- Streaming text -->
               {#if store.streamingText}
@@ -4465,12 +4402,10 @@
                 </div>
               {/if}
 
-              <!-- Inline thinking indicator — shown below existing messages during tool use / processing.
-                   Gated on thinkingVisible (300ms debounce) so it never flashes at turn-start
-                   before the first thinking delta, or at message_complete when both
-                   streamingText and thinkingText clear briefly before isRunning drops.
-                   !hasThinkingThisTurn retires it once the dedicated thinking panel is active. -->
-              {#if thinkingVisible && !store.thinkingText && !hasThinkingThisTurn}
+              <!-- Inline thinking indicator — for non-extended-thinking runs only.
+                   Gated on thinkingVisible (300ms debounce) and !thinkingPanelVisible so it
+                   never competes with the dedicated popup panel. -->
+              {#if thinkingVisible && !store.thinkingText && !thinkingPanelVisible}
                 <div
                   class="w-full"
                   in:fly={{ y: 10, duration: 280, easing: cubicOut }}
@@ -4798,6 +4733,61 @@
             Cancel
           </button>
         </div>
+      </div>
+    {/if}
+
+    <!-- ── Thinking popup panel ──────────────────────────────────────────────
+         Lives above the input bar. Appears once when extended thinking starts,
+         stays up for the entire run (across all tool calls and thinking phases),
+         flies out smoothly when store.isRunning goes false.
+         No dependency on store.thinkingText for visibility = no mid-turn flicker. -->
+    {#if thinkingPanelVisible}
+      <div
+        class="mx-3 mb-1.5"
+        in:fly={{ y: 20, duration: 220, easing: cubicOut }}
+        out:fly={{ y: 20, duration: 180, easing: cubicOut }}
+      >
+        <button
+          class="w-full text-left rounded-xl border border-blue-500/20 bg-background/95 shadow-lg shadow-blue-950/20 px-3 py-2.5 backdrop-blur-sm transition-colors hover:bg-muted/50"
+          onclick={() => (thinkingExpanded = !thinkingExpanded)}
+        >
+          <div class="flex items-center gap-2">
+            <!-- Brain icon -->
+            <div class="relative flex h-5 w-5 shrink-0 items-center justify-center rounded bg-blue-500/10">
+              {#if store.isRunning}
+                <div class="absolute inset-0 rounded animate-ping opacity-30 bg-blue-500"></div>
+              {/if}
+              <svg class="h-3 w-3 text-blue-400 relative" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a8 8 0 0 0-8 8c0 3.4 2.1 6.3 5 7.4V19a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.6c2.9-1.1 5-4 5-7.4a8 8 0 0 0-8-8z" />
+                <path d="M10 22h4" />
+              </svg>
+            </div>
+
+            <!-- Status label (three states) -->
+            {#if store.thinkingText && store.isRunning}
+              <span class="text-xs font-medium thinking-shimmer">{t("chat_thinking")}</span>
+              <span class="thinking-bounce-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+            {:else if store.isRunning}
+              <span class="text-xs font-medium text-blue-400/60">{t("chat_thinking")}</span>
+              <div class="h-2 w-2 rounded-full border border-blue-400/30 border-t-blue-400 animate-spin shrink-0"></div>
+            {:else}
+              <span class="text-xs font-medium text-blue-400/40">{t("chat_thinking")}</span>
+            {/if}
+
+            <!-- Chevron toggle -->
+            <svg
+              class="h-3 w-3 text-muted-foreground/30 shrink-0 ml-auto transition-transform {thinkingExpanded ? 'rotate-180' : ''}"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            ><path d="m6 9 6 6 6-6" /></svg>
+          </div>
+
+          <!-- Expandable thinking text -->
+          {#if thinkingExpanded && displayThinkingText}
+            <div class="mt-2 max-h-48 overflow-y-auto rounded-lg bg-blue-950/30 px-2.5 py-2">
+              <pre class="text-xs font-mono whitespace-pre-wrap break-words text-blue-300/70 leading-relaxed">{displayThinkingText.trimEnd()}</pre>
+            </div>
+          {/if}
+        </button>
       </div>
     {/if}
 
