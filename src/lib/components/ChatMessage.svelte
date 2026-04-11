@@ -221,7 +221,7 @@
           </button>
           {#if !thinkingCollapsed}
             <div
-              class="mb-3 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-300/80 whitespace-pre-wrap leading-relaxed"
+              class="mb-3 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-300/80 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto"
             >
               {thinkingText.trimEnd()}
             </div>
