@@ -538,6 +538,8 @@
   function handleSetupComplete() {
     showSetupWizard = false;
     loadSettings();
+    // Notify child pages that settings changed (e.g. so chat page can pick up newly added remote host)
+    window.dispatchEvent(new CustomEvent("cairn:settings-updated"));
   }
 
   // Use onMount for initialization (not $effect - avoids accidental reactive tracking)

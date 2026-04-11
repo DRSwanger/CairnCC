@@ -954,6 +954,11 @@
           const lastTarget = localStorage.getItem("ocv:last-target");
           if (lastTarget && remoteHosts.some((h) => h.name === lastTarget)) {
             store.remoteHostName = lastTarget;
+          } else if (lastTarget === null && remoteHosts.length === 1) {
+            // First launch with exactly one remote host configured → auto-select it.
+            // "null" means never chosen (vs "" which means user explicitly chose Local).
+            store.remoteHostName = remoteHosts[0].name;
+            localStorage.setItem("ocv:last-target", remoteHosts[0].name);
           }
         } catch {
           // localStorage access may fail in restricted contexts
@@ -1083,6 +1088,29 @@
       const cwd = localStorage.getItem("ocv:project-cwd") || "";
       reloadProjectData(cwd);
     }
+  });
+
+  // Listen for settings updates (e.g. after setup wizard completes) to pick up new remote hosts
+  onMount(() => {
+    async function onSettingsUpdated() {
+      try {
+        const fresh = await api.getUserSettings();
+        remoteHosts = fresh.remote_hosts ?? [];
+        // Auto-select if a remote host was just configured and none is selected yet
+        if (!store.run && !store.remoteHostName && remoteHosts.length > 0) {
+          const lastTarget = localStorage.getItem("ocv:last-target");
+          if (lastTarget && remoteHosts.some((h) => h.name === lastTarget)) {
+            store.remoteHostName = lastTarget;
+          } else if ((lastTarget === null || lastTarget === "") && remoteHosts.length === 1) {
+            store.remoteHostName = remoteHosts[0].name;
+          }
+        }
+      } catch {
+        // Non-critical
+      }
+    }
+    window.addEventListener("cairn:settings-updated", onSettingsUpdated);
+    return () => window.removeEventListener("cairn:settings-updated", onSettingsUpdated);
   });
 
   // Listen for project folder changes to re-check project init + reload project data
