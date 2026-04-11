@@ -203,30 +203,7 @@
           <p class="whitespace-pre-wrap">{message.content}</p>
         {/if}
       {:else}
-        {#if thinkingText}
-          <button
-            class="mb-2 flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-400 transition-colors"
-            onclick={() => (thinkingCollapsed = !thinkingCollapsed)}
-          >
-            <svg
-              class="h-3 w-3 transition-transform {thinkingCollapsed ? '' : 'rotate-90'}"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg
-            >
-            {t("chat_thoughtProcess")}
-          </button>
-          {#if !thinkingCollapsed}
-            <div
-              class="mb-3 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-300/80 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto"
-            >
-              {thinkingText.trimEnd()}
-            </div>
-          {/if}
-        {/if}
+        <!-- Thinking text shown in the popup panel above the input during the run; not repeated here -->
         <div class="prose-chat">
           <MarkdownContent text={message.content} />
         </div>

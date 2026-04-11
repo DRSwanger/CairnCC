@@ -811,12 +811,19 @@
   let _thinkingUserCount = $state(0);
 
   $effect(() => {
-    // Appear on first thinking delta; stay up while running
-    if (store.thinkingText && store.isRunning) thinkingPanelVisible = true;
-    // Latch content so it's still readable during the exit animation
+    // Latch thinking content so it's readable during and after the run
     if (store.thinkingText) displayThinkingText = store.thinkingText;
-    // Fly out as soon as the run is fully done
-    if (!store.isRunning) thinkingPanelVisible = false;
+
+    if (store.isRunning) {
+      // Show popup after 250ms — fast commands (<250ms) never show it
+      const t = setTimeout(() => {
+        if (store.isRunning) thinkingPanelVisible = true;
+      }, 250);
+      return () => clearTimeout(t);
+    } else {
+      // Run complete: fly out
+      thinkingPanelVisible = false;
+    }
   });
   $effect(() => {
     // Clean slate for next turn
@@ -4402,42 +4409,7 @@
                 </div>
               {/if}
 
-              <!-- Inline thinking indicator — for non-extended-thinking runs only.
-                   Gated on thinkingVisible (300ms debounce) and !thinkingPanelVisible so it
-                   never competes with the dedicated popup panel. -->
-              {#if thinkingVisible && !store.thinkingText && !thinkingPanelVisible}
-                <div
-                  class="w-full"
-                  in:fly={{ y: 10, duration: 280, easing: cubicOut }}
-                  out:fly={{ y: 6, duration: 180, easing: cubicOut }}
-                >
-                  <div class="chat-content-width py-8 flex flex-col items-center gap-3">
-                    <ThinkingAnimation size={180} />
-                    <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span class="spinner-shimmer">thinking…</span>
-                      {#if thinkingElapsed > 0}
-                        <span class="tabular-nums">· {formatElapsed(thinkingElapsed)}</span>
-                      {/if}
-                    </div>
-                  </div>
-                </div>
-              {/if}
-
-              <!-- Slash command processing indicator (before thinking kicks in) -->
-              {#if processingSlashCmd && !thinkingVisible && !store.streamingText && !store.thinkingText}
-                <div class="w-full animate-fade-in">
-                  <div class="chat-content-width py-2">
-                    <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                      <div
-                        class="h-3.5 w-3.5 rounded-full border-2 border-border border-t-muted-foreground animate-spin"
-                      ></div>
-                      <span>{t("chat_processingCommand", { command: processingSlashCmd })}</span>
-                    </div>
-                  </div>
-                </div>
-              {/if}
-
-              <!-- Thinking indicator moved to overlay above chat panel -->
+              <!-- Thinking popup lives above PromptInput — see below -->
             </div>
           {/if}
         </div>
