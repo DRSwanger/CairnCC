@@ -900,6 +900,19 @@
   let runId = $derived($page.url.searchParams.get("run") ?? "");
   let hasResumeParam = $derived($page.url.searchParams.has("resume"));
   let folderParam = $derived($page.url.searchParams.get("folder"));
+  let memoryParam = $derived($page.url.searchParams.get("memory"));
+
+  // Consume ?memory= param: set withMemory on the store, then clean URL
+  $effect(() => {
+    const mem = memoryParam;
+    if (mem === null) return;
+    untrack(() => {
+      store.withMemory = mem !== "0";
+      const clean = new URL($page.url);
+      clean.searchParams.delete("memory");
+      replaceState(clean, {});
+    });
+  });
 
   // Consume ?folder= param: switch to new chat in that folder, then clean URL
   $effect(() => {

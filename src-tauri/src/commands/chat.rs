@@ -64,6 +64,7 @@ pub async fn send_chat_message(
     message: String,
     attachments: Option<Vec<Attachment>>,
     model: Option<String>,
+    with_memory: Option<bool>,
 ) -> Result<(), String> {
     log::debug!(
         "[chat] send_chat_message: run_id={}, msg_len={}, attachments={}",
@@ -190,8 +191,12 @@ pub async fn send_chat_message(
     // Build unified adapter settings
     let agent_settings = storage::settings::get_agent_settings(&run.agent);
     let user_settings = storage::settings::get_user_settings();
-    let adapter_settings =
+    let mut adapter_settings =
         crate::agent::adapter::build_adapter_settings(&agent_settings, &user_settings, model);
+    // When with_memory=false, strip the memory system prompt for this run
+    if with_memory == Some(false) {
+        adapter_settings.append_system_prompt = None;
+    }
 
     // Build command
     let (command, args) = build_agent_command(

@@ -1005,8 +1005,16 @@
     return t("layout_appName");
   });
 
+  let showNewChatMenu = $state(false);
+
   function newChat() {
-    goto("/chat");
+    showNewChatMenu = false;
+    goto("/chat?memory=1");
+  }
+
+  function newChatNoMemory() {
+    showNewChatMenu = false;
+    goto("/chat?memory=0");
   }
 
   function newChatInFolder(cwd: string) {
@@ -1489,21 +1497,55 @@
               /></svg
             >
           </button>
-          <button
-            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors duration-150"
-            onclick={newChat}
-            title={t("layout_newConversation")}
-          >
-            <svg
-              class="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg
+          <!-- New Chat split button -->
+          <div class="relative flex">
+            <button
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-l-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors duration-150"
+              onclick={newChat}
+              title={t("layout_newConversation")}
             >
-          </button>
+              <svg
+                class="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg
+              >
+            </button>
+            <button
+              class="flex h-7 w-4 shrink-0 items-center justify-center rounded-r-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors duration-150"
+              onclick={() => (showNewChatMenu = !showNewChatMenu)}
+              title="New chat options"
+            >
+              <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            {#if showNewChatMenu}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="fixed inset-0 z-40"
+                onclick={() => (showNewChatMenu = false)}
+                onkeydown={() => (showNewChatMenu = false)}
+              ></div>
+              <div class="absolute right-0 top-8 z-50 min-w-44 rounded-md border border-border bg-popover shadow-lg py-1">
+                <button
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-popover-foreground hover:bg-accent transition-colors duration-100"
+                  onclick={newChat}
+                >
+                  <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                  New Chat
+                </button>
+                <button
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-popover-foreground hover:bg-accent transition-colors duration-100"
+                  onclick={newChatNoMemory}
+                >
+                  <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93 19.07 19.07"/></svg>
+                  New Chat (no memory)
+                </button>
+              </div>
+            {/if}
+          </div>
         </div>
 
         {#if isPluginsPage}

@@ -184,13 +184,15 @@ export async function sendChatMessage(
   message: string,
   attachments?: Attachment[],
   model?: string,
+  withMemory?: boolean,
 ): Promise<void> {
   dbg("api", "sendChatMessage", {
     runId,
     msgLen: message.length,
     attachments: attachments?.length ?? 0,
+    withMemory,
   });
-  return invoke("send_chat_message", { runId, message, attachments, model });
+  return invoke("send_chat_message", { runId, message, attachments, model, withMemory });
 }
 
 // CLI sync

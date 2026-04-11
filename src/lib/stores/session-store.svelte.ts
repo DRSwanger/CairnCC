@@ -199,6 +199,7 @@ export class SessionStore {
   error: string = $state("");
   agent: string = $state("claude");
   authMode: string = $state("cli");
+  withMemory: boolean = $state(true);
 
   // ── Protocol extension fields ──
   systemStatus = $state<{ status?: string } | null>(null);
@@ -1738,7 +1739,7 @@ export class SessionStore {
       } else {
         // Codex pipe mode
         this._setPhase("running");
-        await api.sendChatMessage(run.id, prompt, attachments.length > 0 ? attachments : undefined);
+        await api.sendChatMessage(run.id, prompt, attachments.length > 0 ? attachments : undefined, undefined, this.withMemory);
       }
 
       return run.id;
@@ -1774,6 +1775,8 @@ export class SessionStore {
           this.run.id,
           text,
           attachments.length > 0 ? attachments : undefined,
+          undefined,
+          this.withMemory,
         );
       }
     } catch (e) {
