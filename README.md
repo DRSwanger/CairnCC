@@ -82,11 +82,36 @@ AI coding CLIs like Claude Code are powerful, but they run inside a terminal. Th
 
 ## Quick Start
 
-### Option A: Download Pre-built Binary (macOS)
+### Option A: Download Pre-built Installer
 
-Download the latest `.dmg` from [Releases](https://github.com/DRSwanger/CairnCC/releases) — universal binary, supports both Apple Silicon and Intel Macs.
+Download from [Releases](https://github.com/DRSwanger/CairnCC/releases):
 
-> **Note**: The app is not code-signed. On first launch, right-click and select "Open" to bypass macOS Gatekeeper.
+| Platform | File | Note |
+|----------|------|------|
+| **macOS** | `CairnCC_*_universal.dmg` | Universal — Intel + Apple Silicon |
+| **Windows** | `CairnCC_*-setup.exe` | NSIS installer |
+| **Linux** | `cairncc_*_amd64.deb` | Debian/Ubuntu |
+
+**macOS — bypassing Gatekeeper (unsigned build):**
+1. Open the `.dmg` and drag CairnCC to Applications
+2. **Do not double-click** — right-click the app → **Open** → **Open**
+3. After the first launch macOS remembers the exception; double-click works normally from then on
+
+Alternatively, clear the quarantine flag from Terminal:
+```bash
+xattr -cr /Applications/CairnCC.app
+```
+
+**Windows — bypassing SmartScreen (unsigned build):**
+1. Run the `.exe` installer
+2. If SmartScreen appears, click **More info** → **Run anyway**
+
+**Linux remote target prerequisites** (if using SSH remote mode to connect CairnCC to a Linux machine):
+```bash
+# On the Linux target machine — required before running the Setup Wizard
+sudo apt install openssh-server
+sudo systemctl enable --now ssh
+```
 
 ### Option B: Automated Setup (macOS)
 
