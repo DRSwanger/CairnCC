@@ -1033,7 +1033,13 @@ pub(crate) async fn fork_session_impl(
         remote.is_some(),
         &source.cwd,
     );
-    let effective_cwd = source.remote_cwd.as_deref().unwrap_or(&source.cwd);
+    // For remote sessions with no configured remote_cwd, fall back to "~" rather
+    // than the local (potentially Windows) cwd which would fail on a Linux remote.
+    let effective_cwd = if remote.is_some() {
+        source.remote_cwd.as_deref().unwrap_or("~")
+    } else {
+        source.remote_cwd.as_deref().unwrap_or(source.cwd.as_str())
+    };
 
     // 7. One-shot fork: get new session_id
     log::debug!(
@@ -1153,7 +1159,13 @@ pub(crate) async fn approve_session_tool_impl(
 
     // 3. Resolve remote + auth BEFORE stopping actor (preflight failure keeps old actor alive)
     let remote = resolve_remote_host(&meta)?;
-    let effective_cwd = meta.remote_cwd.clone().unwrap_or_else(|| meta.cwd.clone());
+    // For remote sessions with no configured remote_cwd, fall back to "~" rather
+    // than the local (potentially Windows) cwd which would fail on a Linux remote.
+    let effective_cwd = if remote.is_some() {
+        meta.remote_cwd.clone().unwrap_or_else(|| "~".to_string())
+    } else {
+        meta.remote_cwd.clone().unwrap_or_else(|| meta.cwd.clone())
+    };
     let prompt = meta.prompt.clone();
     let session_id = meta
         .session_id
@@ -1688,8 +1700,10 @@ async fn spawn_cli_process(
     );
 
     let mut child = if let Some(remote) = remote_host {
-        // SSH branch: wrap claude command in ssh
-        let effective_remote_cwd = remote_cwd.unwrap_or(cwd);
+        // SSH branch: wrap claude command in ssh.
+        // If no remote_cwd is configured, use "~" (remote home) rather than the
+        // local cwd, which may be a Windows path and will fail on a Linux remote.
+        let effective_remote_cwd = remote_cwd.unwrap_or("~");
         let remote_cmd = crate::agent::ssh::build_remote_claude_command(
             remote,
             effective_remote_cwd,
