@@ -2,7 +2,7 @@
 
 ## Our Pledge
 
-We as members, contributors, and leaders pledge to make participation in the OpenCovibe community a welcoming and respectful experience for everyone.
+We as members, contributors, and leaders pledge to make participation in the CairnCC community a welcoming and respectful experience for everyone.
 
 ## Our Standards
 
@@ -22,7 +22,7 @@ This Code of Conduct applies within all community spaces, including issues, pull
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported to the project team at `conduct@opencovibe.com`. All reports will be handled confidentially.
+Instances of unacceptable behavior may be reported to the project team at `conduct@cairncc.com`. All reports will be handled confidentially.
 
 For security vulnerabilities, please use [SECURITY.md](SECURITY.md) instead.
 

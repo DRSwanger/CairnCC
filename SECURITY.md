@@ -15,15 +15,15 @@
 
 Report via GitHub's built-in private reporting:
 
-https://github.com/AnyiWang/OpenCovibe/security/advisories/new
+https://github.com/DRSwanger/CairnCC/security/advisories/new
 
 ### Backup: Email
 
-If the GitHub channel is unavailable, email `security@opencovibe.com`.
+If the GitHub channel is unavailable, email `security@cairncc.com`.
 
 ## Scope
 
-This policy covers the OpenCovibe desktop application itself (Tauri, Rust backend, Svelte frontend). Vulnerabilities in upstream CLIs (Claude Code, Codex) should be reported to their respective maintainers.
+This policy covers the CairnCC desktop application itself (Tauri, Rust backend, Svelte frontend). Vulnerabilities in upstream CLIs (Claude Code, Codex) should be reported to their respective maintainers.
 
 ## Response Timeline
 
