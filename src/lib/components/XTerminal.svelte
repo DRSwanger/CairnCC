@@ -123,23 +123,3 @@
   class="xterm-container {className}"
   style="width: 100%; height: 100%; background: #0a0a0a;"
 ></div>
-
-<style>
-  :global(.xterm-container .xterm) {
-    height: 100%;
-    padding: 4px 8px;
-  }
-  :global(.xterm-container .xterm-viewport) {
-    overflow-y: auto;
-  }
-  :global(.xterm-container .xterm-viewport::-webkit-scrollbar) {
-    width: 6px;
-  }
-  :global(.xterm-container .xterm-viewport::-webkit-scrollbar-thumb) {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-  :global(.xterm-container .xterm-viewport::-webkit-scrollbar-thumb:hover) {
-    background: rgba(255, 255, 255, 0.3);
-  }
-</style>
