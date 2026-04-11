@@ -37,9 +37,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
             platform: linux
             asset_glob: src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
-    # Skip platforms not requested (only applies to workflow_dispatch; tag pushes always build all)
-    if: ${{ github.event_name == 'push' || inputs.platforms == 'all' || inputs.platforms == matrix.platform }}
-
     steps:
       - uses: actions/checkout@v4
 
