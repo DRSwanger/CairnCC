@@ -542,6 +542,13 @@
 
   // Use onMount for initialization (not $effect - avoids accidental reactive tracking)
   onMount(() => {
+    // Restore last window size and position
+    if (getTransport().isDesktop()) {
+      import("@tauri-apps/plugin-window-state").then(({ restoreStateCurrent, StateFlags }) => {
+        restoreStateCurrent(StateFlags.ALL).catch(() => {});
+      }).catch(() => {});
+    }
+
     // Remove splash screen
     const splash = document.getElementById("app-splash");
     if (splash) {
