@@ -366,8 +366,8 @@
   let unavailableMethods = $derived(installMethods.filter((m) => !m.available));
 </script>
 
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-background">
-  <div class="w-full max-w-xl mx-auto px-6">
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+  <div class="w-full max-w-xl mx-6 rounded-xl border border-border bg-background shadow-2xl max-h-[90vh] overflow-y-auto px-6 py-6">
     {#if step === "checking"}
       <!-- Checking step -->
       <div class="flex flex-col items-center gap-4 py-16">

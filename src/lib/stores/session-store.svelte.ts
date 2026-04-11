@@ -1763,7 +1763,17 @@ export class SessionStore {
         // Content-based dedup in _reduce(user_message) prevents double display
         // when the backend's UserMessage bus event arrives.
         this._pushOptimisticUser(text, attachments);
-        await api.sendSessionMessage(this.run.id, text, mapAttachments(attachments) ?? undefined);
+        try {
+          await api.sendSessionMessage(this.run.id, text, mapAttachments(attachments) ?? undefined);
+        } catch (e) {
+          const msg = String(e);
+          if (msg.includes("not found") || msg.includes("Actor dead")) {
+            // Actor is gone (app restarted) — transition to stopped so chat page can auto-resume
+            dbgWarn("store", "sendSessionMessage: actor gone, marking stopped", msg);
+            this._setPhase("stopped");
+          }
+          throw e;
+        }
         if (this.isKnownSlashCommand(text)) {
           dbg("store", "skip response timeout for slash command", { cmd: text.split(" ")[0] });
         } else {

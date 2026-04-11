@@ -1841,8 +1841,20 @@
           processingSlashCmd = slashCmd;
           slashCmdSeenRunning = false;
         }
-        await store.sendMessage(text, attachments);
-        requestAnimationFrame(() => promptRef?.focus());
+        try {
+          await store.sendMessage(text, attachments);
+          requestAnimationFrame(() => promptRef?.focus());
+        } catch {
+          // If sendMessage transitioned the session to stopped (actor gone after app restart)
+          // and there's a session_id to resume from, auto-resume instead of surfacing the error.
+          if (store.useStreamSession && !store.sessionAlive && store.run?.session_id) {
+            dbg("chat", "sendMessage failed — actor gone, auto-resuming", store.run.id);
+            store.error = "";
+            await handleResume("resume", undefined, text, attachments);
+          } else {
+            throw; // propagate to outer catch
+          }
+        }
       }
     } catch (e) {
       store.error = String(e);
