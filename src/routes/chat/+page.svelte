@@ -2,6 +2,8 @@
   import { page } from "$app/stores";
   import { goto, replaceState } from "$app/navigation";
   import { tick, onMount, untrack, getContext } from "svelte";
+  import { fly } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import { getTransport } from "$lib/transport";
   import * as api from "$lib/api";
   import {
@@ -86,6 +88,7 @@
   import { mapSettled } from "$lib/utils/async-utils";
   import { uuid } from "$lib/utils/uuid";
   import RewindModal from "$lib/components/RewindModal.svelte";
+  import ThinkingAnimation from "$lib/components/ThinkingAnimation.svelte";
   import type { ElementSelection } from "$lib/types";
   import { isElementSelection } from "$lib/types";
 
@@ -351,8 +354,18 @@
   });
 
   let filteredTimeline = $derived.by(() => {
-    if (!toolFilter) return store.timeline;
-    return store.timeline.filter((e) => e.kind !== "tool" || e.tool.tool_name === toolFilter);
+    let tl = store.timeline;
+    // During greeting: hide user prompt and all tool activity — only show Claude's final response
+    if (greetingRunId && store.run?.id === greetingRunId) {
+      const userCount = tl.filter((e) => e.kind === "user").length;
+      if (userCount <= 1) tl = tl.filter((e) => e.kind === "assistant");
+    }
+    // While running: hide tool cards and command output — thinking overlay covers this period
+    if (store.isRunning && !store.streamingText) {
+      tl = tl.filter((e) => e.kind !== "tool" && e.kind !== "command_output");
+    }
+    if (!toolFilter) return tl;
+    return tl.filter((e) => e.kind !== "tool" || e.tool.tool_name === toolFilter);
   });
 
   let visibleTimeline = $derived.by(() => {
@@ -1092,6 +1105,72 @@
     }
     window.addEventListener("ocv:runs-changed", onRunsChanged);
     return () => window.removeEventListener("ocv:runs-changed", onRunsChanged);
+  });
+
+  // Auto-greeting: on fresh app open with no active run, start a session and have Claude confirm memory
+  const GREETING_PROMPT = "Review your memory files and greet me. Confirm memory recall is working.";
+  let greetingRunId = $state<string | null>(null);
+  let greetingStarted = $state(false);
+
+  onMount(() => {
+    if (!runId && !store.run) {
+      tick().then(async () => {
+        try {
+          // Purge any stale greeting runs from previous sessions
+          const allRuns = await api.listRuns();
+          const staleGreetings = allRuns
+            .filter((r) => r.prompt?.startsWith("Review your memory files and greet me"))
+            .map((r) => r.id);
+          if (staleGreetings.length > 0) {
+            await api.softDeleteRuns(staleGreetings);
+            window.dispatchEvent(new Event("ocv:runs-changed"));
+          }
+
+          const freshSettings = await api.getUserSettings();
+          const cwd =
+            localStorage.getItem("ocv:project-cwd") ||
+            localStorage.getItem("ocv:settings-cwd") ||
+            freshSettings.working_directory ||
+            "";
+          if (!cwd || cwd === "/") return;
+          greetingStarted = true;
+          const newRunId = await store.startSession(GREETING_PROMPT, cwd, []);
+          greetingRunId = newRunId;
+          goto(`/chat?run=${newRunId}`, { replaceState: true });
+          window.dispatchEvent(new Event("ocv:runs-changed"));
+        } catch (e) {
+          dbgWarn("chat", "auto-greeting failed:", e);
+          greetingStarted = false;
+        }
+      });
+    }
+  });
+
+  /** True while the greeting is pending or actively running. */
+  let isGreetingActive = $derived(
+    greetingStarted && (greetingRunId === null || (store.run?.id === greetingRunId && store.isRunning))
+  );
+  /** True after greeting finishes but before user sends a second message. */
+  let isGreetingDone = $derived(
+    greetingRunId !== null &&
+    store.run?.id === greetingRunId &&
+    !store.isRunning &&
+    store.timeline.filter((e) => e.kind === "user").length <= 1
+  );
+
+  // Delete the greeting run from history as soon as it finishes
+  $effect(() => {
+    if (!greetingRunId) return;
+    if (store.run?.id !== greetingRunId) return;
+    if (store.isRunning) return; // still in progress
+    const userCount = store.timeline.filter((e) => e.kind === "user").length;
+    if (userCount >= 1 && !store.isRunning) {
+      const id = greetingRunId;
+      // Don't null greetingRunId yet — isGreetingDone still needs it for the badge
+      api.softDeleteRuns([id]).then(() => {
+        window.dispatchEvent(new Event("ocv:runs-changed"));
+      }).catch(() => {});
+    }
   });
 
   // Check for pending plan from ExitPlanMode "clear context"
@@ -2822,12 +2901,53 @@
   let dragProcessingCount = $state(0);
   let dragProcessing = $derived(dragProcessingCount > 0);
 
+  // ── Remote transfer choice overlay ──
+  type PendingTransferFiles = { paths: string[]; filenames: string[] };
+  let pendingTransfer = $state<PendingTransferFiles | null>(null);
+  let transferring = $state(false);
+
+  /** Execute the SCP transfer for files the user chose to send to the remote host. */
+  async function executeRemoteTransfer(paths: string[]) {
+    const activeHost = remoteHosts.find((h) => h.name === store.remoteHostName);
+    if (!activeHost) return;
+    const remoteDir = activeHost.remote_cwd ?? "~";
+    transferring = true;
+    pendingTransfer = null;
+    let ok = 0;
+    let fail = 0;
+    for (const p of paths) {
+      try {
+        await api.scpTransferFile(p, activeHost, remoteDir);
+        ok++;
+      } catch (e) {
+        fail++;
+        dbgWarn("chat", "scp-transfer-failed", { path: p, error: e });
+      }
+    }
+    transferring = false;
+    if (fail === 0) {
+      showChatToast(t("drag_transferSuccess", { count: String(ok), host: activeHost.host }));
+    } else if (ok === 0) {
+      showChatToast(t("drag_transferFailed", { error: String(fail) + " file(s)" }));
+    } else {
+      showChatToast(t("drag_transferPartial", { ok: String(ok), fail: String(fail) }));
+    }
+  }
+
   /** Concurrency-limited parallel map returning PromiseSettledResult for each item. */
-  async function handleTauriDrop(payload: { paths: string[] }) {
+  async function handleTauriDrop(payload: { paths: string[] }, forceAttach = false) {
     pageDragActive = false;
     const paths = payload.paths;
     const input = promptRef; // cache ref — promptRef may become undefined after awaits
     if (!paths?.length || !input) return;
+
+    // When on a remote session, show a choice: attach vs transfer
+    // forceAttach=true skips this (user chose "Attach to prompt" from the overlay)
+    if (store.isRemote && !forceAttach) {
+      const filenames = paths.map((p) => p.split(/[/\\]/).pop() || p);
+      pendingTransfer = { paths, filenames };
+      return;
+    }
 
     dragProcessingCount++;
     dbg("chat", "tauri-drop", { count: paths.length });
@@ -3464,6 +3584,94 @@
     </div>
   {/if}
 
+  <!-- Remote file transfer choice overlay -->
+  {#if pendingTransfer || transferring}
+    <div
+      class="absolute inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-[2px]"
+    >
+      <div
+        class="flex flex-col gap-4 rounded-xl border border-border bg-background shadow-xl px-8 py-6 min-w-[340px] max-w-[480px]"
+      >
+        {#if transferring}
+          <!-- Transfer in progress -->
+          <div class="flex flex-col items-center gap-3 py-2">
+            <svg
+              class="h-8 w-8 text-primary/60 animate-spin"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <span class="text-sm font-medium text-foreground">{t("drag_transferring")}</span>
+          </div>
+        {:else if pendingTransfer}
+          <!-- Choice: attach vs transfer -->
+          <div class="flex flex-col gap-1">
+            <p class="text-sm font-semibold text-foreground">{t("drag_transferTitle")}</p>
+            <p class="text-xs text-muted-foreground">{t("drag_transferSubtitle")}</p>
+          </div>
+          <!-- File list preview (max 4 shown) -->
+          <ul class="flex flex-col gap-0.5 text-xs text-muted-foreground">
+            {#each pendingTransfer.filenames.slice(0, 4) as name}
+              <li class="flex items-center gap-1.5">
+                <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span class="truncate">{name}</span>
+              </li>
+            {/each}
+            {#if pendingTransfer.filenames.length > 4}
+              <li class="text-muted-foreground/60">+{pendingTransfer.filenames.length - 4} more</li>
+            {/if}
+          </ul>
+          <!-- Action buttons -->
+          <div class="flex gap-3">
+            <button
+              class="flex flex-1 flex-col gap-0.5 rounded-lg border border-border bg-muted/40 px-4 py-3 text-left hover:bg-muted/70 transition-colors"
+              onclick={() => {
+                const captured = pendingTransfer;
+                pendingTransfer = null;
+                if (captured) {
+                  // Re-dispatch bypassing the remote choice gate
+                  handleTauriDrop({ paths: captured.paths }, true);
+                }
+              }}
+            >
+              <span class="text-xs font-medium text-foreground">{t("drag_actionAttach")}</span>
+              <span class="text-[11px] text-muted-foreground">{t("drag_actionAttachDesc")}</span>
+            </button>
+            <button
+              class="flex flex-1 flex-col gap-0.5 rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 text-left hover:bg-primary/10 transition-colors"
+              onclick={() => {
+                if (pendingTransfer) executeRemoteTransfer(pendingTransfer.paths);
+              }}
+            >
+              <span class="text-xs font-medium text-foreground">{t("drag_actionTransfer")}</span>
+              <span class="text-[11px] text-muted-foreground">
+                {t("drag_actionTransferDesc", {
+                  host: remoteHosts.find((h) => h.name === store.remoteHostName)?.host ?? store.remoteHostName ?? "",
+                  dir: remoteHosts.find((h) => h.name === store.remoteHostName)?.remote_cwd ?? "~",
+                })}
+              </span>
+            </button>
+          </div>
+          <!-- Dismiss -->
+          <button
+            class="text-xs text-muted-foreground/60 hover:text-muted-foreground text-center transition-colors"
+            onclick={() => { pendingTransfer = null; }}
+          >
+            Cancel
+          </button>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   <!-- Main content area -->
   <div class="flex flex-1 flex-col min-w-0 relative">
     <!-- Status bar -->
@@ -3617,6 +3825,21 @@
 
     <!-- Main area -->
     <div class="flex-1 overflow-hidden relative">
+      <!-- Thinking overlay — floats above chat content while Claude is processing -->
+      {#if store.isRunning && !store.streamingText && !store.thinkingText}
+        <div class="thinking-overlay" in:fly={{ y: 12, duration: 300, easing: cubicOut }} out:fly={{ y: 12, duration: 200, easing: cubicOut }}>
+          <div class="thinking-overlay-inner">
+            <ThinkingAnimation size={240} />
+            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+              <span class="spinner-shimmer">thinking…</span>
+              {#if thinkingElapsed > 0}
+                <span class="tabular-nums">· {formatElapsed(thinkingElapsed)}</span>
+              {/if}
+            </div>
+          </div>
+        </div>
+      {/if}
+
       {#if store.useStreamSession}
         <!-- API mode: chat messages -->
         <div
@@ -3705,10 +3928,31 @@
                 class="h-5 w-5 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin"
               ></div>
             </div>
+          {:else if isGreetingActive}
+            <!-- Boot screen — neural network thinking animation -->
+            <div class="flex h-full items-center justify-center">
+              <div class="ocv-boot-screen animate-fade-in">
+                <ThinkingAnimation size={200} />
+                <div class="ocv-boot-label">CairnCC</div>
+                <div class="ocv-boot-status">
+                  <span class="ocv-boot-dot"></span>
+                  <span>loading memory</span>
+                </div>
+              </div>
+            </div>
           {:else}
             <!-- Timeline: chat messages + inline tool cards -->
             <div>
-              {#if store.run?.parent_run_id}
+              {#if isGreetingDone}
+                <!-- Memory status banner -->
+                <div class="chat-content-width pt-6 pb-2" in:fly={{ y: 8, duration: 400, easing: cubicOut }}>
+                  <div class="ocv-memory-banner">
+                    <div class="ocv-memory-dot"></div>
+                    <span class="ocv-memory-label">Memory active</span>
+                  </div>
+                </div>
+              {/if}
+              {#if store.run?.parent_run_id && !isGreetingDone}
                 <div class="chat-content-width py-2">
                   <div
                     class="flex items-center gap-2 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-400"
@@ -3789,6 +4033,7 @@
                     id="msg-{entry.anchorId}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
+                    in:fly={{ y: 14, duration: 320, delay: Math.min(i * 25, 120), easing: cubicOut }}
                     class:opacity-40={lastClearSepId !== null &&
                       (timelineIdIndex.get(entry.id) ?? 0) <
                         (timelineIdIndex.get(lastClearSepId) ?? 0)}
@@ -4129,81 +4374,7 @@
                 </div>
               {/if}
 
-              <!-- Thinking indicator (debounced 300ms to avoid flash on fast CLI commands) -->
-              {#if thinkingVisible && !store.thinkingText}
-                <div class="w-full animate-fade-in">
-                  <div class="chat-content-width py-4">
-                    <div class="mb-1.5 flex items-center gap-2">
-                      <div
-                        class="flex h-5 w-5 items-center justify-center rounded-sm bg-orange-500/10 text-orange-500"
-                      >
-                        <svg
-                          class="h-3 w-3"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path
-                            d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"
-                          />
-                        </svg>
-                      </div>
-                      <span class="text-sm font-semibold text-foreground">{t("chat_claude")}</span>
-                      {#if thinkingElapsed > 0}
-                        <span class="ml-auto text-[10px] tabular-nums text-muted-foreground"
-                          >{formatElapsed(thinkingElapsed)}</span
-                        >
-                      {/if}
-                    </div>
-                    <div class="pl-7">
-                      {#if store.activeToolName}
-                        <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div
-                            class="h-3.5 w-3.5 rounded-full border-2 border-border border-t-muted-foreground animate-spin"
-                          ></div>
-                          <span
-                            >{t("chat_usingTool")}
-                            <span class="text-foreground font-medium">{store.activeToolName}</span
-                            ></span
-                          >
-                          {#if store.thinkingEndMs && store.thinkingDurationSec > 0}
-                            <span class="text-xs tabular-nums"
-                              >· thought for {store.thinkingDurationSec}s</span
-                            >
-                          {/if}
-                        </div>
-                      {:else if approving}
-                        <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div
-                            class="h-3.5 w-3.5 rounded-full border-2 border-border border-t-muted-foreground animate-spin"
-                          ></div>
-                          <span>{t("chat_restartingApproved")}</span>
-                        </div>
-                      {:else if sending}
-                        <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div
-                            class="h-3.5 w-3.5 rounded-full border-2 border-border border-t-muted-foreground animate-spin"
-                          ></div>
-                          <span>{t("chat_startingSession")}</span>
-                        </div>
-                      {:else}
-                        <div class="flex items-center gap-2 text-sm">
-                          <span class="spinner-star">✦</span>
-                          <span class="spinner-shimmer">{spinnerVerb}…</span>
-                          {#if store.thinkingEndMs && store.thinkingDurationSec > 0}
-                            <span class="text-muted-foreground text-xs tabular-nums"
-                              >· thought for {store.thinkingDurationSec}s</span
-                            >
-                          {/if}
-                        </div>
-                      {/if}
-                    </div>
-                  </div>
-                </div>
-              {/if}
+              <!-- Thinking indicator moved to overlay above chat panel -->
             </div>
           {/if}
         </div>

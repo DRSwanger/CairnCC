@@ -248,6 +248,15 @@ export async function checkIsDirectory(path: string): Promise<boolean> {
   return invoke<boolean>("check_is_directory", { path });
 }
 
+export async function scpTransferFile(
+  localPath: string,
+  remoteHost: RemoteHost,
+  remoteDir: string,
+): Promise<string> {
+  dbg("api", "scpTransferFile", { localPath, host: remoteHost.host, remoteDir });
+  return invoke<string>("scp_transfer_file", { localPath, remoteHost, remoteDir });
+}
+
 export async function readFileBase64(path: string, cwd?: string): Promise<[string, string]> {
   return invoke<[string, string]>("read_file_base64", { path, cwd: cwd ?? null });
 }

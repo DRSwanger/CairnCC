@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { renderMarkdown } from "$lib/utils/markdown";
+  import { renderMarkdown, renderMermaidBlocks } from "$lib/utils/markdown";
   import { readFileBase64 } from "$lib/api";
   import { dbg, dbgWarn } from "$lib/utils/debug";
 
@@ -34,6 +34,7 @@
   // Single render path: $derived ensures renderMarkdown is called exactly once per text change
   let html = $derived(throttledText ? renderMarkdown(throttledText) : "");
 
+  // Copy button handlers
   $effect(() => {
     if (!container || !html) return;
 
@@ -65,6 +66,29 @@
     };
   });
 
+  // Mermaid diagram rendering
+  $effect(() => {
+    if (!container || !html) return;
+    // Only render when not streaming (avoid half-rendered diagrams)
+    if (streaming) return;
+    renderMermaidBlocks(container).catch(() => {});
+  });
+
+  // Image lightbox
+  let lightboxSrc = $state<string | null>(null);
+  $effect(() => {
+    if (!container || !html) return;
+    const imgs = container.querySelectorAll<HTMLImageElement>("img");
+    const cleanups: Array<() => void> = [];
+    imgs.forEach((img) => {
+      img.classList.add("md-img-clickable");
+      const handler = () => { lightboxSrc = img.src; };
+      img.addEventListener("click", handler);
+      cleanups.push(() => img.removeEventListener("click", handler));
+    });
+    return () => cleanups.forEach((fn) => fn());
+  });
+
   // Resolve relative image paths against basePath (for Explorer file preview)
   $effect(() => {
     if (!container || !html || !basePath) return;
@@ -73,11 +97,9 @@
     for (const img of imgs) {
       const src = img.getAttribute("src");
       if (!src) continue;
-      // Skip URLs, data URIs, and absolute paths
       if (/^(https?:|data:|blob:)/.test(src)) continue;
       if (src.startsWith("/") || /^[a-zA-Z]:/.test(src)) continue;
 
-      // Construct absolute path: normalize to forward slashes for Rust PathBuf
       const abs = basePath.replace(/\\/g, "/") + "/" + src.replace(/\\/g, "/");
       dbg("markdown", "resolve-img", { src, abs });
 
@@ -102,5 +124,15 @@
     prose-li:text-foreground
     {className}"
 >
-  {@html html}
+  {@html html}{#if streaming && throttledText}<span class="streaming-cursor"></span>{/if}
 </div>
+
+<!-- Lightbox -->
+{#if lightboxSrc}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="lightbox-overlay" onclick={() => (lightboxSrc = null)}>
+    <img src={lightboxSrc} alt="Preview" class="lightbox-img" />
+    <div class="lightbox-hint">click to close</div>
+  </div>
+{/if}

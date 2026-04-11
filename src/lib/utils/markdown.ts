@@ -1,6 +1,7 @@
 import { Marked } from "marked";
 import { escapeHtml } from "$lib/utils/ansi";
 import hljs from "highlight.js/lib/core";
+import mermaid from "mermaid";
 import javascript from "highlight.js/lib/languages/javascript";
 import typescript from "highlight.js/lib/languages/typescript";
 import python from "highlight.js/lib/languages/python";
@@ -47,6 +48,32 @@ hljs.registerLanguage("c", cpp);
 hljs.registerLanguage("diff", diff);
 hljs.registerLanguage("shell", shell);
 
+mermaid.initialize({
+  startOnLoad: false,
+  theme: "dark",
+  themeVariables: {
+    primaryColor: "#f97316",
+    primaryTextColor: "#e5e7eb",
+    primaryBorderColor: "#374151",
+    lineColor: "#6b7280",
+    sectionBkgColor: "#1f2937",
+    altSectionBkgColor: "#111827",
+    gridColor: "#374151",
+    secondaryColor: "#1f2937",
+    tertiaryColor: "#111827",
+    background: "#0f1117",
+    mainBkg: "#1a1d27",
+    nodeBorder: "#374151",
+    clusterBkg: "#1f2937",
+    titleColor: "#f97316",
+    edgeLabelBackground: "#1f2937",
+    attributeBackgroundColorEven: "#1f2937",
+    attributeBackgroundColorOdd: "#111827",
+  },
+});
+
+let mermaidCounter = 0;
+
 const marked = new Marked();
 
 marked.use({
@@ -83,9 +110,15 @@ marked.use({
       return `<div class="table-wrapper"><table><thead>${headerRow}</thead>${body}</table></div>`;
     },
     code({ text, lang }: { text: string; lang?: string }) {
-      const language = lang || "";
-      let highlighted: string;
+      const language = (lang || "").toLowerCase();
 
+      // Mermaid diagrams — render as a placeholder, processed after mount
+      if (language === "mermaid") {
+        const id = `mermaid-${++mermaidCounter}`;
+        return `<div class="mermaid-block" data-mermaid-id="${id}"><div class="mermaid-pending" id="${id}">${escapeHtml(text)}</div></div>`;
+      }
+
+      let highlighted: string;
       if (language && hljs.getLanguage(language)) {
         try {
           highlighted = hljs.highlight(text, { language }).value;
@@ -93,13 +126,10 @@ marked.use({
           highlighted = escapeHtml(text);
         }
       } else {
-        // Skip highlightAuto() — it tries all ~190 languages synchronously
-        // and can freeze the UI for seconds on large code blocks
         highlighted = escapeHtml(text);
       }
 
       const displayLang = language || "text";
-
       return `<div class="code-block"><div class="code-block-header"><span class="code-block-lang">${escapeHtml(displayLang)}</span><button class="code-block-copy" data-code-copy>Copy</button></div><pre><code class="hljs language-${escapeHtml(language)}">${highlighted}</code></pre></div>`;
     },
   },
@@ -111,6 +141,27 @@ export function renderMarkdown(text: string): string {
     return "";
   }
   return DOMPurify.sanitize(raw, {
-    ADD_ATTR: ["class", "target", "data-code-copy"],
+    ADD_ATTR: ["class", "target", "data-code-copy", "data-mermaid-id", "id"],
+    ADD_TAGS: ["div"],
   });
+}
+
+export async function renderMermaidBlocks(container: HTMLElement): Promise<void> {
+  const blocks = container.querySelectorAll<HTMLElement>(".mermaid-pending");
+  for (const block of blocks) {
+    const id = block.id;
+    const source = block.textContent || "";
+    if (!source.trim()) continue;
+    try {
+      const { svg } = await mermaid.render(`mermaid-svg-${id}`, source);
+      const wrapper = block.parentElement;
+      if (wrapper) {
+        wrapper.innerHTML = svg;
+        wrapper.classList.add("mermaid-rendered");
+      }
+    } catch {
+      block.classList.add("mermaid-error");
+      block.textContent = source;
+    }
+  }
 }

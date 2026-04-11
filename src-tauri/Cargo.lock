@@ -3,8 +3,8 @@
 version = 4
 
 [[package]]
-name = "OpenCovibe"
-version = "0.1.47"
+name = "CairnCC"
+version = "0.1.50"
 dependencies = [
  "axum",
  "base64 0.22.1",

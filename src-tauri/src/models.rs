@@ -325,7 +325,7 @@ impl Default for UserSettings {
             default_agent: "claude".to_string(),
             default_model: None,
             allowed_tools: vec![],
-            working_directory: None,
+            working_directory: crate::storage::home_dir(),
             provider_mode: "local".to_string(),
             auth_mode: "cli".to_string(),
             anthropic_api_key: None,
@@ -397,6 +397,17 @@ pub struct AgentSettings {
 
 impl AgentSettings {
     pub fn default_for(agent: &str) -> Self {
+        let append_system_prompt = if agent == "claude" {
+            Some(
+                "At the start of every new conversation, immediately read your memory index at \
+                ~/.claude/projects/-home-dallas/memory/MEMORY.md, then read each memory file \
+                listed in it. After reading, tell the user what context you loaded and confirm \
+                whether memory recall is working. Keep it brief."
+                    .to_string(),
+            )
+        } else {
+            None
+        };
         Self {
             agent: agent.to_string(),
             model: None,
@@ -404,7 +415,7 @@ impl AgentSettings {
             working_directory: None,
             plan_mode: None,
             disallowed_tools: None,
-            append_system_prompt: None,
+            append_system_prompt,
             max_budget_usd: None,
             fallback_model: None,
             system_prompt: None,

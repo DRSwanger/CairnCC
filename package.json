@@ -1,16 +1,16 @@
 {
-  "name": "opencovibe",
+  "name": "cairncc",
   "version": "0.1.50",
-  "description": "Local-first desktop app for AI-assisted vibe coding",
+  "description": "Local-first desktop app for AI-assisted coding with Claude Code",
   "type": "module",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/AnyiWang/OpenCovibe",
+  "homepage": "https://github.com/DRSwanger/CairnCC",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AnyiWang/OpenCovibe.git"
+    "url": "https://github.com/DRSwanger/CairnCC.git"
   },
   "bugs": {
-    "url": "https://github.com/AnyiWang/OpenCovibe/issues"
+    "url": "https://github.com/DRSwanger/CairnCC/issues"
   },
   "engines": {
     "node": ">=20"
@@ -92,6 +92,7 @@
     "highlight.js": "^11.11.0",
     "mammoth": "^1.11.0",
     "marked": "^15.0.0",
+    "mermaid": "^11.14.0",
     "turndown": "^7.2.2"
   },
   "browserslist": [

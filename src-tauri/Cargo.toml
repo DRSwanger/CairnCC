@@ -1,18 +1,18 @@
 [package]
-name = "OpenCovibe"
+name = "CairnCC"
 version = "0.1.50"
 edition = "2021"
-description = "Local-first desktop app for AI-assisted vibe coding"
+description = "Local-first desktop app for AI-assisted coding with Claude Code"
 license = "Apache-2.0"
-repository = "https://github.com/AnyiWang/OpenCovibe"
-homepage = "https://github.com/AnyiWang/OpenCovibe"
+repository = "https://github.com/DRSwanger/CairnCC"
+homepage = "https://github.com/DRSwanger/CairnCC"
 
 [lib]
-name = "opencovibe_desktop_lib"
+name = "cairncc_desktop_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [[bin]]
-name = "OpenCovibe"
+name = "CairnCC"
 path = "src/main.rs"
 
 [dependencies]
