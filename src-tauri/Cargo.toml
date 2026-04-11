@@ -1,6 +1,6 @@
 [package]
 name = "CairnCC"
-version = "0.1.50"
+version = "0.1.56"
 edition = "2021"
 description = "Local-first desktop app for AI-assisted coding with Claude Code"
 license = "Apache-2.0"
