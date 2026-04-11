@@ -3825,20 +3825,7 @@
 
     <!-- Main area -->
     <div class="flex-1 overflow-hidden relative">
-      <!-- Thinking overlay — floats above chat content while Claude is processing -->
-      {#if store.isRunning && !store.streamingText && !store.thinkingText}
-        <div class="thinking-overlay" in:fly={{ y: 12, duration: 300, easing: cubicOut }} out:fly={{ y: 12, duration: 200, easing: cubicOut }}>
-          <div class="thinking-overlay-inner">
-            <ThinkingAnimation size={240} />
-            <div class="flex items-center gap-2 text-sm text-muted-foreground">
-              <span class="spinner-shimmer">thinking…</span>
-              {#if thinkingElapsed > 0}
-                <span class="tabular-nums">· {formatElapsed(thinkingElapsed)}</span>
-              {/if}
-            </div>
-          </div>
-        </div>
-      {/if}
+      <!-- Thinking indicator — now inline below messages, not a full-screen cover -->
 
       {#if store.useStreamSession}
         <!-- API mode: chat messages -->
@@ -4355,6 +4342,25 @@
                     </div>
                     <div class="pl-7 prose-chat">
                       <MarkdownContent text={store.streamingText} streaming={true} />
+                    </div>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Inline thinking indicator — shown below existing messages during tool use / processing -->
+              {#if store.isRunning && !store.streamingText && !store.thinkingText}
+                <div
+                  class="w-full"
+                  in:fly={{ y: 10, duration: 280, easing: cubicOut }}
+                  out:fly={{ y: 6, duration: 180, easing: cubicOut }}
+                >
+                  <div class="chat-content-width py-8 flex flex-col items-center gap-3">
+                    <ThinkingAnimation size={180} />
+                    <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span class="spinner-shimmer">thinking…</span>
+                      {#if thinkingElapsed > 0}
+                        <span class="tabular-nums">· {formatElapsed(thinkingElapsed)}</span>
+                      {/if}
                     </div>
                   </div>
                 </div>
