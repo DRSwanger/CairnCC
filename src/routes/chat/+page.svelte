@@ -88,6 +88,7 @@
   import { mapSettled } from "$lib/utils/async-utils";
   import { uuid } from "$lib/utils/uuid";
   import RewindModal from "$lib/components/RewindModal.svelte";
+  import ThinkingAnimation from "$lib/components/ThinkingAnimation.svelte";
   import type { ElementSelection } from "$lib/types";
   import { isElementSelection } from "$lib/types";
 
@@ -354,10 +355,14 @@
 
   let filteredTimeline = $derived.by(() => {
     let tl = store.timeline;
-    // Hide the user's greeting prompt — keep Claude's response visible
+    // During greeting: hide user prompt and all tool activity — only show Claude's final response
     if (greetingRunId && store.run?.id === greetingRunId) {
       const userCount = tl.filter((e) => e.kind === "user").length;
-      if (userCount <= 1) tl = tl.filter((e) => e.kind !== "user");
+      if (userCount <= 1) tl = tl.filter((e) => e.kind === "assistant");
+    }
+    // While running: hide tool cards and command output — thinking overlay covers this period
+    if (store.isRunning && !store.streamingText) {
+      tl = tl.filter((e) => e.kind !== "tool" && e.kind !== "command_output");
     }
     if (!toolFilter) return tl;
     return tl.filter((e) => e.kind !== "tool" || e.tool.tool_name === toolFilter);
@@ -3820,6 +3825,21 @@
 
     <!-- Main area -->
     <div class="flex-1 overflow-hidden relative">
+      <!-- Thinking overlay — floats above chat content while Claude is processing -->
+      {#if store.isRunning && !store.streamingText && !store.thinkingText}
+        <div class="thinking-overlay" in:fly={{ y: 12, duration: 300, easing: cubicOut }} out:fly={{ y: 12, duration: 200, easing: cubicOut }}>
+          <div class="thinking-overlay-inner">
+            <ThinkingAnimation size={240} />
+            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+              <span class="spinner-shimmer">thinking…</span>
+              {#if thinkingElapsed > 0}
+                <span class="tabular-nums">· {formatElapsed(thinkingElapsed)}</span>
+              {/if}
+            </div>
+          </div>
+        </div>
+      {/if}
+
       {#if store.useStreamSession}
         <!-- API mode: chat messages -->
         <div
@@ -3909,18 +3929,10 @@
               ></div>
             </div>
           {:else if isGreetingActive}
-            <!-- Boot screen — shown while memory recall is running -->
+            <!-- Boot screen — neural network thinking animation -->
             <div class="flex h-full items-center justify-center">
               <div class="ocv-boot-screen animate-fade-in">
-                <!-- Glowing logo mark -->
-                <div class="ocv-logo-ring">
-                  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="ocv-logo-svg">
-                    <circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="2" class="ocv-ring-outer"/>
-                    <circle cx="32" cy="32" r="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" class="ocv-ring-inner"/>
-                    <path d="M22 32 L28 26 L36 34 L42 28" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ocv-logo-path"/>
-                    <circle cx="32" cy="32" r="3" fill="currentColor" class="ocv-logo-dot"/>
-                  </svg>
-                </div>
+                <ThinkingAnimation size={200} />
                 <div class="ocv-boot-label">CairnCC</div>
                 <div class="ocv-boot-status">
                   <span class="ocv-boot-dot"></span>
@@ -4362,81 +4374,7 @@
                 </div>
               {/if}
 
-              <!-- Thinking indicator (debounced 300ms to avoid flash on fast CLI commands) -->
-              {#if thinkingVisible && !store.thinkingText}
-                <div class="w-full animate-fade-in">
-                  <div class="chat-content-width py-4">
-                    <div class="mb-1.5 flex items-center gap-2">
-                      <div
-                        class="flex h-5 w-5 items-center justify-center rounded-sm bg-orange-500/10 text-orange-500"
-                      >
-                        <svg
-                          class="h-3 w-3"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path
-                            d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"
-                          />
-                        </svg>
-                      </div>
-                      <span class="text-sm font-semibold text-foreground">{t("chat_claude")}</span>
-                      {#if thinkingElapsed > 0}
-                        <span class="ml-auto text-[10px] tabular-nums text-muted-foreground"
-                          >{formatElapsed(thinkingElapsed)}</span
-                        >
-                      {/if}
-                    </div>
-                    <div class="pl-7">
-                      {#if store.activeToolName}
-                        <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div
-                            class="h-3.5 w-3.5 rounded-full border-2 border-border border-t-muted-foreground animate-spin"
-                          ></div>
-                          <span
-                            >{t("chat_usingTool")}
-                            <span class="text-foreground font-medium">{store.activeToolName}</span
-                            ></span
-                          >
-                          {#if store.thinkingEndMs && store.thinkingDurationSec > 0}
-                            <span class="text-xs tabular-nums"
-                              >· thought for {store.thinkingDurationSec}s</span
-                            >
-                          {/if}
-                        </div>
-                      {:else if approving}
-                        <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div
-                            class="h-3.5 w-3.5 rounded-full border-2 border-border border-t-muted-foreground animate-spin"
-                          ></div>
-                          <span>{t("chat_restartingApproved")}</span>
-                        </div>
-                      {:else if sending}
-                        <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div
-                            class="h-3.5 w-3.5 rounded-full border-2 border-border border-t-muted-foreground animate-spin"
-                          ></div>
-                          <span>{t("chat_startingSession")}</span>
-                        </div>
-                      {:else}
-                        <div class="flex items-center gap-2 text-sm">
-                          <span class="spinner-star">✦</span>
-                          <span class="spinner-shimmer">{spinnerVerb}…</span>
-                          {#if store.thinkingEndMs && store.thinkingDurationSec > 0}
-                            <span class="text-muted-foreground text-xs tabular-nums"
-                              >· thought for {store.thinkingDurationSec}s</span
-                            >
-                          {/if}
-                        </div>
-                      {/if}
-                    </div>
-                  </div>
-                </div>
-              {/if}
+              <!-- Thinking indicator moved to overlay above chat panel -->
             </div>
           {/if}
         </div>
