@@ -1,8 +1,8 @@
 //! Prompt index — scans events.jsonl files to extract searchable messages
 //! (user prompts + assistant responses).
 //!
-//! Index file:    `~/.opencovibe/prompt-index.jsonl`
-//! Manifest file: `~/.opencovibe/prompt-index-manifest.json`
+//! Index file:    `~/.cairncc/prompt-index.jsonl`
+//! Manifest file: `~/.cairncc/prompt-index-manifest.json`
 //!
 //! Uses in-memory cache with 120s TTL (same pattern as `claude_usage.rs`).
 

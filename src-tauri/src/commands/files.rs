@@ -75,7 +75,7 @@ pub async fn scp_transfer_file(
 
 /// Canonicalize a path for `starts_with` comparison. If the path doesn't exist,
 /// canonicalize the parent and re-append the final component. Falls back to
-/// the path as-is if neither exist. Sufficient for `~/.opencovibe` / `~/.claude`
+/// the path as-is if neither exist. Sufficient for `~/.cairncc` / `~/.claude`
 /// where the parent (`$HOME`) always exists.
 fn canonicalize_for_prefix(path: &std::path::Path) -> PathBuf {
     if let Ok(c) = std::fs::canonicalize(path) {
@@ -94,7 +94,7 @@ fn canonicalize_for_prefix(path: &std::path::Path) -> PathBuf {
 /// Validate that a file path is within allowed directories.
 ///
 /// Allowed directories:
-/// - `~/.opencovibe/` (data dir)
+/// - `~/.cairncc/` (data dir)
 /// - `~/.claude/` (Claude config dir)
 /// - The global `working_directory` from user settings (if set)
 /// - Any per-agent `working_directory` from agent settings
@@ -170,7 +170,7 @@ pub(crate) fn validate_file_path(
     let data_dir_c = canonicalize_for_prefix(&data_dir);
     let claude_dir_c = canonicalize_for_prefix(&claude_dir);
 
-    // Allow: ~/.opencovibe/*, ~/.claude/*
+    // Allow: ~/.cairncc/*, ~/.claude/*
     if canonical.starts_with(&data_dir_c) || canonical.starts_with(&claude_dir_c) {
         log::debug!("[files] path allowed (config dir): {}", canonical.display());
         return Ok(canonical);

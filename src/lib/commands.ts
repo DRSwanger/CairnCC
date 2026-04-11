@@ -234,7 +234,7 @@ export const commands: CommandDef[] = [
   {
     id: "version",
     name: "Version Info",
-    description: "Show OpenCovibe Desktop version information",
+    description: "Show CairnCC Desktop version information",
     category: "diagnostics",
     agent: "both",
     action: "open_modal",

@@ -30,7 +30,7 @@
     bar.id = '__ocv_toolbar';
     bar.style.cssText = BAR + 'display:flex;align-items:center;padding:8px 16px;gap:10px;';
     bar.innerHTML =
-      '<span style="color:#a6adc8;flex:1;font-size:11px;">OpenCovibe Preview</span>' +
+      '<span style="color:#a6adc8;flex:1;font-size:11px;">CairnCC Preview</span>' +
       '<button id="__ocv_btn_pick" style="' + BTN + 'background:#3b82f6;color:#fff;">Pick Element</button>';
     document.body.appendChild(bar);
     document.body.style.paddingBottom = (bar.offsetHeight) + 'px';
