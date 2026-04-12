@@ -1441,7 +1441,7 @@
                 min="10"
                 max="300"
                 step="5"
-                value={settings?.drip_rate ?? 35}
+                value={dripRateStore.value}
                 class="w-28 accent-primary"
                 oninput={(e) => {
                   dripRateStore.value = parseInt((e.target as HTMLInputElement).value);
