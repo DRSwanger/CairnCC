@@ -357,12 +357,30 @@
 
   /** Latches true the moment streaming text appears in the current run; resets when run ends. */
   let runHasStreamed = $state(false);
+  /** Keeps the streaming container alive while MarkdownContent drains its backlog. */
+  let streamingDraining = $state(false);
+  /** Last non-empty streaming text — held so the draining container has text after store clears. */
+  let lastStreamingText = $state("");
   $effect(() => {
     if (store.streamingText) {
       runHasStreamed = true;
+      lastStreamingText = store.streamingText;
     } else if (!store.isRunning) {
       runHasStreamed = false;
     }
+  });
+  /**
+   * ID of the last assistant timeline entry while the streaming container is active.
+   * That entry renders the full text immediately (no drip), so we suppress it until the
+   * drain is done — both changes share the same streamingDraining signal and update atomically.
+   */
+  let suppressedEntryId = $derived.by(() => {
+    if (!store.streamingText && !streamingDraining) return null;
+    const tl = filteredTimeline;
+    for (let i = tl.length - 1; i >= 0; i--) {
+      if (tl[i].kind === "assistant") return tl[i].id;
+    }
+    return null;
   });
 
   let filteredTimeline = $derived.by(() => {
@@ -1740,6 +1758,19 @@
         showChatScrollHint = true;
       }
     }
+  });
+
+  // Keep scrolling during drain phase — dripText advances inside MarkdownContent so the
+  // effect above won't fire, but the DOM keeps growing as chars are revealed.
+  $effect(() => {
+    if (!streamingDraining || !chatAreaRef) return;
+    let rafId: number;
+    function drainScroll() {
+      if (chatAreaRef && isChatAutoScroll) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
+      rafId = requestAnimationFrame(drainScroll);
+    }
+    rafId = requestAnimationFrame(drainScroll);
+    return () => cancelAnimationFrame(rafId);
   });
 
   // Reset scroll state on run change
@@ -4147,7 +4178,7 @@
               {/if}
               <!-- Tool filter pill bar: hidden -->
               {#each visibleTimeline as entry, i (entry.id)}
-                {#if !(burstHiddenIndices.has(i) && !toolBursts.has(i))}
+                {#if !(burstHiddenIndices.has(i) && !toolBursts.has(i)) && entry.id !== suppressedEntryId}
                   <div
                     id="msg-{entry.anchorId}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
@@ -4371,8 +4402,8 @@
 
               <!-- Thinking popup moved above PromptInput — see below -->
 
-              <!-- Streaming text -->
-              {#if store.streamingText}
+              <!-- Streaming text: kept alive via streamingDraining until drip backlog clears -->
+              {#if store.streamingText || streamingDraining}
                 <div class="w-full animate-fade-in">
                   <div class="chat-content-width py-4">
                     <div class="mb-1.5 flex items-center gap-2">
@@ -4396,7 +4427,11 @@
                       <span class="text-sm font-semibold text-foreground">{t("chat_claude")}</span>
                     </div>
                     <div class="pl-7 prose-chat">
-                      <MarkdownContent text={store.streamingText} streaming={true} />
+                      <MarkdownContent
+                        text={store.streamingText || lastStreamingText}
+                        streaming={!!store.streamingText}
+                        bind:draining={streamingDraining}
+                      />
                     </div>
                   </div>
                 </div>
@@ -4708,7 +4743,7 @@
          Absolutely positioned above the input bar — no layout impact on chat content.
          Appears once when extended thinking starts, stays up for the entire run,
          flies out smoothly when store.isRunning goes false. -->
-    {#if thinkingPanelVisible}
+    {#if thinkingPanelVisible && !inputBlockedByPermission}
       <div
         class="absolute bottom-full left-0 right-0 px-3 pb-1.5"
         in:fly={{ y: 20, duration: 220, easing: cubicOut }}

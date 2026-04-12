@@ -7,6 +7,7 @@
   "settings_tab_shortcuts": "Shortcuts",
   "settings_tab_remote": "Remote",
   "settings_tab_debug": "Debug",
+  "settings_tab_permissions": "Permissions",
 
   "settings_general_connection": "Connection",
   "settings_general_saved": "Saved",
@@ -1087,6 +1088,8 @@
   "perm_nPermissions": "{count} permissions required",
   "perm_allowAll": "Allow All ({count})",
   "perm_denyAll": "Deny All",
+  "perm_alwaysAllow": "Always Allow",
+  "perm_alwaysAllowAll": "Always Allow All",
   "inline_other": "Other...",
   "inline_otherPlaceholder": "Type something...",
   "inline_submitOther": "Submit",

@@ -9,45 +9,53 @@
     streaming = false,
     basePath = "",
     class: className = "",
+    draining = $bindable(false),
   }: {
     text?: string;
     streaming?: boolean;
     basePath?: string;
     class?: string;
+    draining?: boolean;
   } = $props();
 
   let container: HTMLDivElement | undefined = $state();
 
-  // Drip text for streaming: time-based reveal at CHARS_PER_SEC regardless of display
-  // refresh rate. Uses performance.now() so 60Hz, 120Hz, 144Hz all feel identical.
-  const CHARS_PER_SEC = 60;
+  // Drip text for streaming.
+  // During streaming : 50 chars/sec, max 2 per frame.
+  // After streaming ends: smoothly ramps from 50 → 300 chars/sec over RAMP_MS so there's
+  // no jarring speed jump — just a gradual acceleration to clear the backlog.
+  const STREAM_RATE         = 100; // chars/sec during streaming
+  const DRAIN_RATE          = 300; // chars/sec after streaming ends
+  const MAX_PER_FRAME       = 4;   // cap during streaming
+  const MAX_DRAIN_PER_FRAME = 20;  // cap during drain
   let dripText = $state(text);
 
   onMount(() => {
     let rafId: number;
     let lastTime = performance.now();
-    let remainder = 0; // fractional chars carried between frames
+    let remainder = 0;
 
     function loop(now: number) {
-      if (streaming && dripText.length < text.length) {
+      if (dripText.length < text.length) {
+        draining = true;
         const elapsed = now - lastTime;
-        const toReveal = remainder + (elapsed / 1000) * CHARS_PER_SEC;
-        const chars = Math.floor(toReveal);
-        remainder = toReveal - chars;
+        const rate = streaming ? STREAM_RATE : DRAIN_RATE;
+        const cap  = streaming ? MAX_PER_FRAME : MAX_DRAIN_PER_FRAME;
+        const ideal = remainder + (elapsed / 1000) * rate;
+        const chars = Math.min(Math.floor(ideal), cap);
+        remainder = ideal - Math.floor(ideal);
         if (chars > 0) {
           dripText = text.slice(0, Math.min(dripText.length + chars, text.length));
         }
+      } else {
+        draining = false;
+        remainder = 0;
       }
       lastTime = now;
       rafId = requestAnimationFrame(loop);
     }
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
-  });
-
-  // When streaming ends, snap immediately to full text
-  $effect(() => {
-    if (!streaming) dripText = text;
   });
 
   // Single render path: $derived ensures renderMarkdown is called exactly once per dripText change

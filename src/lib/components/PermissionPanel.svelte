@@ -105,6 +105,58 @@
     submittingAll = false;
   }
 
+  // ── Permanently grant ──
+  // Uses the CLI's "addRules" suggestion mechanism — passes the rule through
+  // onPermissionRespond so the CLI updates BOTH its in-session allow list AND
+  // writes to ~/.claude/settings.json in one step.
+  // Rule format: "ToolName(**)" matches all calls to that tool.
+
+  async function permanentlyGrantSingle(requestId: string, toolName: string, input: Record<string, unknown>) {
+    if (submittingAll || submittingIds.has(requestId)) return;
+    dbg("PermissionPanel", "permanentlyGrantSingle", { requestId, toolName });
+    markSubmitting(requestId);
+    try {
+      const suggestion: PermissionSuggestion = {
+        type: "addRules",
+        behavior: "allow",
+        rules: [`${toolName}(**)`],
+        destination: "user",
+      };
+      await onPermissionRespond(requestId, "allow", [suggestion], input);
+    } catch (e) {
+      dbgWarn("PermissionPanel", "permanentlyGrantSingle failed", { requestId, reason: e });
+    } finally {
+      unmarkSubmitting(requestId);
+    }
+  }
+
+  async function permanentlyGrantAll() {
+    if (submittingAll || submittingIds.size > 0) return;
+    submittingAll = true;
+    const snapshot = pendingTools.filter((item) => !submittingIds.has(item.requestId));
+    dbg("PermissionPanel", "permanentlyGrantAll", { count: snapshot.length });
+    const results = await Promise.allSettled(
+      snapshot.map((item) => {
+        const suggestion: PermissionSuggestion = {
+          type: "addRules",
+          behavior: "allow",
+          rules: [`${item.tool.tool_name}(**)`],
+          destination: "user",
+        };
+        return onPermissionRespond(item.requestId, "allow", [suggestion], item.tool.input);
+      }),
+    );
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === "rejected") {
+        dbgWarn("PermissionPanel", "permanentlyGrantAll: one failed", {
+          requestId: snapshot[i].requestId,
+          reason: (results[i] as PromiseRejectedResult).reason,
+        });
+      }
+    }
+    submittingAll = false;
+  }
+
   // ── Helpers ──
   let isSingle = $derived(pendingTools.length === 1);
 </script>
@@ -152,7 +204,7 @@
               {#if isPath}<bdi>{detail}</bdi>{:else}{detail}{/if}
             </p>
           {/if}
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
             <button
               class="rounded-md bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-all disabled:opacity-50"
               disabled={busy}
@@ -171,6 +223,21 @@
                 respondSingle(item.requestId, "deny", undefined, undefined, undefined, true)}
               >{t("common_denyAndStop")}</button
             >
+          </div>
+          <!-- Permanently grant -->
+          <div class="mt-1.5">
+            <button
+              class="flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 hover:bg-violet-500/10 transition-all disabled:opacity-50"
+              disabled={busy}
+              title="Add {item.tool.tool_name} to your permanent allow list"
+              onclick={() => permanentlyGrantSingle(item.requestId, item.tool.tool_name, item.tool.input)}
+            >
+              <svg class="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              {t("perm_alwaysAllow")}
+            </button>
           </div>
           {#if item.tool.suggestions && item.tool.suggestions.length > 0}
             <div class="flex flex-wrap gap-2 mt-2 pt-2 border-t border-amber-500/20">
@@ -271,7 +338,7 @@
           </div>
 
           <!-- Batch buttons -->
-          <div class="flex gap-2 pt-2 border-t border-amber-500/20">
+          <div class="flex flex-wrap gap-2 pt-2 border-t border-amber-500/20">
             <button
               class="rounded-md bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-all disabled:opacity-50"
               disabled={submittingAll || submittingIds.size > 0}
@@ -283,6 +350,17 @@
               disabled={submittingAll || submittingIds.size > 0}
               onclick={denyAll}>{t("perm_denyAll")}</button
             >
+            <button
+              class="flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 hover:bg-violet-500/10 transition-all disabled:opacity-50"
+              disabled={submittingAll || submittingIds.size > 0}
+              onclick={permanentlyGrantAll}
+            >
+              <svg class="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              {t("perm_alwaysAllowAll")}
+            </button>
           </div>
         </div>
       {/if}

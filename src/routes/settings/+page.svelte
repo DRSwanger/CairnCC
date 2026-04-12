@@ -2,6 +2,7 @@
   import { onMount, getContext } from "svelte";
   import { page } from "$app/stores";
   import * as api from "$lib/api";
+  import PermissionsEditor from "$lib/components/PermissionsEditor.svelte";
   import { loadCliInfo, KeybindingStore } from "$lib/stores";
   import type {
     UserSettings,
@@ -39,13 +40,14 @@
   import { getTransport } from "$lib/transport";
 
   // ── Tab state ──
-  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "debug";
+  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "permissions" | "debug";
   const VALID_TABS: SettingsTab[] = [
     "general",
     "connection",
     "cli-config",
     "shortcuts",
     "remote",
+    "permissions",
     "debug",
   ];
   const urlTab = $page.url.searchParams.get("tab");
@@ -60,6 +62,7 @@
     "cli-config": () => t("settings_tab_cliConfig"),
     shortcuts: () => t("settings_tab_shortcuts"),
     remote: () => t("settings_tab_remote"),
+    permissions: () => t("settings_tab_permissions"),
     debug: () => t("settings_tab_debug"),
   };
 
@@ -83,6 +86,10 @@
     {
       id: "remote",
       icon: "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z",
+    },
+    {
+      id: "permissions",
+      icon: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
     },
     { id: "debug", icon: "m18 16 4-4-4-4 M6 8l-4 4 4 4 M14.5 4l-5 16" },
   ];
@@ -3372,6 +3379,20 @@
           {/if}
         </div>
       </Card>
+
+      <!-- ═══ Permissions tab ═══ -->
+    {:else if activeTab === "permissions"}
+      <div class="space-y-4">
+        <div>
+          <p class="text-sm font-medium">{t("settings_tab_permissions")}</p>
+          <p class="text-xs text-muted-foreground mt-0.5">
+            Manage permanent allow and deny rules for Claude's tools. Rules added here apply to all projects.
+          </p>
+        </div>
+        {#key activeTab}
+          <PermissionsEditor />
+        {/key}
+      </div>
 
       <!-- ═══ Debug tab ═══ -->
     {:else if activeTab === "debug"}
