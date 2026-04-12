@@ -16,6 +16,7 @@
   import Input from "$lib/components/Input.svelte";
   import KeybindingEditor from "$lib/components/KeybindingEditor.svelte";
   import { formatKeyDisplay } from "$lib/stores/keybindings.svelte";
+  import { dripRateStore } from "$lib/stores/drip-rate.svelte";
   import {
     PLATFORM_PRESETS,
     buildPlatformList,
@@ -1109,6 +1110,7 @@
   onMount(async () => {
     try {
       settings = await api.getUserSettings();
+      dripRateStore.value = settings.drip_rate ?? 35;
       authMode = settings.auth_mode ?? "cli";
       remoteHosts = settings.remote_hosts ?? [];
       platformCredentials = settings.platform_credentials ?? [];
@@ -1441,15 +1443,19 @@
                 step="5"
                 value={settings?.drip_rate ?? 35}
                 class="w-28 accent-primary"
+                oninput={(e) => {
+                  dripRateStore.value = parseInt((e.target as HTMLInputElement).value);
+                }}
                 onchange={async (e) => {
                   const v = parseInt((e.target as HTMLInputElement).value);
+                  dripRateStore.value = v;
                   if (settings) {
                     settings = await api.updateUserSettings({ drip_rate: v });
                   }
                 }}
               />
               <span class="text-xs text-muted-foreground w-16 text-right">
-                {settings?.drip_rate ?? 35} chars/s
+                {dripRateStore.value} chars/s
               </span>
             </div>
           </div>

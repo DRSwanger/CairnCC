@@ -74,6 +74,7 @@
   import { ansiToHtml, hasAnsiCodes } from "$lib/utils/ansi";
   import { randomSpinnerVerb } from "$lib/utils/spinner-verbs";
   import { type TurnUsage, classifyError } from "$lib/stores/types";
+  import { dripRateStore } from "$lib/stores/drip-rate.svelte";
   import {
     mergeWithVirtual,
     mergeProjectCommands,
@@ -1028,6 +1029,7 @@
   onMount(async () => {
     try {
       settings = await api.getUserSettings();
+      dripRateStore.value = settings.drip_rate ?? 35;
       store.authMode = settings.auth_mode ?? "cli";
       remoteHosts = settings.remote_hosts ?? [];
       // Restore last target selection
@@ -4450,7 +4452,7 @@
                         text={store.streamingText || lastStreamingText}
                         streaming={!!store.streamingText}
                         bind:draining={streamingDraining}
-                        rate={settings?.drip_rate ?? 35}
+                        rate={dripRateStore.value}
                       />
                     </div>
                   </div>
