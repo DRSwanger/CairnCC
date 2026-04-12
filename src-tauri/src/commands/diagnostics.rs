@@ -581,7 +581,11 @@ pub async fn install_remote_claude(
         // Use npm global install, then symlink into /usr/bin for PATH-clean SSH
         r#"npm install -g @anthropic-ai/claude-code 2>&1 && \
            CLAUDE_BIN=$(command -v claude 2>/dev/null || echo "") && \
-           if [ -n "$CLAUDE_BIN" ]; then sudo ln -sf "$CLAUDE_BIN" /usr/bin/claude && echo "Symlinked $CLAUDE_BIN → /usr/bin/claude"; fi"#.to_string()
+           if [ -n "$CLAUDE_BIN" ]; then \
+             sudo ln -sf "$CLAUDE_BIN" /usr/bin/claude && echo "Symlinked $CLAUDE_BIN → /usr/bin/claude"; \
+             NODE_BIN=$(dirname "$CLAUDE_BIN")/node; \
+             if [ -f "$NODE_BIN" ]; then sudo ln -sf "$NODE_BIN" /usr/local/bin/node && echo "Symlinked node → /usr/local/bin/node"; fi; \
+           fi"#.to_string()
     } else {
         emit("npm not found — installing NVM + Node LTS + Claude Code…");
         // Install NVM without modifying shell config files (PROFILE=/dev/null),
@@ -593,7 +597,11 @@ pub async fn install_remote_claude(
            nvm install --lts 2>&1 && \
            npm install -g @anthropic-ai/claude-code 2>&1 && \
            CLAUDE_BIN=$(command -v claude 2>/dev/null || echo "") && \
-           if [ -n "$CLAUDE_BIN" ]; then sudo ln -sf "$CLAUDE_BIN" /usr/bin/claude && echo "Symlinked $CLAUDE_BIN → /usr/bin/claude"; fi"#.to_string()
+           if [ -n "$CLAUDE_BIN" ]; then \
+             sudo ln -sf "$CLAUDE_BIN" /usr/bin/claude && echo "Symlinked $CLAUDE_BIN → /usr/bin/claude"; \
+             NODE_BIN=$(dirname "$CLAUDE_BIN")/node; \
+             if [ -f "$NODE_BIN" ]; then sudo ln -sf "$NODE_BIN" /usr/local/bin/node && echo "Symlinked node → /usr/local/bin/node"; fi; \
+           fi"#.to_string()
     };
 
     // Run the install script, streaming output line by line
