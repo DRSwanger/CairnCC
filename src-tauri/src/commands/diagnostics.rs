@@ -450,9 +450,17 @@ pub async fn test_remote_host(
     // Step 2: CLI check (15s timeout)
     let claude_bin = remote_claude_path.as_deref().unwrap_or("claude");
     let escaped_bin = shell_escape(claude_bin);
-    // `command -v` is POSIX-portable (works on Linux, macOS, and most BSDs).
-    // `which` is not guaranteed on all systems and behaves inconsistently.
-    let check_cmd_str = format!("command -v {} && {} --version", escaped_bin, escaped_bin);
+    // Try PATH first, then fall back to common install locations.
+    // Non-interactive SSH sessions often have a minimal PATH that misses
+    // /usr/local/bin or NVM paths even when the binary exists there.
+    let check_cmd_str = format!(
+        r#"CLAUDE=$(command -v {bin} 2>/dev/null \
+            || ls /usr/bin/claude /usr/local/bin/claude "$HOME/.local/bin/claude" \
+                  "$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node/ 2>/dev/null | tail -1)/bin/claude" \
+               2>/dev/null | head -1); \
+           [ -n "$CLAUDE" ] && echo "$CLAUDE" && "$CLAUDE" --version"#,
+        bin = escaped_bin
+    );
 
     let mut cli_cmd = TokioCommand::new("ssh");
     cli_cmd.args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]);
@@ -652,7 +660,7 @@ pub async fn install_remote_claude(
     let check = {
         let mut cmd = TokioCommand::new("ssh");
         cmd.args(&ssh_args_base)
-           .arg("command -v claude && claude --version");
+           .arg(r#"CLAUDE=$(command -v claude 2>/dev/null || ls /usr/bin/claude /usr/local/bin/claude 2>/dev/null | head -1); [ -n "$CLAUDE" ] && echo "$CLAUDE" && "$CLAUDE" --version"#);
         cmd.stdout(std::process::Stdio::piped())
            .stderr(std::process::Stdio::null())
            .kill_on_drop(true);
