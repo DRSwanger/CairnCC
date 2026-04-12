@@ -23,10 +23,18 @@
   // Drip animation — purely time-based, no per-frame char cap.
   // Elapsed time is clamped to 50ms so backgrounded/frozen tabs don't
   // produce a huge single-frame jump when they resume.
-  const STREAM_RATE = 120; // chars/sec during streaming
-  const DRAIN_RATE  = 300; // chars/sec after streaming ends
+  const STREAM_RATE = 80;  // chars/sec during streaming
+  const DRAIN_RATE  = 200; // chars/sec after streaming ends
   const MAX_ELAPSED = 50;  // ms — clamp elapsed to avoid jump after tab-suspend
   let dripText = $state(text);
+
+  // Eagerly mark draining=true the moment text grows beyond dripText.
+  // This runs synchronously in Svelte's reactive flush — before DOM updates —
+  // so the parent {#if streamingDraining} container never collapses mid-drain,
+  // preventing the race condition that flashes the fully-rendered timeline entry.
+  $effect(() => {
+    if (text.length > dripText.length) draining = true;
+  });
 
   onMount(() => {
     let rafId: number;
