@@ -68,6 +68,12 @@
   "plugins": {
     "shell": {
       "open": true
+    },
+    "updater": {
+      "pubkey": "RWS5Tw6qY4dIipT6InI3A6YiGgR8O5d5F9uPXMz3KYmdMDRpQ8LL/WIH",
+      "endpoints": [
+        "https://github.com/DRSwanger/CairnCC/releases/latest/download/latest.json"
+      ]
     }
   }
 }

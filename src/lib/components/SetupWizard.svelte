@@ -480,7 +480,7 @@
                 id="remote-host"
                 type="text"
                 bind:value={remoteFormHost}
-                placeholder="192.168.1.100"
+                placeholder="192.168.1.x or hostname"
                 class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:border-ring {remoteFormTouched && !remoteFormHost.trim() ? 'border-destructive' : ''}"
               />
             </div>
@@ -503,7 +503,7 @@
                 id="remote-user"
                 type="text"
                 bind:value={remoteFormUser}
-                placeholder="dallas"
+                placeholder="username"
                 class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:border-ring {remoteFormTouched && !remoteFormUser.trim() ? 'border-destructive' : ''}"
               />
             </div>
@@ -590,8 +590,19 @@
 
         <!-- Test result -->
         {#if remoteTestResult}
-          <div class="rounded-lg border p-3 flex flex-col gap-1.5 {remoteTestResult.ssh_ok ? 'border-green-500/30 bg-green-500/5' : 'border-destructive/30 bg-destructive/5'}">
-            <div class="flex items-center gap-2 text-xs font-medium {remoteTestResult.ssh_ok ? 'text-green-500' : 'text-destructive'}">
+          <div class="rounded-lg border p-3 flex flex-col gap-1.5
+            {remoteTestResult.ssh_ok && remoteTestResult.cli_found
+              ? 'border-green-500/30 bg-green-500/5'
+              : remoteTestResult.ssh_ok
+                ? 'border-amber-500/30 bg-amber-500/5'
+                : 'border-destructive/30 bg-destructive/5'}">
+            <!-- Status row -->
+            <div class="flex items-center gap-2 text-xs font-medium
+              {remoteTestResult.ssh_ok && remoteTestResult.cli_found
+                ? 'text-green-500'
+                : remoteTestResult.ssh_ok
+                  ? 'text-amber-400'
+                  : 'text-destructive'}">
               {#if remoteTestResult.ssh_ok}
                 <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
                 SSH connected
@@ -600,18 +611,18 @@
                 Connection failed
               {/if}
             </div>
+
+            <!-- Claude Code found -->
             {#if remoteTestResult.ssh_ok && remoteTestResult.cli_found}
-              <p class="text-xs text-muted-foreground">Claude Code found: <code class="font-mono">{remoteTestResult.cli_version ?? "unknown version"}</code></p>
-            {:else if remoteTestResult.ssh_ok && !remoteTestResult.cli_found}
-              <div class="mt-2 flex flex-col gap-2">
+              <p class="text-xs text-muted-foreground">
+                Claude Code ready: <code class="font-mono">{remoteTestResult.cli_version ?? "unknown version"}</code>
+              </p>
+            {/if}
+
+            <!-- Claude not found, no install attempted yet -->
+            {#if remoteTestResult.ssh_ok && !remoteTestResult.cli_found && remoteInstallLog.length === 0}
+              <div class="flex flex-col gap-2 mt-1">
                 <p class="text-xs text-amber-400">SSH works but Claude Code wasn't found on the remote machine.</p>
-                {#if remoteInstallLog.length > 0}
-                  <div class="max-h-36 overflow-y-auto rounded-lg bg-black/40 px-2.5 py-2">
-                    {#each remoteInstallLog as line}
-                      <p class="text-xs font-mono text-green-400/80 leading-relaxed">{line}</p>
-                    {/each}
-                  </div>
-                {/if}
                 <button
                   class="w-full rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
                   onclick={installClaudeOnRemote}
@@ -621,6 +632,25 @@
                 </button>
               </div>
             {/if}
+
+            <!-- Install log (persists after install completes, success or failure) -->
+            {#if remoteInstallLog.length > 0}
+              <div class="max-h-40 overflow-y-auto rounded-lg bg-black/40 px-2.5 py-2 mt-1">
+                {#each remoteInstallLog as line}
+                  <p class="text-xs font-mono text-green-400/80 leading-relaxed">{line}</p>
+                {/each}
+              </div>
+              <!-- Retry if install finished but claude still not found -->
+              {#if !remoteInstalling && !remoteTestResult.cli_found}
+                <button
+                  class="w-full rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-colors"
+                  onclick={installClaudeOnRemote}
+                >
+                  Retry Install
+                </button>
+              {/if}
+            {/if}
+
             {#if remoteTestResult.error && !remoteTestResult.ssh_ok}
               <p class="text-xs text-muted-foreground">{remoteTestResult.error}</p>
             {/if}
