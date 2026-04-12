@@ -27,7 +27,10 @@
   // Elapsed time is clamped to 50ms so backgrounded/frozen tabs don't
   // produce a huge single-frame jump when they resume.
   const MAX_ELAPSED = 50;  // ms — clamp elapsed to avoid jump after tab-suspend
-  let dripText = $state(text);
+  // Start from "" when mounting during active streaming so there's no burst of
+  // pre-buffered text. Start from the full text for historical (already-complete)
+  // messages so they render instantly without animating on page load.
+  let dripText = $state(streaming ? "" : text);
 
   // Eagerly mark draining=true the moment text grows beyond dripText.
   // This runs synchronously in Svelte's reactive flush — before DOM updates —
