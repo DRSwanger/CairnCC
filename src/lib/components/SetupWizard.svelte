@@ -8,6 +8,7 @@
     checkSshKey,
     generateSshKey,
     testRemoteHost,
+    installRemoteClaude,
   } from "$lib/api";
   import type { InstallMethod, PlatformPreset, RemoteHost, RemoteTestResult, SshKeyInfo } from "$lib/types";
   import { PLATFORM_PRESETS, PRESET_CATEGORIES } from "$lib/utils/platform-presets";
@@ -65,6 +66,8 @@
   let remoteTesting = $state(false);
   let remoteSaving = $state(false);
   let remoteError = $state("");
+  let remoteInstalling = $state(false);
+  let remoteInstallLog = $state<string[]>([]);
 
   // ── SSH key mini-wizard ──
   type SshKeyStep = "idle" | "checking" | "no_key" | "has_key" | "pub_missing" | "generating" | "done" | "error";
@@ -157,6 +160,31 @@
       remoteError = String(e);
     } finally {
       remoteTesting = false;
+    }
+  }
+
+  async function installClaudeOnRemote() {
+    remoteInstalling = true;
+    remoteInstallLog = ["Starting installation…"];
+    const transport = getTransport();
+    const unlisten = await transport.listen<string>("remote-install-progress", (line) => {
+      remoteInstallLog = [...remoteInstallLog, line];
+    });
+    try {
+      const keyPath = (sshKeyInfo?.key_path ?? remoteFormKeyPath).trim() || undefined;
+      const result = await installRemoteClaude(
+        remoteFormHost.trim(),
+        remoteFormUser.trim(),
+        remoteFormPort || undefined,
+        keyPath,
+      );
+      remoteTestResult = result;
+      if (!result.cli_found) remoteError = result.error ?? "Installation failed";
+    } catch (e) {
+      remoteError = String(e);
+    } finally {
+      unlisten();
+      remoteInstalling = false;
     }
   }
 
@@ -575,7 +603,23 @@
             {#if remoteTestResult.ssh_ok && remoteTestResult.cli_found}
               <p class="text-xs text-muted-foreground">Claude Code found: <code class="font-mono">{remoteTestResult.cli_version ?? "unknown version"}</code></p>
             {:else if remoteTestResult.ssh_ok && !remoteTestResult.cli_found}
-              <p class="text-xs text-amber-500">SSH works but Claude Code wasn't found on the server. Make sure it's installed there.</p>
+              <div class="mt-2 flex flex-col gap-2">
+                <p class="text-xs text-amber-400">SSH works but Claude Code wasn't found on the remote machine.</p>
+                {#if remoteInstallLog.length > 0}
+                  <div class="max-h-36 overflow-y-auto rounded-lg bg-black/40 px-2.5 py-2">
+                    {#each remoteInstallLog as line}
+                      <p class="text-xs font-mono text-green-400/80 leading-relaxed">{line}</p>
+                    {/each}
+                  </div>
+                {/if}
+                <button
+                  class="w-full rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                  onclick={installClaudeOnRemote}
+                  disabled={remoteInstalling}
+                >
+                  {remoteInstalling ? "Installing…" : "Install Claude Code on remote machine"}
+                </button>
+              </div>
             {/if}
             {#if remoteTestResult.error && !remoteTestResult.ssh_ok}
               <p class="text-xs text-muted-foreground">{remoteTestResult.error}</p>

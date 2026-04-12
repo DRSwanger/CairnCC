@@ -185,6 +185,7 @@ pub fn run() {
             commands::stats::get_changelog,
             commands::diagnostics::check_agent_cli,
             commands::diagnostics::test_remote_host,
+            commands::diagnostics::install_remote_claude,
             commands::diagnostics::get_cli_dist_tags,
             commands::diagnostics::check_project_init,
             commands::diagnostics::check_ssh_key,

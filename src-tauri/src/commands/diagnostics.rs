@@ -508,6 +508,188 @@ pub async fn test_remote_host(
     })
 }
 
+/// Install Claude Code on a remote host over SSH.
+///
+/// Strategy:
+///   1. If `npm` is available → `npm install -g @anthropic-ai/claude-code`
+///   2. Otherwise → install NVM, then Node LTS, then Claude Code
+///   3. After install, symlink the binary into `/usr/bin/claude` so it's
+///      always on PATH for non-interactive SSH sessions.
+///
+/// Streams progress lines via the `remote-install-progress` Tauri event.
+#[tauri::command]
+pub async fn install_remote_claude(
+    app: tauri::AppHandle,
+    host: String,
+    user: String,
+    port: Option<u16>,
+    key_path: Option<String>,
+) -> Result<RemoteTestResult, String> {
+    use tauri::Emitter;
+    use tokio::io::AsyncBufReadExt;
+    use tokio::process::Command as TokioCommand;
+
+    let port = port.unwrap_or(22);
+    let target = format!("{}@{}", user, host);
+
+    let emit = |msg: &str| {
+        let _ = app.emit("remote-install-progress", msg.to_string());
+    };
+
+    // Build a helper that runs a single SSH command and streams stdout+stderr
+    let ssh_args_base: Vec<String> = {
+        let mut a = vec![
+            "-o".into(), "BatchMode=yes".into(),
+            "-o".into(), "ConnectTimeout=15".into(),
+            "-o".into(), "StrictHostKeyChecking=accept-new".into(),
+            "-p".into(), port.to_string(),
+        ];
+        if let Some(ref k) = key_path {
+            a.push("-i".into());
+            a.push(expand_local_tilde(k));
+        }
+        a.push(target.clone());
+        a
+    };
+
+    emit("Checking for npm on remote…");
+
+    // Step 1: does npm exist?
+    let npm_check = {
+        let mut cmd = TokioCommand::new("ssh");
+        cmd.args(&ssh_args_base).arg("command -v npm");
+        cmd.stdout(std::process::Stdio::piped())
+           .stderr(std::process::Stdio::null())
+           .kill_on_drop(true);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cmd.output(),
+        ).await
+    };
+    let has_npm = matches!(npm_check, Ok(Ok(o)) if o.status.success());
+
+    let install_script = if has_npm {
+        emit("npm found — installing @anthropic-ai/claude-code…");
+        // Use npm global install, then symlink into /usr/bin for PATH-clean SSH
+        r#"npm install -g @anthropic-ai/claude-code 2>&1 && \
+           CLAUDE_BIN=$(command -v claude 2>/dev/null || echo "") && \
+           if [ -n "$CLAUDE_BIN" ]; then sudo ln -sf "$CLAUDE_BIN" /usr/bin/claude && echo "Symlinked $CLAUDE_BIN → /usr/bin/claude"; fi"#.to_string()
+    } else {
+        emit("npm not found — installing NVM + Node LTS + Claude Code…");
+        // Install NVM without modifying shell config files (PROFILE=/dev/null),
+        // source it in the same shell, install Node LTS, then install Claude Code,
+        // then symlink.
+        r#"export NVM_DIR="$HOME/.nvm" && \
+           curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | PROFILE=/dev/null bash 2>&1 && \
+           . "$HOME/.nvm/nvm.sh" && \
+           nvm install --lts 2>&1 && \
+           npm install -g @anthropic-ai/claude-code 2>&1 && \
+           CLAUDE_BIN=$(command -v claude 2>/dev/null || echo "") && \
+           if [ -n "$CLAUDE_BIN" ]; then sudo ln -sf "$CLAUDE_BIN" /usr/bin/claude && echo "Symlinked $CLAUDE_BIN → /usr/bin/claude"; fi"#.to_string()
+    };
+
+    // Run the install script, streaming output line by line
+    let mut cmd = TokioCommand::new("ssh");
+    cmd.args(&ssh_args_base).arg(&install_script);
+    cmd.stdout(std::process::Stdio::piped())
+       .stderr(std::process::Stdio::piped())
+       .kill_on_drop(true);
+
+    let mut child = cmd.spawn().map_err(|e| format!("SSH spawn failed: {e}"))?;
+
+    let stdout = child.stdout.take().map(tokio::io::BufReader::new);
+    let stderr = child.stderr.take().map(tokio::io::BufReader::new);
+
+    // Stream stdout
+    if let Some(mut reader) = stdout {
+        let app2 = app.clone();
+        tokio::spawn(async move {
+            let mut line = String::new();
+            while let Ok(n) = reader.read_line(&mut line).await {
+                if n == 0 { break; }
+                let _ = app2.emit("remote-install-progress", line.trim_end().to_string());
+                line.clear();
+            }
+        });
+    }
+    // Stream stderr
+    if let Some(mut reader) = stderr {
+        let app3 = app.clone();
+        tokio::spawn(async move {
+            let mut line = String::new();
+            while let Ok(n) = reader.read_line(&mut line).await {
+                if n == 0 { break; }
+                let trimmed = line.trim_end().to_string();
+                if !trimmed.is_empty() {
+                    let _ = app3.emit("remote-install-progress", trimmed);
+                }
+                line.clear();
+            }
+        });
+    }
+
+    let status = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        child.wait(),
+    ).await
+    .map_err(|_| "Install timed out after 5 minutes".to_string())?
+    .map_err(|e| format!("Install process error: {e}"))?;
+
+    if !status.success() {
+        emit("Installation failed — see output above.");
+        return Ok(RemoteTestResult {
+            ssh_ok: true,
+            cli_found: false,
+            cli_path: None,
+            cli_version: None,
+            error: Some("Installation failed".into()),
+        });
+    }
+
+    emit("Verifying installation…");
+
+    // Re-run the CLI check
+    let check = {
+        let mut cmd = TokioCommand::new("ssh");
+        cmd.args(&ssh_args_base)
+           .arg("command -v claude && claude --version");
+        cmd.stdout(std::process::Stdio::piped())
+           .stderr(std::process::Stdio::null())
+           .kill_on_drop(true);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cmd.output(),
+        ).await
+    };
+
+    match check {
+        Ok(Ok(o)) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            let mut lines = stdout.lines();
+            let path = lines.next().map(str::to_string);
+            let version = lines.next().map(str::to_string);
+            emit(&format!("Claude Code installed: {}", version.as_deref().unwrap_or("unknown")));
+            Ok(RemoteTestResult {
+                ssh_ok: true,
+                cli_found: true,
+                cli_path: path,
+                cli_version: version,
+                error: None,
+            })
+        }
+        _ => {
+            emit("Install appeared to succeed but claude still not found in PATH.");
+            Ok(RemoteTestResult {
+                ssh_ok: true,
+                cli_found: false,
+                cli_path: None,
+                cli_version: None,
+                error: Some("claude not found after install".into()),
+            })
+        }
+    }
+}
+
 /// Check if a project directory has been initialized (has CLAUDE.md).
 #[tauri::command]
 pub fn check_project_init(cwd: String) -> Result<ProjectInitStatus, String> {

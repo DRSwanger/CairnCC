@@ -409,6 +409,21 @@ export async function testRemoteHost(
   });
 }
 
+export async function installRemoteClaude(
+  host: string,
+  user: string,
+  port?: number,
+  keyPath?: string,
+): Promise<RemoteTestResult> {
+  dbg("api", "installRemoteClaude", { host, user, port });
+  return invoke<RemoteTestResult>("install_remote_claude", {
+    host,
+    user,
+    port: port ?? null,
+    keyPath: keyPath ?? null,
+  });
+}
+
 // CLI Control Protocol
 export async function getCliInfo(forceRefresh?: boolean): Promise<CliInfo> {
   dbg("api", "getCliInfo", { forceRefresh });
