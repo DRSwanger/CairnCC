@@ -1699,7 +1699,7 @@
       prevSt = st;
       if (isChatAutoScroll) {
         requestAnimationFrame(() => {
-          if (chatAreaRef) chatAreaRef.scrollTo({ top: chatAreaRef.scrollHeight, behavior: "smooth" });
+          if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
         });
       } else if (changed) {
         showChatScrollHint = true;
@@ -4393,7 +4393,7 @@
 
               <!-- Streaming text -->
               {#if store.streamingText}
-                <div class="w-full animate-fade-in">
+                <div class="w-full animate-fade-in" out:fade={{ duration: 120 }}>
                   <div class="chat-content-width py-4">
                     <div class="mb-1.5 flex items-center gap-2">
                       <div
