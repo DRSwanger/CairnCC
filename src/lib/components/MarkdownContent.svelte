@@ -10,12 +10,15 @@
     basePath = "",
     class: className = "",
     draining = $bindable(false),
+    rate = 35,
   }: {
     text?: string;
     streaming?: boolean;
     basePath?: string;
     class?: string;
     draining?: boolean;
+    /** Drip speed in chars/sec during streaming. Drain uses rate * 2. */
+    rate?: number;
   } = $props();
 
   let container: HTMLDivElement | undefined = $state();
@@ -23,8 +26,6 @@
   // Drip animation — purely time-based, no per-frame char cap.
   // Elapsed time is clamped to 50ms so backgrounded/frozen tabs don't
   // produce a huge single-frame jump when they resume.
-  const STREAM_RATE = 80;  // chars/sec during streaming
-  const DRAIN_RATE  = 200; // chars/sec after streaming ends
   const MAX_ELAPSED = 50;  // ms — clamp elapsed to avoid jump after tab-suspend
   let dripText = $state(text);
 
@@ -45,8 +46,8 @@
       if (dripText.length < text.length) {
         draining = true;
         const elapsed = Math.min(now - lastTime, MAX_ELAPSED);
-        const rate = streaming ? STREAM_RATE : DRAIN_RATE;
-        const ideal = remainder + (elapsed / 1000) * rate;
+        const streamRate = streaming ? rate : rate * 2;
+        const ideal = remainder + (elapsed / 1000) * streamRate;
         const chars = Math.floor(ideal);
         remainder = ideal - chars;
         if (chars > 0) {

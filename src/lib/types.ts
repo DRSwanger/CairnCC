@@ -150,6 +150,8 @@ export interface UserSettings {
   web_server_bind?: string;
   web_server_allowed_origins?: string[];
   web_server_tunnel_url?: string;
+  /** Text drip speed chars/sec during streaming. Drain = drip_rate * 2. Default 35. */
+  drip_rate?: number;
   updated_at: string;
 }
 

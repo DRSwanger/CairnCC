@@ -4450,6 +4450,7 @@
                         text={store.streamingText || lastStreamingText}
                         streaming={!!store.streamingText}
                         bind:draining={streamingDraining}
+                        rate={settings?.drip_rate ?? 35}
                       />
                     </div>
                   </div>

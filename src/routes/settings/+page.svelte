@@ -1426,6 +1426,33 @@
               </span>
             </div>
           </div>
+
+          <!-- Drip speed -->
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-sm font-medium">Text drip speed</p>
+              <p class="text-xs text-muted-foreground">How fast streaming text is revealed. Drain is 2× this rate.</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <input
+                type="range"
+                min="10"
+                max="300"
+                step="5"
+                value={settings?.drip_rate ?? 35}
+                class="w-28 accent-primary"
+                onchange={async (e) => {
+                  const v = parseInt((e.target as HTMLInputElement).value);
+                  if (settings) {
+                    settings = await api.updateUserSettings({ drip_rate: v });
+                  }
+                }}
+              />
+              <span class="text-xs text-muted-foreground w-16 text-right">
+                {settings?.drip_rate ?? 35} chars/s
+              </span>
+            </div>
+          </div>
         </Card>
 
         <!-- Web Server Card (desktop only) -->
