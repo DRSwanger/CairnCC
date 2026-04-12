@@ -58,8 +58,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__-draft
-          releaseName: "CairnCC v__VERSION__-draft"
+          tagName: v__VERSION__-1
+          releaseName: "CairnCC v__VERSION__-1"
           releaseBody: "Draft build — not for public release."
           releaseDraft: true
           prerelease: false
