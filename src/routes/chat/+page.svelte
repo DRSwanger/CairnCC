@@ -112,6 +112,8 @@
   let folderCwdOverride = $state("");
   let chatAreaRef: HTMLDivElement | undefined = $state();
   let isChatAutoScroll = $state(true);
+  /** True once history has finished rendering — gates in:fly so bulk history loads don't animate. */
+  let historyLoaded = $state(true);
   /** Non-reactive flag: suppresses auto-scroll reset during search scroll-to navigation. */
   let _scrollToInFlight = false;
   let showChatScrollHint = $state(false);
@@ -641,6 +643,7 @@
     toolFilter = null;
     cancelProgressive();
     const gen = ++progressiveGen;
+    historyLoaded = false;
 
     // Capture scrollTo BEFORE loadRun — URL may change during async load
     const scrollTo = $page.url.searchParams.get("scrollTo");
@@ -682,6 +685,7 @@
 
     if (scrollTo) {
       await tick();
+      historyLoaded = true;
       scrollToMessage(scrollTo);
       _scrollToInFlight = false;
       // Clean scrollTo from URL — safe because $effect depends on
@@ -692,6 +696,7 @@
     } else {
       // Scroll to bottom after DOM update — ensures content-visibility triggers re-layout
       await tick();
+      historyLoaded = true;
       requestAnimationFrame(() => {
         if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
       });
@@ -1791,7 +1796,7 @@
 
   function scrollChatToBottom() {
     if (chatAreaRef) {
-      chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
+      chatAreaRef.scrollTo({ top: chatAreaRef.scrollHeight, behavior: "smooth" });
       showChatScrollHint = false;
       isChatAutoScroll = true;
     }
@@ -3235,7 +3240,7 @@
       for (const c of cvEls) c.style.contentVisibility = "visible";
 
       el.getBoundingClientRect(); // force reflow
-      el.scrollIntoView({ behavior: "instant", block: "center" });
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
       el.classList.add("ring-2", "ring-primary/50");
 
       // Restore content-visibility after scroll settles
@@ -4146,7 +4151,7 @@
                     id="msg-{entry.anchorId}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
-                    in:fly={{ y: 14, duration: 320, delay: Math.min(i * 25, 120), easing: cubicOut }}
+                    in:fly={historyLoaded ? { y: 14, duration: 320, delay: Math.min(i * 25, 120), easing: cubicOut } : { duration: 0 }}
                     class:opacity-40={lastClearSepId !== null &&
                       (timelineIdIndex.get(entry.id) ?? 0) <
                         (timelineIdIndex.get(lastClearSepId) ?? 0)}
@@ -4739,13 +4744,13 @@
 
             <!-- Status label (three states) -->
             {#if store.thinkingText && store.isRunning}
-              <span class="text-xs font-medium thinking-shimmer">{t("chat_thinking")}</span>
+              <span class="text-xs font-medium thinking-shimmer">{spinnerVerb}…</span>
               <span class="thinking-bounce-dots" aria-hidden="true"><span></span><span></span><span></span></span>
             {:else if store.isRunning}
-              <span class="text-xs font-medium text-blue-400/60">{t("chat_thinking")}</span>
+              <span class="text-xs font-medium text-blue-400/60">{spinnerVerb}…</span>
               <div class="h-2 w-2 rounded-full border border-blue-400/30 border-t-blue-400 animate-spin shrink-0"></div>
             {:else}
-              <span class="text-xs font-medium text-blue-400/40">{t("chat_thinking")}</span>
+              <span class="text-xs font-medium text-blue-400/40">{spinnerVerb}…</span>
             {/if}
 
             <!-- Chevron toggle -->
