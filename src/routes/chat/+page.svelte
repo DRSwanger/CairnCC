@@ -355,6 +355,16 @@
     return [...names].sort();
   });
 
+  /** Latches true the moment streaming text appears in the current run; resets when run ends. */
+  let runHasStreamed = $state(false);
+  $effect(() => {
+    if (store.streamingText) {
+      runHasStreamed = true;
+    } else if (!store.isRunning) {
+      runHasStreamed = false;
+    }
+  });
+
   let filteredTimeline = $derived.by(() => {
     let tl = store.timeline;
     // During greeting: hide user prompt and all tool activity — only show Claude's final response
@@ -362,12 +372,20 @@
       const userCount = tl.filter((e) => e.kind === "user").length;
       if (userCount <= 1) tl = tl.filter((e) => e.kind === "assistant");
     }
-    // While running: hide tool cards and command output — thinking overlay covers this period
-    if (store.isRunning && !store.streamingText) {
+    // Pre-streaming thinking phase: hide tool cards — once streaming starts (runHasStreamed),
+    // never re-hide so tool cards don't flash out when streamingText clears at run end.
+    if (store.isRunning && !store.streamingText && !runHasStreamed) {
       tl = tl.filter((e) => e.kind !== "tool" && e.kind !== "command_output");
     }
-    if (!toolFilter) return tl;
-    return tl.filter((e) => e.kind !== "tool" || e.tool.tool_name === toolFilter);
+    // Hide non-interactive tool cards from the main chat — keep only cards that need
+    // user input (permission prompts, AskUserQuestion) so those are never silently dropped.
+    tl = tl.filter((e) => {
+      if (e.kind !== "tool") return true;
+      return e.tool.status === "permission_prompt" ||
+             e.tool.status === "ask_pending" ||
+             (e.tool.tool_name === "AskUserQuestion" && e.tool.status === "running");
+    });
+    return tl;
   });
 
   let visibleTimeline = $derived.by(() => {
@@ -1202,46 +1220,63 @@
   let greetingRunId = $state<string | null>(null);
   let greetingStarted = $state(false);
 
-  onMount(() => {
-    if (!runId && !store.run) {
-      tick().then(async () => {
-        try {
-          // Purge any stale greeting runs from previous sessions
-          const allRuns = await api.listRuns();
-          const staleGreetings = allRuns
-            .filter((r) => r.prompt?.startsWith("Review your memory files and greet me"))
-            .map((r) => r.id);
-          if (staleGreetings.length > 0) {
-            await api.softDeleteRuns(staleGreetings);
-            window.dispatchEvent(new Event("ocv:runs-changed"));
-          }
+  async function startGreeting() {
+    if (greetingStarted) return;
+    try {
+      // Purge any stale greeting runs from previous sessions
+      const allRuns = await api.listRuns();
+      const staleGreetings = allRuns
+        .filter((r) => r.prompt?.startsWith("Review your memory files and greet me"))
+        .map((r) => r.id);
+      if (staleGreetings.length > 0) {
+        await api.softDeleteRuns(staleGreetings);
+        window.dispatchEvent(new Event("ocv:runs-changed"));
+      }
 
-          const freshSettings = await api.getUserSettings();
-          const cwd =
-            localStorage.getItem("ocv:project-cwd") ||
-            localStorage.getItem("ocv:settings-cwd") ||
-            freshSettings.working_directory ||
-            "";
-          if (!cwd || cwd === "/") return;
-          // Sync remote host before greeting fires — the settings onMount races against
-          // this block and may not have set store.remoteHostName yet on first run.
-          if (!store.remoteHostName && (freshSettings.remote_hosts?.length ?? 0) > 0) {
-            const lastTarget = localStorage.getItem("ocv:last-target");
-            const savedIsValid =
-              !!lastTarget && freshSettings.remote_hosts!.some((h) => h.name === lastTarget);
-            store.remoteHostName = savedIsValid ? lastTarget! : freshSettings.remote_hosts![0].name;
-          }
-          greetingStarted = true;
-          const newRunId = await store.startSession(GREETING_PROMPT, cwd, []);
-          greetingRunId = newRunId;
-          goto(`/chat?run=${newRunId}`, { replaceState: true });
-          window.dispatchEvent(new Event("ocv:runs-changed"));
-        } catch (e) {
-          dbgWarn("chat", "auto-greeting failed:", e);
-          greetingStarted = false;
-        }
+      const freshSettings = await api.getUserSettings();
+      const cwd =
+        localStorage.getItem("ocv:project-cwd") ||
+        localStorage.getItem("ocv:settings-cwd") ||
+        freshSettings.working_directory ||
+        "";
+      if (!cwd || cwd === "/") return;
+      // Sync remote host before greeting fires — the settings onMount races against
+      // this block and may not have set store.remoteHostName yet on first run.
+      if (!store.remoteHostName && (freshSettings.remote_hosts?.length ?? 0) > 0) {
+        const lastTarget = localStorage.getItem("ocv:last-target");
+        const savedIsValid =
+          !!lastTarget && freshSettings.remote_hosts!.some((h) => h.name === lastTarget);
+        store.remoteHostName = savedIsValid ? lastTarget! : freshSettings.remote_hosts![0].name;
+      }
+      sessionStorage.setItem("cairncc:greeted", "1");
+      greetingStarted = true;
+      const newRunId = await store.startSession(GREETING_PROMPT, cwd, []);
+      greetingRunId = newRunId;
+      goto(`/chat?run=${newRunId}`, { replaceState: true });
+      window.dispatchEvent(new Event("ocv:runs-changed"));
+    } catch (e) {
+      dbgWarn("chat", "auto-greeting failed:", e);
+      greetingStarted = false;
+    }
+  }
+
+  onMount(() => {
+    const alreadyGreeted = sessionStorage.getItem("cairncc:greeted") === "1";
+    if (!runId && !store.run && !alreadyGreeted) {
+      tick().then(() => startGreeting());
+    }
+
+    // Listen for explicit "New Chat" requests from the layout (handles same-route navigation)
+    function onNewChat() {
+      greetingStarted = false;
+      greetingRunId = null;
+      tick().then(async () => {
+        await store.loadRun("", xtermRef);
+        startGreeting();
       });
     }
+    window.addEventListener("ocv:new-chat", onNewChat);
+    return () => window.removeEventListener("ocv:new-chat", onNewChat);
   });
 
   /** True while the greeting is pending or actively running (first turn only). */
@@ -4110,48 +4145,14 @@
                   </div>
                 </div>
               {/if}
-              {#if toolNamesInTimeline.length >= 2}
-                <div class="chat-content-width py-2">
-                  <div class="flex flex-wrap items-center gap-1.5">
-                    <button
-                      class="rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors {!toolFilter
-                        ? 'bg-foreground/10 text-foreground'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
-                      onclick={() => (toolFilter = null)}>{t("chat_filterAll")}</button
-                    >
-                    {#each toolNamesInTimeline as name}
-                      {@const style = getToolColor(name)}
-                      <button
-                        class="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors {toolFilter ===
-                        name
-                          ? style.bg + ' ' + style.text
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
-                        onclick={() => (toolFilter = toolFilter === name ? null : name)}
-                      >
-                        <svg
-                          class="h-2.5 w-2.5"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d={style.icon} />
-                        </svg>
-                        {name}
-                      </button>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
+              <!-- Tool filter pill bar: hidden -->
               {#each visibleTimeline as entry, i (entry.id)}
                 {#if !(burstHiddenIndices.has(i) && !toolBursts.has(i))}
                   <div
                     id="msg-{entry.anchorId}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
-                    in:fly={historyLoaded ? { y: 14, duration: 280, easing: cubicOut } : { duration: 0 }}
+                    in:fly={historyLoaded ? { y: 10, duration: 600, easing: cubicOut } : { duration: 0 }}
                     class:opacity-40={lastClearSepId !== null &&
                       (timelineIdIndex.get(entry.id) ?? 0) <
                         (timelineIdIndex.get(lastClearSepId) ?? 0)}
@@ -4359,28 +4360,7 @@
                 </div>
               {/each}
 
-              <!-- Last turn usage annotation (after all entries) -->
-              {#if lastTurnUsage && !store.isRunning}
-                <div class="w-full py-1.5" in:fade={{ duration: 400, delay: 300 }}>
-                  <div class="chat-content-width">
-                    <div class="flex items-center gap-3">
-                      <div class="h-px flex-1 bg-border/40"></div>
-                      <span class="text-[10px] tabular-nums text-muted-foreground">
-                        {formatTokenCount(lastTurnUsage.inputTokens)}
-                        {t("chat_usageIn")} · {formatTokenCount(lastTurnUsage.outputTokens)}
-                        {t("chat_usageOut")}
-                        {#if lastTurnUsage.cacheReadTokens > 0 || lastTurnUsage.cacheWriteTokens > 0}
-                          · {t("chat_usageCache", {
-                            read: formatTokenCount(lastTurnUsage.cacheReadTokens),
-                            write: formatTokenCount(lastTurnUsage.cacheWriteTokens),
-                          })}
-                        {/if}
-                      </span>
-                      <div class="h-px flex-1 bg-border/40"></div>
-                    </div>
-                  </div>
-                </div>
-              {/if}
+              <!-- Last turn usage annotation: hidden -->
 
               <!-- Pending hook callbacks -->
               {#each store.hookEvents.filter((h) => h.status === "hook_pending") as hookEvent (hookEvent.request_id)}
@@ -4393,7 +4373,7 @@
 
               <!-- Streaming text -->
               {#if store.streamingText}
-                <div class="w-full animate-fade-in" out:fade={{ duration: 120 }}>
+                <div class="w-full animate-fade-in">
                   <div class="chat-content-width py-4">
                     <div class="mb-1.5 flex items-center gap-2">
                       <div
@@ -4721,14 +4701,16 @@
       </div>
     {/if}
 
+    <!-- Input area wrapper: relative so thinking panel can float above without shifting layout -->
+    <div class="relative">
+
     <!-- ── Thinking popup panel ──────────────────────────────────────────────
-         Lives above the input bar. Appears once when extended thinking starts,
-         stays up for the entire run (across all tool calls and thinking phases),
-         flies out smoothly when store.isRunning goes false.
-         No dependency on store.thinkingText for visibility = no mid-turn flicker. -->
+         Absolutely positioned above the input bar — no layout impact on chat content.
+         Appears once when extended thinking starts, stays up for the entire run,
+         flies out smoothly when store.isRunning goes false. -->
     {#if thinkingPanelVisible}
       <div
-        class="mx-3 mb-1.5"
+        class="absolute bottom-full left-0 right-0 px-3 pb-1.5"
         in:fly={{ y: 20, duration: 220, easing: cubicOut }}
         out:fly={{ y: 20, duration: 180, easing: cubicOut }}
       >
@@ -4832,6 +4814,8 @@
         }}
       />
     {/if}
+
+    </div> <!-- /relative input wrapper -->
   </div>
 
   <!-- Tool Activity sidebar -->

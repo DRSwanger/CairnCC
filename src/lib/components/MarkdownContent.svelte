@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { renderMarkdown, renderMermaidBlocks } from "$lib/utils/markdown";
   import { readFileBase64 } from "$lib/api";
   import { dbg, dbgWarn } from "$lib/utils/debug";
@@ -17,22 +18,31 @@
 
   let container: HTMLDivElement | undefined = $state();
 
-  // Throttled text for streaming mode: updates at most every 50ms
-  let throttledText = $state(text);
-  $effect(() => {
-    const t = text;
-    if (streaming) {
-      const timer = setTimeout(() => {
-        throttledText = t;
-      }, 50);
-      return () => clearTimeout(timer);
-    } else {
-      throttledText = t;
+  // Drip text for streaming: one persistent rAF loop advances dripText by DRIP_CHARS
+  // per frame toward the latest text prop. Never restarts on token arrival — avoids
+  // the cancel/restart jitter of the $effect approach.
+  const DRIP_CHARS = 3;
+  let dripText = $state(text);
+
+  onMount(() => {
+    let rafId: number;
+    function loop() {
+      if (streaming && dripText.length < text.length) {
+        dripText = text.slice(0, Math.min(dripText.length + DRIP_CHARS, text.length));
+      }
+      rafId = requestAnimationFrame(loop);
     }
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
   });
 
-  // Single render path: $derived ensures renderMarkdown is called exactly once per text change
-  let html = $derived(throttledText ? renderMarkdown(throttledText) : "");
+  // When streaming ends, snap immediately to full text
+  $effect(() => {
+    if (!streaming) dripText = text;
+  });
+
+  // Single render path: $derived ensures renderMarkdown is called exactly once per dripText change
+  let html = $derived(dripText ? renderMarkdown(dripText) : "");
 
   // Copy button handlers
   $effect(() => {
@@ -124,7 +134,7 @@
     prose-li:text-foreground
     {className}"
 >
-  {@html html}{#if streaming && throttledText}<span class="streaming-cursor"></span>{/if}
+  {@html html}
 </div>
 
 <!-- Lightbox -->

@@ -1018,16 +1018,22 @@
 
   function newChat() {
     showNewChatMenu = false;
+    sessionStorage.removeItem("cairncc:greeted");
+    window.dispatchEvent(new CustomEvent("ocv:new-chat", { detail: { memory: true } }));
     goto("/chat?memory=1");
   }
 
   function newChatNoMemory() {
     showNewChatMenu = false;
+    sessionStorage.removeItem("cairncc:greeted");
+    window.dispatchEvent(new CustomEvent("ocv:new-chat", { detail: { memory: false } }));
     goto("/chat?memory=0");
   }
 
   function newChatInFolder(cwd: string) {
+    sessionStorage.removeItem("cairncc:greeted");
     projectCwd = cwd;
+    window.dispatchEvent(new CustomEvent("ocv:new-chat", { detail: { memory: true } }));
     goto(`/chat?folder=${encodeURIComponent(cwd)}`);
   }
 
