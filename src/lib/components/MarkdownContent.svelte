@@ -18,18 +18,27 @@
 
   let container: HTMLDivElement | undefined = $state();
 
-  // Drip text for streaming: one persistent rAF loop advances dripText by DRIP_CHARS
-  // per frame toward the latest text prop. Never restarts on token arrival — avoids
-  // the cancel/restart jitter of the $effect approach.
-  const DRIP_CHARS = 3;
+  // Drip text for streaming: time-based reveal at CHARS_PER_SEC regardless of display
+  // refresh rate. Uses performance.now() so 60Hz, 120Hz, 144Hz all feel identical.
+  const CHARS_PER_SEC = 60;
   let dripText = $state(text);
 
   onMount(() => {
     let rafId: number;
-    function loop() {
+    let lastTime = performance.now();
+    let remainder = 0; // fractional chars carried between frames
+
+    function loop(now: number) {
       if (streaming && dripText.length < text.length) {
-        dripText = text.slice(0, Math.min(dripText.length + DRIP_CHARS, text.length));
+        const elapsed = now - lastTime;
+        const toReveal = remainder + (elapsed / 1000) * CHARS_PER_SEC;
+        const chars = Math.floor(toReveal);
+        remainder = toReveal - chars;
+        if (chars > 0) {
+          dripText = text.slice(0, Math.min(dripText.length + chars, text.length));
+        }
       }
+      lastTime = now;
       rafId = requestAnimationFrame(loop);
     }
     rafId = requestAnimationFrame(loop);
