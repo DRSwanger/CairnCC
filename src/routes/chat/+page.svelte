@@ -1908,6 +1908,23 @@
     }
   });
 
+  // ── Bypass-mode auto-approve ──
+  // When permissionMode is bypassPermissions, auto-allow all pending tool permissions
+  // so the user is never interrupted. The CLI still sends permission_prompt events
+  // (because --permission-prompt-tool stdio is always active), so CairnCC must handle
+  // the bypass itself.
+  $effect(() => {
+    if (store.permissionMode !== "bypassPermissions") return;
+    const pending = pendingToolPermissions;
+    if (pending.length === 0) return;
+    for (const { tool, requestId } of pending) {
+      dbg("chat", "bypass auto-approve", { requestId, tool: tool.tool_name });
+      handlePermissionRespond(requestId, "allow", undefined, tool.input as Record<string, unknown>).catch(
+        (e) => dbgWarn("chat", "bypass auto-approve failed", { requestId, reason: e }),
+      );
+    }
+  });
+
   // ── Send message ──
 
   async function sendMessage(text: string, attachments: Attachment[]) {
