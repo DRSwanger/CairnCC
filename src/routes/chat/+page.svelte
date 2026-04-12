@@ -1699,7 +1699,7 @@
       prevSt = st;
       if (isChatAutoScroll) {
         requestAnimationFrame(() => {
-          if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
+          if (chatAreaRef) chatAreaRef.scrollTo({ top: chatAreaRef.scrollHeight, behavior: "smooth" });
         });
       } else if (changed) {
         showChatScrollHint = true;
@@ -4060,7 +4060,7 @@
             </div>
           {:else}
             <!-- Timeline: chat messages + inline tool cards -->
-            <div>
+            <div class="pb-[32vh]">
               {#if isGreetingDone}
                 <!-- Memory status banner -->
                 <div class="chat-content-width pt-6 pb-2" in:fly={{ y: 8, duration: 400, easing: cubicOut }}>
@@ -4151,7 +4151,7 @@
                     id="msg-{entry.anchorId}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
-                    in:fly={historyLoaded ? { y: 14, duration: 320, delay: Math.min(i * 25, 120), easing: cubicOut } : { duration: 0 }}
+                    in:fly={historyLoaded ? { y: 14, duration: 280, easing: cubicOut } : { duration: 0 }}
                     class:opacity-40={lastClearSepId !== null &&
                       (timelineIdIndex.get(entry.id) ?? 0) <
                         (timelineIdIndex.get(lastClearSepId) ?? 0)}

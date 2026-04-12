@@ -17,14 +17,14 @@
 
   let container: HTMLDivElement | undefined = $state();
 
-  // Throttled text for streaming mode: updates at most every 150ms
+  // Throttled text for streaming mode: updates at most every 50ms
   let throttledText = $state(text);
   $effect(() => {
     const t = text;
     if (streaming) {
       const timer = setTimeout(() => {
         throttledText = t;
-      }, 150);
+      }, 50);
       return () => clearTimeout(timer);
     } else {
       throttledText = t;
