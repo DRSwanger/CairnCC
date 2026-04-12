@@ -20,14 +20,12 @@
 
   let container: HTMLDivElement | undefined = $state();
 
-  // Drip text for streaming.
-  // During streaming : 50 chars/sec, max 2 per frame.
-  // After streaming ends: smoothly ramps from 50 → 300 chars/sec over RAMP_MS so there's
-  // no jarring speed jump — just a gradual acceleration to clear the backlog.
-  const STREAM_RATE         = 100; // chars/sec during streaming
-  const DRAIN_RATE          = 300; // chars/sec after streaming ends
-  const MAX_PER_FRAME       = 4;   // cap during streaming
-  const MAX_DRAIN_PER_FRAME = 20;  // cap during drain
+  // Drip animation — purely time-based, no per-frame char cap.
+  // Elapsed time is clamped to 50ms so backgrounded/frozen tabs don't
+  // produce a huge single-frame jump when they resume.
+  const STREAM_RATE = 120; // chars/sec during streaming
+  const DRAIN_RATE  = 300; // chars/sec after streaming ends
+  const MAX_ELAPSED = 50;  // ms — clamp elapsed to avoid jump after tab-suspend
   let dripText = $state(text);
 
   onMount(() => {
@@ -38,12 +36,11 @@
     function loop(now: number) {
       if (dripText.length < text.length) {
         draining = true;
-        const elapsed = now - lastTime;
+        const elapsed = Math.min(now - lastTime, MAX_ELAPSED);
         const rate = streaming ? STREAM_RATE : DRAIN_RATE;
-        const cap  = streaming ? MAX_PER_FRAME : MAX_DRAIN_PER_FRAME;
         const ideal = remainder + (elapsed / 1000) * rate;
-        const chars = Math.min(Math.floor(ideal), cap);
-        remainder = ideal - Math.floor(ideal);
+        const chars = Math.floor(ideal);
+        remainder = ideal - chars;
         if (chars > 0) {
           dripText = text.slice(0, Math.min(dripText.length + chars, text.length));
         }
