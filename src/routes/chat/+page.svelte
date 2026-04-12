@@ -1342,13 +1342,15 @@
         try {
           const newRunId = await store.startSession(pendingPlan, cwd, []);
           goto(`/chat?run=${newRunId}`);
-          // Set permission mode to acceptEdits in new session
+          // Set permission mode for new session from user's saved preference
           // Wait for session to initialize first
           setTimeout(async () => {
             if (store.run) {
-              await api.setPermissionMode(store.run.id, "acceptEdits");
-              store.permissionMode = "acceptEdits";
-              dbg("chat", "new session permission mode set to acceptEdits");
+              const savedMode = settings?.permission_mode;
+              const cliMode = (savedMode && APP_TO_CLI_MODE[savedMode]) ?? "acceptEdits";
+              await api.setPermissionMode(store.run.id, cliMode);
+              store.permissionMode = cliMode;
+              dbg("chat", "new session permission mode set", { cliMode, savedMode });
             }
           }, 2000);
         } catch (e) {
