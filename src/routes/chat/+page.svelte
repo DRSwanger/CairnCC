@@ -1218,6 +1218,14 @@
             freshSettings.working_directory ||
             "";
           if (!cwd || cwd === "/") return;
+          // Sync remote host before greeting fires — the settings onMount races against
+          // this block and may not have set store.remoteHostName yet on first run.
+          if (!store.remoteHostName && (freshSettings.remote_hosts?.length ?? 0) > 0) {
+            const lastTarget = localStorage.getItem("ocv:last-target");
+            const savedIsValid =
+              !!lastTarget && freshSettings.remote_hosts!.some((h) => h.name === lastTarget);
+            store.remoteHostName = savedIsValid ? lastTarget! : freshSettings.remote_hosts![0].name;
+          }
           greetingStarted = true;
           const newRunId = await store.startSession(GREETING_PROMPT, cwd, []);
           greetingRunId = newRunId;
