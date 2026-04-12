@@ -353,6 +353,7 @@ impl Default for UserSettings {
             web_server_bind: None,
             web_server_allowed_origins: None,
             web_server_tunnel_url: None,
+            drip_rate: default_drip_rate(),
             updated_at: now_iso(),
         }
     }
