@@ -525,6 +525,11 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
     if let Some(v) = patch.get("onboarding_completed") {
         all.user.onboarding_completed = v.as_bool().unwrap_or(false);
     }
+    if let Some(v) = patch.get("drip_rate") {
+        if let Some(n) = v.as_u64() {
+            all.user.drip_rate = n.clamp(10, 300) as u32;
+        }
+    }
     all.user.updated_at = crate::models::now_iso();
     save(&all)?;
     Ok(all.user)
