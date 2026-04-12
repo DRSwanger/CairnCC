@@ -4361,7 +4361,7 @@
 
               <!-- Last turn usage annotation (after all entries) -->
               {#if lastTurnUsage && !store.isRunning}
-                <div class="w-full py-1.5">
+                <div class="w-full py-1.5" in:fade={{ duration: 400, delay: 300 }}>
                   <div class="chat-content-width">
                     <div class="flex items-center gap-3">
                       <div class="h-px flex-1 bg-border/40"></div>
