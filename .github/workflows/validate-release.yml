@@ -1,0 +1,44 @@
+name: Validate Release Config
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version consistency (Cargo.toml vs tauri.conf.json)
+        run: |
+          CARGO_VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          TAURI_VERSION=$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+
+          echo "Cargo.toml version : $CARGO_VERSION"
+          echo "tauri.conf.json version: $TAURI_VERSION"
+
+          if [ "$CARGO_VERSION" != "$TAURI_VERSION" ]; then
+            echo "❌ Version mismatch! Cargo.toml ($CARGO_VERSION) != tauri.conf.json ($TAURI_VERSION)"
+            exit 1
+          fi
+          echo "✅ Versions match: $CARGO_VERSION"
+
+      - name: Check release.yml draft tag format
+        run: |
+          TAG=$(grep 'tagName:' .github/workflows/release.yml | sed "s/.*tagName: //")
+          echo "Tag name in release.yml: $TAG"
+
+          # Must be v__VERSION__-N (draft) or v__VERSION__ (public release)
+          if echo "$TAG" | grep -qE '^v__VERSION__-[0-9]+$'; then
+            echo "✅ Draft tag format valid: $TAG"
+          elif echo "$TAG" | grep -qE '^v__VERSION__$'; then
+            echo "✅ Public release tag format valid: $TAG"
+          else
+            echo "❌ Invalid tag format: '$TAG'"
+            echo "   Expected: v__VERSION__-N  (draft, e.g. v__VERSION__-1)"
+            echo "        or:  v__VERSION__     (public release)"
+            exit 1
+          fi
