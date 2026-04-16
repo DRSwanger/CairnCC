@@ -202,7 +202,7 @@
       };
       await updateUserSettings({ remote_hosts: [newHost] });
       // Pre-select this host as the last target so the chat page auto-selects it
-      try { localStorage.setItem("ocv:last-target", newHost.name); } catch {}
+      try { localStorage.setItem("ocv:last-target", newHost.name); } catch { /* ignore storage errors */ }
       await completeOnboarding();
     } catch (e) {
       remoteError = String(e);

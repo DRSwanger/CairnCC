@@ -998,21 +998,13 @@ pub async fn read_remote_global_usage(
     let scan_secs = start.elapsed().as_secs_f64();
 
     // Convert daily_activity (JSONL-derived) into ScanActivityMap
-    let scan_activity: ScanActivityMap = result
-        .daily_activity
-        .into_iter()
-        .map(|(date, (msgs, sessions))| (date, (msgs, sessions)))
-        .collect();
+    let scan_activity: ScanActivityMap = result.daily_activity.into_iter().collect();
 
     // Convert stats_activity into the activity format
     let daily_activity: HashMap<String, (u32, u32, u32)> = result.stats_activity;
 
     // Convert daily_model into BTreeMap
-    let daily_model: DailyModelMap = result
-        .daily_model
-        .into_iter()
-        .map(|(date, models)| (date, models))
-        .collect();
+    let daily_model: DailyModelMap = result.daily_model.into_iter().collect();
 
     log::info!(
         "[claude_usage] remote scan done in {:.2}s: {} days, {} sessions",
