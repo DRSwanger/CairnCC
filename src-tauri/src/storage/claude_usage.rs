@@ -946,7 +946,9 @@ pub async fn read_remote_global_usage(
 
     // Check in-memory remote cache
     {
-        let lock = REMOTE_CACHE.lock().map_err(|e| format!("Remote cache lock: {e}"))?;
+        let lock = REMOTE_CACHE
+            .lock()
+            .map_err(|e| format!("Remote cache lock: {e}"))?;
         if let Some(ref cached) = *lock {
             if cached.host_key == host_key
                 && cached.computed_at.elapsed().as_secs() < REMOTE_CACHE_TTL_SECS
@@ -967,7 +969,10 @@ pub async fn read_remote_global_usage(
     let start = Instant::now();
 
     // Build SSH command: pipe the Python scanner script
-    let remote_cmd = format!("python3 -c {}", crate::agent::ssh::shell_escape(REMOTE_SCANNER_PY));
+    let remote_cmd = format!(
+        "python3 -c {}",
+        crate::agent::ssh::shell_escape(REMOTE_SCANNER_PY)
+    );
     let mut cmd = crate::agent::ssh::build_ssh_command(remote, &remote_cmd);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());

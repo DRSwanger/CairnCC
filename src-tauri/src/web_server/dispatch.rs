@@ -676,8 +676,7 @@ pub async fn dispatch_command(
                 .get("remoteHostName")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            let result =
-                crate::commands::stats::get_heatmap_daily(scope, remote_host_name).await?;
+            let result = crate::commands::stats::get_heatmap_daily(scope, remote_host_name).await?;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
         "get_changelog" => {
