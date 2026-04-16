@@ -658,7 +658,12 @@ pub async fn dispatch_command(
                 .get("days")
                 .and_then(|v| v.as_u64())
                 .map(|n| n as u32);
-            let result = crate::commands::stats::get_global_usage_overview(days)?;
+            let remote_host_name = params
+                .get("remoteHostName")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let result =
+                crate::commands::stats::get_global_usage_overview(days, remote_host_name).await?;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
         "clear_usage_cache" => {
@@ -667,7 +672,12 @@ pub async fn dispatch_command(
         }
         "get_heatmap_daily" => {
             let scope = extract_str(&params, "scope")?;
-            let result = crate::commands::stats::get_heatmap_daily(scope)?;
+            let remote_host_name = params
+                .get("remoteHostName")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let result =
+                crate::commands::stats::get_heatmap_daily(scope, remote_host_name).await?;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
         "get_changelog" => {

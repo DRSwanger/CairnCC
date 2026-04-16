@@ -813,12 +813,253 @@ pub(crate) fn compute_streaks(
     (active_days, current_streak, longest_streak)
 }
 
+// ── Remote usage scanning via SSH ──
+
+static REMOTE_CACHE: std::sync::LazyLock<Mutex<Option<RemoteCachedData>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
+
+const REMOTE_CACHE_TTL_SECS: u64 = 300;
+
+struct RemoteCachedData {
+    computed_at: Instant,
+    host_key: String, // "user@host:port" — invalidate if host changes
+    daily_model: DailyModelMap,
+    daily_activity: HashMap<String, (u32, u32, u32)>,
+    scan_activity: ScanActivityMap,
+    total_sessions: u32,
+}
+
+/// JSON shape returned by the remote Python scanner script.
+#[derive(Deserialize)]
+struct RemoteScanResult {
+    /// date → model → { input, output, cache_read, cache_create }
+    daily_model: HashMap<String, HashMap<String, TokenCounts>>,
+    /// date → { messages, sessions }
+    daily_activity: HashMap<String, (u32, u32)>,
+    /// date → (messages, sessions, tool_calls) from stats-cache.json
+    #[serde(default)]
+    stats_activity: HashMap<String, (u32, u32, u32)>,
+    #[serde(default)]
+    total_sessions: u32,
+}
+
+/// The Python script that runs on the remote host via SSH.
+/// Scans ~/.claude/projects/**/*.jsonl for token usage + message counts,
+/// reads ~/.claude/stats-cache.json for activity data, outputs JSON to stdout.
+const REMOTE_SCANNER_PY: &str = r#"
+import json, os, sys, glob, collections
+
+claude_dir = os.path.expanduser("~/.claude")
+projects_dir = os.path.join(claude_dir, "projects")
+
+daily_model = collections.defaultdict(lambda: collections.defaultdict(lambda: [0,0,0,0]))
+daily_messages = collections.defaultdict(int)
+file_dates = collections.defaultdict(set)
+
+for path in glob.glob(os.path.join(projects_dir, "**", "*.jsonl"), recursive=True):
+    if "/memory/" in path:
+        continue
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                # Count messages
+                if '"role":"user"' in line or '"role":"assistant"' in line:
+                    ts_marker = '"timestamp":"'
+                    idx = line.find(ts_marker)
+                    if idx >= 0:
+                        date = line[idx+len(ts_marker):idx+len(ts_marker)+10]
+                        if len(date) == 10 and date[4] == '-' and date[7] == '-':
+                            daily_messages[date] += 1
+                            file_dates[date].add(path)
+                # Token usage
+                if '"cache_read_input_tokens"' not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except:
+                    continue
+                msg = obj.get("message")
+                if not msg:
+                    continue
+                usage = msg.get("usage")
+                model = msg.get("model")
+                ts = obj.get("timestamp", "")
+                if not usage or not model or len(ts) < 10:
+                    continue
+                date = ts[:10]
+                tc = daily_model[date][model]
+                tc[0] += usage.get("input_tokens", 0)
+                tc[1] += usage.get("output_tokens", 0)
+                tc[2] += usage.get("cache_read_input_tokens", 0)
+                tc[3] += usage.get("cache_creation_input_tokens", 0)
+    except Exception:
+        continue
+
+# Read stats-cache.json
+stats_activity = {}
+total_sessions = 0
+try:
+    with open(os.path.join(claude_dir, "stats-cache.json")) as f:
+        sc = json.load(f)
+    total_sessions = sc.get("totalSessions", 0)
+    for entry in sc.get("dailyActivity", []):
+        d = entry.get("date", "")
+        if d:
+            stats_activity[d] = [
+                entry.get("messageCount", 0),
+                entry.get("sessionCount", 0),
+                entry.get("toolCallCount", 0),
+            ]
+except Exception:
+    pass
+
+# Build daily_activity from JSONL scan (messages, sessions per day)
+daily_activity = {}
+for date, msgs in daily_messages.items():
+    sessions = len(file_dates.get(date, set()))
+    daily_activity[date] = [msgs, sessions]
+
+# Convert daily_model to serializable form
+dm_out = {}
+for date, models in daily_model.items():
+    dm_out[date] = {}
+    for model, tc in models.items():
+        dm_out[date][model] = {"input": tc[0], "output": tc[1], "cache_read": tc[2], "cache_create": tc[3]}
+
+print(json.dumps({
+    "daily_model": dm_out,
+    "daily_activity": daily_activity,
+    "stats_activity": stats_activity,
+    "total_sessions": total_sessions,
+}))
+"#;
+
+/// Scan a remote host's Claude Code usage via SSH.
+pub async fn read_remote_global_usage(
+    remote: &crate::models::RemoteHost,
+    days: Option<u32>,
+) -> Result<UsageOverview, String> {
+    let host_key = format!("{}@{}:{}", remote.user, remote.host, remote.port);
+
+    // Check in-memory remote cache
+    {
+        let lock = REMOTE_CACHE.lock().map_err(|e| format!("Remote cache lock: {e}"))?;
+        if let Some(ref cached) = *lock {
+            if cached.host_key == host_key
+                && cached.computed_at.elapsed().as_secs() < REMOTE_CACHE_TTL_SECS
+            {
+                log::debug!(
+                    "[claude_usage] remote cache hit for {} (age {}s)",
+                    host_key,
+                    cached.computed_at.elapsed().as_secs()
+                );
+                let mut overview = build_overview_from_remote(cached, days);
+                overview.scan_mode = Some("remote-memory".to_string());
+                return Ok(overview);
+            }
+        }
+    }
+
+    log::info!("[claude_usage] remote scan starting for {}", host_key);
+    let start = Instant::now();
+
+    // Build SSH command: pipe the Python scanner script
+    let remote_cmd = format!("python3 -c {}", crate::agent::ssh::shell_escape(REMOTE_SCANNER_PY));
+    let mut cmd = crate::agent::ssh::build_ssh_command(remote, &remote_cmd);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("SSH command failed: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Remote scan failed (exit {}): {}",
+            output.status.code().unwrap_or(-1),
+            stderr.trim()
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let result: RemoteScanResult = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("Failed to parse remote scan output: {e}"))?;
+
+    let scan_secs = start.elapsed().as_secs_f64();
+
+    // Convert daily_activity (JSONL-derived) into ScanActivityMap
+    let scan_activity: ScanActivityMap = result
+        .daily_activity
+        .into_iter()
+        .map(|(date, (msgs, sessions))| (date, (msgs, sessions)))
+        .collect();
+
+    // Convert stats_activity into the activity format
+    let daily_activity: HashMap<String, (u32, u32, u32)> = result.stats_activity;
+
+    // Convert daily_model into BTreeMap
+    let daily_model: DailyModelMap = result
+        .daily_model
+        .into_iter()
+        .map(|(date, models)| (date, models))
+        .collect();
+
+    log::info!(
+        "[claude_usage] remote scan done in {:.2}s: {} days, {} sessions",
+        scan_secs,
+        daily_model.len(),
+        result.total_sessions,
+    );
+
+    let cached = RemoteCachedData {
+        computed_at: Instant::now(),
+        host_key,
+        daily_model,
+        daily_activity,
+        scan_activity,
+        total_sessions: result.total_sessions,
+    };
+
+    let mut overview = build_overview_from_remote(&cached, days);
+    overview.scan_mode = Some("remote".to_string());
+
+    // Store in memory cache
+    if let Ok(mut lock) = REMOTE_CACHE.lock() {
+        *lock = Some(cached);
+    }
+
+    Ok(overview)
+}
+
+/// Build UsageOverview from remote cached data — reuses the same logic as local.
+fn build_overview_from_remote(data: &RemoteCachedData, days: Option<u32>) -> UsageOverview {
+    let local_compat = CachedData {
+        computed_at: data.computed_at,
+        daily_model: data.daily_model.clone(),
+        daily_activity: data.daily_activity.clone(),
+        scan_activity: data.scan_activity.clone(),
+        total_sessions: data.total_sessions,
+    };
+    build_overview(&local_compat, days)
+}
+
 /// Clear both in-memory and disk caches, forcing a full rescan on next request.
 pub fn clear_cache() {
     // Clear in-memory cache
     if let Ok(mut lock) = CACHE.lock() {
         *lock = None;
         log::debug!("[claude_usage] in-memory cache cleared");
+    }
+
+    // Clear remote cache
+    if let Ok(mut lock) = REMOTE_CACHE.lock() {
+        *lock = None;
+        log::debug!("[claude_usage] remote cache cleared");
     }
 
     // Delete disk cache file

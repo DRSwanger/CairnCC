@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import * as api from "$lib/api";
-  import type { UsageOverview, DailyAggregate } from "$lib/types";
+  import type { UsageOverview, DailyAggregate, RemoteHost } from "$lib/types";
   import { formatCost, formatTokenCount } from "$lib/utils/format";
   import { dbg, dbgWarn } from "$lib/utils/debug";
   import Card from "$lib/components/Card.svelte";
@@ -20,6 +20,11 @@
 
   /** "app" = CairnCC runs only, "global" = all Claude Code sessions */
   let scope = $state<"app" | "global">("global");
+
+  /** Available remote hosts from user settings */
+  let remoteHosts = $state<RemoteHost[]>([]);
+  /** Selected remote host name (undefined = local) */
+  let selectedRemote = $state<string | undefined>(undefined);
 
   /** Monotonic counter to discard stale responses on rapid tab switching. */
   let requestId = 0;
@@ -113,7 +118,7 @@
     try {
       let result: UsageOverview;
       if (scope === "global") {
-        result = await api.getGlobalUsageOverview(days);
+        result = await api.getGlobalUsageOverview(days, selectedRemote);
       } else {
         result = await api.getUsageOverview(days);
       }
@@ -149,7 +154,7 @@
   async function loadHeatmapData() {
     const token = ++heatmapRequestId;
     try {
-      const result = await api.getHeatmapDaily(scope);
+      const result = await api.getHeatmapDaily(scope, selectedRemote);
       if (token === heatmapRequestId) {
         heatmapDaily = result;
         dbg("usage", "heatmap loaded", { scope, days: result.length });
@@ -175,6 +180,13 @@
     if (s === "app" && (chartMode === "messages" || chartMode === "sessions")) {
       chartMode = "cost";
     }
+    loadData(selectedDays);
+    loadHeatmapData();
+  }
+
+  function selectRemote(name: string | undefined) {
+    selectedRemote = name;
+    data = null; // Clear stale data while loading
     loadData(selectedDays);
     loadHeatmapData();
   }
@@ -223,7 +235,17 @@
     return v.toFixed(0);
   }
 
-  onMount(() => {
+  onMount(async () => {
+    // Load remote hosts from settings — auto-select first if available
+    try {
+      const settings = await api.getUserSettings();
+      remoteHosts = settings.remote_hosts ?? [];
+      if (remoteHosts.length > 0 && !selectedRemote) {
+        selectedRemote = remoteHosts[0].name;
+      }
+    } catch (e) {
+      dbgWarn("usage", "failed to load remote hosts", e);
+    }
     loadData(selectedDays);
     loadHeatmapData();
   });
@@ -271,6 +293,32 @@
         {t("usage_scopeApp")}
       </button>
     </div>
+
+    <!-- Remote host selector (only shown when hosts are configured) -->
+    {#if remoteHosts.length > 0 && scope === "global"}
+      <div class="flex gap-1 bg-muted/40 rounded-lg p-0.5">
+        <button
+          class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors
+            {selectedRemote === undefined
+            ? 'bg-background text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground'}"
+          onclick={() => selectRemote(undefined)}
+        >
+          Local
+        </button>
+        {#each remoteHosts as host}
+          <button
+            class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors
+              {selectedRemote === host.name
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'}"
+            onclick={() => selectRemote(host.name)}
+          >
+            {host.name}
+          </button>
+        {/each}
+      </div>
+    {/if}
 
     <!-- Date range tabs -->
     <div class="flex gap-1">
@@ -321,7 +369,7 @@
       ></div>
       {#if showFullScanMessage}
         <p class="text-sm text-muted-foreground animate-fade-in">
-          {t("usage_firstLoadMessage")}
+          {selectedRemote ? `Scanning ${selectedRemote} via SSH\u2026` : t("usage_firstLoadMessage")}
         </p>
       {/if}
     </div>

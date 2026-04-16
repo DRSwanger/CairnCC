@@ -17,8 +17,28 @@ fn parse_started_date_utc(started_at: &str) -> Option<chrono::NaiveDate> {
 }
 
 #[tauri::command]
-pub fn get_global_usage_overview(days: Option<u32>) -> Result<UsageOverview, String> {
-    log::debug!("[stats] get_global_usage_overview: days={:?}", days);
+pub async fn get_global_usage_overview(
+    days: Option<u32>,
+    remote_host_name: Option<String>,
+) -> Result<UsageOverview, String> {
+    log::debug!(
+        "[stats] get_global_usage_overview: days={:?}, remote={:?}",
+        days,
+        remote_host_name
+    );
+
+    if let Some(ref name) = remote_host_name {
+        let settings = storage::settings::get_user_settings();
+        let remote = settings
+            .remote_hosts
+            .iter()
+            .find(|h| h.name == *name)
+            .cloned()
+            .ok_or_else(|| format!("Remote host '{}' not found in settings", name))?;
+
+        return storage::claude_usage::read_remote_global_usage(&remote, days).await;
+    }
+
     storage::claude_usage::read_global_usage(days)
 }
 
@@ -289,12 +309,32 @@ fn get_app_heatmap_daily() -> Result<Vec<DailyAggregate>, String> {
 }
 
 #[tauri::command]
-pub fn get_heatmap_daily(scope: String) -> Result<Vec<DailyAggregate>, String> {
-    log::debug!("[stats] get_heatmap_daily: scope={}", scope);
+pub async fn get_heatmap_daily(
+    scope: String,
+    remote_host_name: Option<String>,
+) -> Result<Vec<DailyAggregate>, String> {
+    log::debug!(
+        "[stats] get_heatmap_daily: scope={}, remote={:?}",
+        scope,
+        remote_host_name
+    );
     let raw = match scope.as_str() {
         "global" => {
-            let overview = storage::claude_usage::read_global_usage(Some(365))?;
-            overview.daily
+            if let Some(ref name) = remote_host_name {
+                let settings = storage::settings::get_user_settings();
+                let remote = settings
+                    .remote_hosts
+                    .iter()
+                    .find(|h| h.name == *name)
+                    .cloned()
+                    .ok_or_else(|| format!("Remote host '{}' not found in settings", name))?;
+                let overview =
+                    storage::claude_usage::read_remote_global_usage(&remote, Some(365)).await?;
+                overview.daily
+            } else {
+                let overview = storage::claude_usage::read_global_usage(Some(365))?;
+                overview.daily
+            }
         }
         "app" => get_app_heatmap_daily()?,
         _ => return Err(format!("invalid scope: {}", scope)),

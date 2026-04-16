@@ -321,9 +321,15 @@ export async function getUsageOverview(days?: number): Promise<UsageOverview> {
   return invoke<UsageOverview>("get_usage_overview", { days: days ?? null });
 }
 
-export async function getGlobalUsageOverview(days?: number): Promise<UsageOverview> {
-  dbg("api", "getGlobalUsageOverview", { days });
-  return invoke<UsageOverview>("get_global_usage_overview", { days: days ?? null });
+export async function getGlobalUsageOverview(
+  days?: number,
+  remoteHostName?: string,
+): Promise<UsageOverview> {
+  dbg("api", "getGlobalUsageOverview", { days, remoteHostName });
+  return invoke<UsageOverview>("get_global_usage_overview", {
+    days: days ?? null,
+    remoteHostName: remoteHostName ?? null,
+  });
 }
 
 export async function clearUsageCache(): Promise<void> {
@@ -333,9 +339,13 @@ export async function clearUsageCache(): Promise<void> {
 
 export async function getHeatmapDaily(
   scope: "app" | "global",
+  remoteHostName?: string,
 ): Promise<import("./types").DailyAggregate[]> {
-  dbg("api", "getHeatmapDaily", { scope });
-  return invoke<import("./types").DailyAggregate[]>("get_heatmap_daily", { scope });
+  dbg("api", "getHeatmapDaily", { scope, remoteHostName });
+  return invoke<import("./types").DailyAggregate[]>("get_heatmap_daily", {
+    scope,
+    remoteHostName: remoteHostName ?? null,
+  });
 }
 
 // Diagnostics
