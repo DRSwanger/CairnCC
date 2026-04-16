@@ -217,7 +217,10 @@ mod tests {
 
     #[test]
     fn escape_absolute_path() {
-        assert_eq!(shell_escape_path("/home/dallas/code"), "'/home/dallas/code'");
+        assert_eq!(
+            shell_escape_path("/home/dallas/code"),
+            "'/home/dallas/code'"
+        );
     }
 
     #[test]
@@ -229,7 +232,7 @@ mod tests {
     #[test]
     fn escape_path_tilde_only() {
         // "~/" strips "~/" → rest is "" → shell_escape("") → "''" → "~/" + "''" = "~/''"
-        assert_eq!(shell_escape_path("~/"), "~/''"  );
+        assert_eq!(shell_escape_path("~/"), "~/''");
     }
 
     // ── build_remote_claude_command ──
@@ -237,47 +240,95 @@ mod tests {
     #[test]
     fn cmd_uses_default_claude_bin_when_path_not_set() {
         let remote = make_remote(None);
-        let cmd = build_remote_claude_command(&remote, "/home/dallas", &[], None, None, None, None, None);
-        assert!(cmd.contains(" 'claude'") || cmd.ends_with(" 'claude'"), "expected 'claude' in: {cmd}");
+        let cmd =
+            build_remote_claude_command(&remote, "/home/dallas", &[], None, None, None, None, None);
+        assert!(
+            cmd.contains(" 'claude'") || cmd.ends_with(" 'claude'"),
+            "expected 'claude' in: {cmd}"
+        );
     }
 
     #[test]
     fn cmd_uses_custom_claude_path() {
         let remote = make_remote(Some("/opt/bin/claude"));
-        let cmd = build_remote_claude_command(&remote, "/home/dallas", &[], None, None, None, None, None);
-        assert!(cmd.contains("'/opt/bin/claude'"), "expected escaped custom path in: {cmd}");
+        let cmd =
+            build_remote_claude_command(&remote, "/home/dallas", &[], None, None, None, None, None);
+        assert!(
+            cmd.contains("'/opt/bin/claude'"),
+            "expected escaped custom path in: {cmd}"
+        );
     }
 
     #[test]
     fn cmd_uses_tilde_path_unquoted() {
         let remote = make_remote(Some("~/.local/bin/claude"));
-        let cmd = build_remote_claude_command(&remote, "/home/dallas", &[], None, None, None, None, None);
-        assert!(cmd.contains("~/'"), "tilde should be outside quotes in: {cmd}");
+        let cmd =
+            build_remote_claude_command(&remote, "/home/dallas", &[], None, None, None, None, None);
+        assert!(
+            cmd.contains("~/'"),
+            "tilde should be outside quotes in: {cmd}"
+        );
     }
 
     #[test]
     fn cmd_starts_with_cd() {
         let remote = make_remote(None);
-        let cmd = build_remote_claude_command(&remote, "/home/dallas/myproject", &[], None, None, None, None, None);
+        let cmd = build_remote_claude_command(
+            &remote,
+            "/home/dallas/myproject",
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         assert!(cmd.starts_with("cd '/home/dallas/myproject'"), "cmd={cmd}");
     }
 
     #[test]
     fn cmd_includes_api_key_and_clears_auth_token() {
         let remote = make_remote(None);
-        let cmd = build_remote_claude_command(&remote, "/tmp", &[], Some("sk-ant-test"), None, None, None, None);
+        let cmd = build_remote_claude_command(
+            &remote,
+            "/tmp",
+            &[],
+            Some("sk-ant-test"),
+            None,
+            None,
+            None,
+            None,
+        );
         assert!(cmd.contains("ANTHROPIC_API_KEY='sk-ant-test'"), "cmd={cmd}");
         assert!(cmd.contains("ANTHROPIC_AUTH_TOKEN="), "cmd={cmd}");
-        assert!(!cmd.contains("ANTHROPIC_AUTH_TOKEN='"), "auth token should be cleared, not set: {cmd}");
+        assert!(
+            !cmd.contains("ANTHROPIC_AUTH_TOKEN='"),
+            "auth token should be cleared, not set: {cmd}"
+        );
     }
 
     #[test]
     fn cmd_includes_auth_token_and_clears_api_key() {
         let remote = make_remote(None);
-        let cmd = build_remote_claude_command(&remote, "/tmp", &[], None, Some("Bearer xyz"), None, None, None);
-        assert!(cmd.contains("ANTHROPIC_AUTH_TOKEN='Bearer xyz'"), "cmd={cmd}");
+        let cmd = build_remote_claude_command(
+            &remote,
+            "/tmp",
+            &[],
+            None,
+            Some("Bearer xyz"),
+            None,
+            None,
+            None,
+        );
+        assert!(
+            cmd.contains("ANTHROPIC_AUTH_TOKEN='Bearer xyz'"),
+            "cmd={cmd}"
+        );
         assert!(cmd.contains("ANTHROPIC_API_KEY="), "cmd={cmd}");
-        assert!(!cmd.contains("ANTHROPIC_API_KEY='"), "api key should be cleared: {cmd}");
+        assert!(
+            !cmd.contains("ANTHROPIC_API_KEY='"),
+            "api key should be cleared: {cmd}"
+        );
     }
 
     #[test]
@@ -288,15 +339,31 @@ mod tests {
         //   sk-ant-test'key;rm -rf /  →  'sk-ant-test'\''key;rm -rf /'
         // The semicolon appears inside single quotes so it cannot be executed as a command.
         let tricky = "sk-ant-test'key;rm -rf /";
-        let cmd = build_remote_claude_command(&remote, "/tmp", &[], Some(tricky), None, None, None, None);
-        assert!(cmd.contains("ANTHROPIC_API_KEY='sk-ant-test'\\''key;rm -rf /'"), "cmd={cmd}");
+        let cmd =
+            build_remote_claude_command(&remote, "/tmp", &[], Some(tricky), None, None, None, None);
+        assert!(
+            cmd.contains("ANTHROPIC_API_KEY='sk-ant-test'\\''key;rm -rf /'"),
+            "cmd={cmd}"
+        );
     }
 
     #[test]
     fn cmd_includes_base_url() {
         let remote = make_remote(None);
-        let cmd = build_remote_claude_command(&remote, "/tmp", &[], None, None, Some("https://api.example.com"), None, None);
-        assert!(cmd.contains("ANTHROPIC_BASE_URL='https://api.example.com'"), "cmd={cmd}");
+        let cmd = build_remote_claude_command(
+            &remote,
+            "/tmp",
+            &[],
+            None,
+            None,
+            Some("https://api.example.com"),
+            None,
+            None,
+        );
+        assert!(
+            cmd.contains("ANTHROPIC_BASE_URL='https://api.example.com'"),
+            "cmd={cmd}"
+        );
     }
 
     #[test]
@@ -310,7 +377,10 @@ mod tests {
     fn cmd_includes_checkpointing_env() {
         let remote = make_remote(None);
         let cmd = build_remote_claude_command(&remote, "/tmp", &[], None, None, None, None, None);
-        assert!(cmd.contains("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=1"), "cmd={cmd}");
+        assert!(
+            cmd.contains("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=1"),
+            "cmd={cmd}"
+        );
     }
 
     #[test]
@@ -318,7 +388,8 @@ mod tests {
         let remote = make_remote(None);
         let mut extra = std::collections::HashMap::new();
         extra.insert("API_TIMEOUT_MS".to_string(), "5000".to_string());
-        let cmd = build_remote_claude_command(&remote, "/tmp", &[], None, None, None, None, Some(&extra));
+        let cmd =
+            build_remote_claude_command(&remote, "/tmp", &[], None, None, None, None, Some(&extra));
         assert!(cmd.contains("API_TIMEOUT_MS='5000'"), "cmd={cmd}");
     }
 
@@ -328,8 +399,12 @@ mod tests {
         let mut extra = std::collections::HashMap::new();
         extra.insert("bad-key".to_string(), "value".to_string());
         extra.insert("also bad key".to_string(), "v".to_string());
-        let cmd = build_remote_claude_command(&remote, "/tmp", &[], None, None, None, None, Some(&extra));
-        assert!(!cmd.contains("bad-key"), "invalid key must be rejected: {cmd}");
+        let cmd =
+            build_remote_claude_command(&remote, "/tmp", &[], None, None, None, None, Some(&extra));
+        assert!(
+            !cmd.contains("bad-key"),
+            "invalid key must be rejected: {cmd}"
+        );
         assert!(!cmd.contains("also bad key"), "cmd={cmd}");
     }
 

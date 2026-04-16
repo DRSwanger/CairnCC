@@ -31,7 +31,10 @@ pub async fn scp_transfer_file(
     } else {
         format!("{}/{}", remote_dir, filename)
     };
-    let remote_dest = format!("{}@{}:{}", remote_host.user, remote_host.host, remote_file_path);
+    let remote_dest = format!(
+        "{}@{}:{}",
+        remote_host.user, remote_host.host, remote_file_path
+    );
 
     let mut cmd = Command::new("scp");
     cmd.arg("-o").arg("BatchMode=yes");

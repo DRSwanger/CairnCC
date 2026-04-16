@@ -260,13 +260,20 @@ pub struct UserSettings {
     pub web_server_tunnel_url: Option<String>,
     /// Text drip speed in chars/sec during streaming (drain uses drip_rate * 2).
     /// Default 35. Range 10–300.
-    #[serde(default = "default_drip_rate", skip_serializing_if = "is_default_drip_rate")]
+    #[serde(
+        default = "default_drip_rate",
+        skip_serializing_if = "is_default_drip_rate"
+    )]
     pub drip_rate: u32,
     pub updated_at: String,
 }
 
-fn default_drip_rate() -> u32 { 35 }
-fn is_default_drip_rate(v: &u32) -> bool { *v == 35 }
+fn default_drip_rate() -> u32 {
+    35
+}
+fn is_default_drip_rate(v: &u32) -> bool {
+    *v == 35
+}
 
 fn default_auth_mode() -> String {
     "cli".to_string()

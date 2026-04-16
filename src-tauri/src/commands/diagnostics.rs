@@ -547,10 +547,14 @@ pub async fn install_remote_claude(
     // Build a helper that runs a single SSH command and streams stdout+stderr
     let ssh_args_base: Vec<String> = {
         let mut a = vec![
-            "-o".into(), "BatchMode=yes".into(),
-            "-o".into(), "ConnectTimeout=15".into(),
-            "-o".into(), "StrictHostKeyChecking=accept-new".into(),
-            "-p".into(), port.to_string(),
+            "-o".into(),
+            "BatchMode=yes".into(),
+            "-o".into(),
+            "ConnectTimeout=15".into(),
+            "-o".into(),
+            "StrictHostKeyChecking=accept-new".into(),
+            "-p".into(),
+            port.to_string(),
         ];
         if let Some(ref k) = key_path {
             a.push("-i".into());
@@ -567,12 +571,9 @@ pub async fn install_remote_claude(
         let mut cmd = TokioCommand::new("ssh");
         cmd.args(&ssh_args_base).arg("command -v npm");
         cmd.stdout(std::process::Stdio::piped())
-           .stderr(std::process::Stdio::null())
-           .kill_on_drop(true);
-        tokio::time::timeout(
-            std::time::Duration::from_secs(15),
-            cmd.output(),
-        ).await
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
+        tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output()).await
     };
     let has_npm = matches!(npm_check, Ok(Ok(o)) if o.status.success());
 
@@ -608,8 +609,8 @@ pub async fn install_remote_claude(
     let mut cmd = TokioCommand::new("ssh");
     cmd.args(&ssh_args_base).arg(&install_script);
     cmd.stdout(std::process::Stdio::piped())
-       .stderr(std::process::Stdio::piped())
-       .kill_on_drop(true);
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
 
     let mut child = cmd.spawn().map_err(|e| format!("SSH spawn failed: {e}"))?;
 
@@ -622,7 +623,9 @@ pub async fn install_remote_claude(
         tokio::spawn(async move {
             let mut line = String::new();
             while let Ok(n) = reader.read_line(&mut line).await {
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 let _ = app2.emit("remote-install-progress", line.trim_end().to_string());
                 line.clear();
             }
@@ -634,7 +637,9 @@ pub async fn install_remote_claude(
         tokio::spawn(async move {
             let mut line = String::new();
             while let Ok(n) = reader.read_line(&mut line).await {
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 let trimmed = line.trim_end().to_string();
                 if !trimmed.is_empty() {
                     let _ = app3.emit("remote-install-progress", trimmed);
@@ -644,12 +649,10 @@ pub async fn install_remote_claude(
         });
     }
 
-    let status = tokio::time::timeout(
-        std::time::Duration::from_secs(300),
-        child.wait(),
-    ).await
-    .map_err(|_| "Install timed out after 5 minutes".to_string())?
-    .map_err(|e| format!("Install process error: {e}"))?;
+    let status = tokio::time::timeout(std::time::Duration::from_secs(300), child.wait())
+        .await
+        .map_err(|_| "Install timed out after 5 minutes".to_string())?
+        .map_err(|e| format!("Install process error: {e}"))?;
 
     if !status.success() {
         emit("Installation failed — see output above.");
@@ -670,12 +673,9 @@ pub async fn install_remote_claude(
         cmd.args(&ssh_args_base)
            .arg(r#"CLAUDE=$(command -v claude 2>/dev/null || ls /usr/bin/claude /usr/local/bin/claude 2>/dev/null | head -1); [ -n "$CLAUDE" ] && echo "$CLAUDE" && "$CLAUDE" --version"#);
         cmd.stdout(std::process::Stdio::piped())
-           .stderr(std::process::Stdio::null())
-           .kill_on_drop(true);
-        tokio::time::timeout(
-            std::time::Duration::from_secs(15),
-            cmd.output(),
-        ).await
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
+        tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output()).await
     };
 
     match check {
@@ -684,7 +684,10 @@ pub async fn install_remote_claude(
             let mut lines = stdout.lines();
             let path = lines.next().map(str::to_string);
             let version = lines.next().map(str::to_string);
-            emit(&format!("Claude Code installed: {}", version.as_deref().unwrap_or("unknown")));
+            emit(&format!(
+                "Claude Code installed: {}",
+                version.as_deref().unwrap_or("unknown")
+            ));
             Ok(RemoteTestResult {
                 ssh_ok: true,
                 cli_found: true,
