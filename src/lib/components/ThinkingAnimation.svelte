@@ -27,15 +27,16 @@
   let pulses: Pulse[] = [];
 
   function initGraph(w: number, h: number) {
-    const cx = w / 2, cy = h / 2;
+    const cx = w / 2,
+      cy = h / 2;
     nodes = [];
 
     if (compact) {
       // 1 centre hub + 4 outer nodes, radii proportional to canvas
-      nodes.push({ x: cx, y: cy, r: w * 0.10, phase: 0, speed: 0.7 });
+      nodes.push({ x: cx, y: cy, r: w * 0.1, phase: 0, speed: 0.7 });
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2 + 0.4;
-        const d = w * 0.30 + Math.random() * w * 0.04;
+        const d = w * 0.3 + Math.random() * w * 0.04;
         nodes.push({
           x: cx + Math.cos(a) * d,
           y: cy + Math.sin(a) * d,
@@ -112,18 +113,18 @@
 
     // Pulse glow radius — proportional in compact mode
     const pulseGlowR = compact ? w * 0.18 : 8;
-    const pulseDotR  = compact ? w * 0.05 : 2;
-    const edgeWidth  = compact ? Math.max(0.4, w * 0.012) : 0.8;
-    const maxPulses  = compact ? 4 : 8;
+    const pulseDotR = compact ? w * 0.05 : 2;
+    const edgeWidth = compact ? Math.max(0.4, w * 0.012) : 0.8;
+    const maxPulses = compact ? 4 : 8;
 
     // Edges
     for (const edge of edges) {
       const na = nodes[edge.a];
       const nb = nodes[edge.b];
       const grad = ctx.createLinearGradient(na.x, na.y, nb.x, nb.y);
-      grad.addColorStop(0,   "rgba(249,115,22,0.08)");
+      grad.addColorStop(0, "rgba(249,115,22,0.08)");
       grad.addColorStop(0.5, "rgba(249,115,22,0.18)");
-      grad.addColorStop(1,   "rgba(249,115,22,0.08)");
+      grad.addColorStop(1, "rgba(249,115,22,0.08)");
       ctx.beginPath();
       ctx.moveTo(na.x, na.y);
       ctx.lineTo(nb.x, nb.y);
@@ -137,7 +138,10 @@
     for (let i = 0; i < pulses.length; i++) {
       const p = pulses[i];
       p.t += p.speed;
-      if (p.t >= 1) { toRemove.push(i); continue; }
+      if (p.t >= 1) {
+        toRemove.push(i);
+        continue;
+      }
       const edge = edges[p.edge];
       const na = nodes[edge.a];
       const nb = nodes[edge.b];
@@ -145,9 +149,9 @@
       const y = na.y + (nb.y - na.y) * p.t;
 
       const grd = ctx.createRadialGradient(x, y, 0, x, y, pulseGlowR);
-      grd.addColorStop(0,   `rgba(249,115,22,${p.opacity * 0.9})`);
+      grd.addColorStop(0, `rgba(249,115,22,${p.opacity * 0.9})`);
       grd.addColorStop(0.4, `rgba(249,115,22,${p.opacity * 0.3})`);
-      grd.addColorStop(1,   "rgba(249,115,22,0)");
+      grd.addColorStop(1, "rgba(249,115,22,0)");
       ctx.beginPath();
       ctx.arc(x, y, pulseGlowR, 0, Math.PI * 2);
       ctx.fillStyle = grd;
@@ -166,7 +170,7 @@
       const n = nodes[i];
       const breathe = 0.7 + 0.3 * Math.sin(elapsed * n.speed + n.phase);
       // Glow radius capped to avoid blob-out at small sizes
-      const glowMult = compact ? (1.5 + breathe * 0.8) : (2.5 + breathe * 1.5);
+      const glowMult = compact ? 1.5 + breathe * 0.8 : 2.5 + breathe * 1.5;
       const glowR = Math.min(n.r * glowMult, w * 0.28);
       const alpha = 0.35 + breathe * 0.25;
 
@@ -180,9 +184,10 @@
 
       ctx.beginPath();
       ctx.arc(n.x, n.y, n.r * breathe, 0, Math.PI * 2);
-      ctx.fillStyle = i === 0
-        ? `rgba(255,160,60,${0.85 + breathe * 0.15})`
-        : `rgba(249,115,22,${0.6 + breathe * 0.3})`;
+      ctx.fillStyle =
+        i === 0
+          ? `rgba(255,160,60,${0.85 + breathe * 0.15})`
+          : `rgba(249,115,22,${0.6 + breathe * 0.3})`;
       ctx.fill();
     }
 

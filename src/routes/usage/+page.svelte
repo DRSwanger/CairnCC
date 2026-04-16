@@ -369,7 +369,9 @@
       ></div>
       {#if showFullScanMessage}
         <p class="text-sm text-muted-foreground animate-fade-in">
-          {selectedRemote ? `Scanning ${selectedRemote} via SSH\u2026` : t("usage_firstLoadMessage")}
+          {selectedRemote
+            ? `Scanning ${selectedRemote} via SSH\u2026`
+            : t("usage_firstLoadMessage")}
         </p>
       {/if}
     </div>

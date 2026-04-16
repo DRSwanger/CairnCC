@@ -1739,7 +1739,13 @@ export class SessionStore {
       } else {
         // Codex pipe mode
         this._setPhase("running");
-        await api.sendChatMessage(run.id, prompt, attachments.length > 0 ? attachments : undefined, undefined, this.withMemory);
+        await api.sendChatMessage(
+          run.id,
+          prompt,
+          attachments.length > 0 ? attachments : undefined,
+          undefined,
+          this.withMemory,
+        );
       }
 
       return run.id;

@@ -68,7 +68,7 @@ pub fn list_teams() -> Vec<TeamSummary> {
     }
 
     // Sort by created_at descending (most recent first)
-    teams.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    teams.sort_by_key(|b| std::cmp::Reverse(b.created_at));
     teams
 }
 

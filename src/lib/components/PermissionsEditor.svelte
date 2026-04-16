@@ -25,17 +25,24 @@
   const activeRules = $derived.by(() => {
     if (!permissions) return [];
     switch (activeTab) {
-      case "allow":       return permissions.user.allow;
-      case "deny":        return permissions.user.deny;
-      case "projectAllow": return permissions.project.allow;
-      case "projectDeny":  return permissions.project.deny;
-      default:            return [];
+      case "allow":
+        return permissions.user.allow;
+      case "deny":
+        return permissions.user.deny;
+      case "projectAllow":
+        return permissions.project.allow;
+      case "projectDeny":
+        return permissions.project.deny;
+      default:
+        return [];
     }
   });
 
   const filteredRules = $derived(filterRules(activeRules, search));
 
-  onMount(() => { load(); });
+  onMount(() => {
+    load();
+  });
 
   async function load() {
     loading = true;
@@ -62,10 +69,19 @@
   function getCategory(tab: string): "allow" | "deny" {
     return tab === "deny" || tab === "projectDeny" ? "deny" : "allow";
   }
-  function getRulesRef(perms: CliPermissions, scope: "user" | "project", category: "allow" | "deny"): string[] {
+  function getRulesRef(
+    perms: CliPermissions,
+    scope: "user" | "project",
+    category: "allow" | "deny",
+  ): string[] {
     return perms[scope][category];
   }
-  function setRulesRef(perms: CliPermissions, scope: "user" | "project", category: "allow" | "deny", rules: string[]) {
+  function setRulesRef(
+    perms: CliPermissions,
+    scope: "user" | "project",
+    category: "allow" | "deny",
+    rules: string[],
+  ) {
     perms[scope][category] = rules;
   }
 
@@ -92,7 +108,10 @@
     const scope = getScope(activeTab);
     const category = getCategory(activeTab);
     const current = getRulesRef(permissions, scope, category);
-    if (current.includes(trimmed)) { addInput = ""; return; }
+    if (current.includes(trimmed)) {
+      addInput = "";
+      return;
+    }
     const updated = [...current, trimmed];
     setRulesRef(permissions, scope, category, updated);
     addInput = "";
@@ -109,19 +128,30 @@
   }
 
   function handleAddKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter") { e.preventDefault(); handleAdd(); }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAdd();
+    }
   }
 
   type TabDef = { id: typeof activeTab; labelKey: string; count: number };
   const tabs = $derived.by((): TabDef[] => {
     const base: TabDef[] = [
       { id: "allow", labelKey: "permissions_allow", count: permissions?.user.allow.length ?? 0 },
-      { id: "deny",  labelKey: "permissions_deny",  count: permissions?.user.deny.length ?? 0 },
+      { id: "deny", labelKey: "permissions_deny", count: permissions?.user.deny.length ?? 0 },
     ];
     if (showProjectTabs) {
       base.push(
-        { id: "projectAllow", labelKey: "permissions_projectAllow", count: permissions?.project.allow.length ?? 0 },
-        { id: "projectDeny",  labelKey: "permissions_projectDeny",  count: permissions?.project.deny.length ?? 0 },
+        {
+          id: "projectAllow",
+          labelKey: "permissions_projectAllow",
+          count: permissions?.project.allow.length ?? 0,
+        },
+        {
+          id: "projectDeny",
+          labelKey: "permissions_projectDeny",
+          count: permissions?.project.deny.length ?? 0,
+        },
       );
     }
     return base;
@@ -130,7 +160,9 @@
 
 {#if loading && !permissions}
   <div class="flex items-center justify-center py-8">
-    <div class="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent"></div>
+    <div
+      class="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent"
+    ></div>
   </div>
 {:else if error && !permissions}
   <div class="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
@@ -140,7 +172,9 @@
     {#each tabs as tab}
       <button
         class="px-2.5 py-1 text-xs rounded-md transition-colors
-          {activeTab === tab.id ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:bg-accent/50'}"
+          {activeTab === tab.id
+          ? 'bg-accent text-accent-foreground font-medium'
+          : 'text-muted-foreground hover:bg-accent/50'}"
         onclick={() => (activeTab = tab.id)}
       >
         {t(tab.labelKey)}
@@ -192,7 +226,9 @@
       </div>
     {:else}
       {#each filteredRules as rule}
-        <div class="group flex items-center justify-between gap-2 border-b last:border-b-0 px-3 py-2">
+        <div
+          class="group flex items-center justify-between gap-2 border-b last:border-b-0 px-3 py-2"
+        >
           <code class="flex-1 text-xs break-all font-mono">{rule}</code>
           <button
             class="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-colors hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
@@ -200,7 +236,15 @@
             disabled={saving}
             title={t("permissions_deleteConfirm")}
           >
-            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              class="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M18 6 6 18" /><path d="m6 6 12 12" />
             </svg>
           </button>
@@ -214,7 +258,9 @@
   {/if}
   {#if saving}
     <div class="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-      <div class="h-3 w-3 animate-spin rounded-full border border-muted-foreground border-t-transparent"></div>
+      <div
+        class="h-3 w-3 animate-spin rounded-full border border-muted-foreground border-t-transparent"
+      ></div>
       Saving...
     </div>
   {/if}

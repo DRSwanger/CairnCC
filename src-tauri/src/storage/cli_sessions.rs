@@ -793,7 +793,7 @@ pub fn discover_sessions(target_cwd: &str) -> Result<DiscoverResult, String> {
     }
 
     // Sort by mtime descending
-    candidates.sort_by(|a, b| b.2.cmp(&a.2));
+    candidates.sort_by_key(|b| std::cmp::Reverse(b.2));
     let total_candidates = candidates.len();
 
     // Truncate to upper limit (prevent extreme cases)

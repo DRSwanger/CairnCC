@@ -41,7 +41,14 @@
   import { getTransport } from "$lib/transport";
 
   // ── Tab state ──
-  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "permissions" | "debug";
+  type SettingsTab =
+    | "general"
+    | "connection"
+    | "cli-config"
+    | "shortcuts"
+    | "remote"
+    | "permissions"
+    | "debug";
   const VALID_TABS: SettingsTab[] = [
     "general",
     "connection",
@@ -1433,7 +1440,9 @@
           <div class="flex items-center justify-between gap-4">
             <div>
               <p class="text-sm font-medium">Text drip speed</p>
-              <p class="text-xs text-muted-foreground">How fast streaming text is revealed. Drain is 2× this rate.</p>
+              <p class="text-xs text-muted-foreground">
+                How fast streaming text is revealed. Drain is 2× this rate.
+              </p>
             </div>
             <div class="flex items-center gap-3">
               <input
@@ -3419,7 +3428,8 @@
         <div>
           <p class="text-sm font-medium">{t("settings_tab_permissions")}</p>
           <p class="text-xs text-muted-foreground mt-0.5">
-            Manage permanent allow and deny rules for Claude's tools. Rules added here apply to all projects.
+            Manage permanent allow and deny rules for Claude's tools. Rules added here apply to all
+            projects.
           </p>
         </div>
         {#key activeTab}

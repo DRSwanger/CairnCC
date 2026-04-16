@@ -10,7 +10,13 @@
     testRemoteHost,
     installRemoteClaude,
   } from "$lib/api";
-  import type { InstallMethod, PlatformPreset, RemoteHost, RemoteTestResult, SshKeyInfo } from "$lib/types";
+  import type {
+    InstallMethod,
+    PlatformPreset,
+    RemoteHost,
+    RemoteTestResult,
+    SshKeyInfo,
+  } from "$lib/types";
   import { PLATFORM_PRESETS, PRESET_CATEGORIES } from "$lib/utils/platform-presets";
   import { dbg, dbgWarn } from "$lib/utils/debug";
   import { IS_WINDOWS } from "$lib/utils/platform";
@@ -70,7 +76,15 @@
   let remoteInstallLog = $state<string[]>([]);
 
   // ── SSH key mini-wizard ──
-  type SshKeyStep = "idle" | "checking" | "no_key" | "has_key" | "pub_missing" | "generating" | "done" | "error";
+  type SshKeyStep =
+    | "idle"
+    | "checking"
+    | "no_key"
+    | "has_key"
+    | "pub_missing"
+    | "generating"
+    | "done"
+    | "error";
   let sshKeyStep = $state<SshKeyStep>("idle");
   let sshKeyInfo = $state<SshKeyInfo | null>(null);
   let sshKeyError = $state("");
@@ -93,7 +107,7 @@
         "mkdir -p ~/.ssh && chmod 700 ~/.ssh && " +
           "touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && " +
           'key=$(cat) && (grep -qxF "$key" ~/.ssh/authorized_keys 2>/dev/null || ' +
-          'echo "$key" >> ~/.ssh/authorized_keys)'
+          'echo "$key" >> ~/.ssh/authorized_keys)',
       );
       return `Get-Content -LiteralPath ${pubPath} -Raw | ssh -p ${port} ${target} ${remoteScript}`;
     }
@@ -103,7 +117,8 @@
     if (keyInfo.ssh_copy_id_available) {
       return `ssh-copy-id -i ${keyArg} -p ${port} ${target}`;
     }
-    const rs = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && " +
+    const rs =
+      "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && " +
       'key=$(cat) && (grep -qxF "$key" ~/.ssh/authorized_keys 2>/dev/null || echo "$key" >> ~/.ssh/authorized_keys)';
     return `cat ${pubArg} | ssh -p ${port} ${target} ${shellQuote(rs)}`;
   }
@@ -202,7 +217,11 @@
       };
       await updateUserSettings({ remote_hosts: [newHost] });
       // Pre-select this host as the last target so the chat page auto-selects it
-      try { localStorage.setItem("ocv:last-target", newHost.name); } catch { /* ignore storage errors */ }
+      try {
+        localStorage.setItem("ocv:last-target", newHost.name);
+      } catch {
+        /* ignore storage errors */
+      }
       await completeOnboarding();
     } catch (e) {
       remoteError = String(e);
@@ -397,7 +416,9 @@
 </script>
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-  <div class="w-full max-w-xl mx-6 rounded-xl border border-border bg-background shadow-2xl max-h-[90vh] overflow-y-auto px-6 py-6">
+  <div
+    class="w-full max-w-xl mx-6 rounded-xl border border-border bg-background shadow-2xl max-h-[90vh] overflow-y-auto px-6 py-6"
+  >
     {#if step === "checking"}
       <!-- Checking step -->
       <div class="flex flex-col items-center gap-4 py-16">
@@ -420,34 +441,68 @@
           <!-- Local -->
           <button
             class="flex flex-col items-start gap-3 rounded-xl border border-border p-5 text-left transition-colors hover:border-primary/50 hover:bg-accent/40"
-            onclick={() => { step = "cli_not_found"; }}
+            onclick={() => {
+              step = "cli_not_found";
+            }}
           >
             <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-              <svg class="h-5 w-5 text-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+              <svg
+                class="h-5 w-5 text-foreground"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
               </svg>
             </div>
             <div>
               <p class="font-semibold text-sm">This Machine</p>
-              <p class="text-xs text-muted-foreground mt-1">Install Claude Code locally — everything runs on this computer.</p>
+              <p class="text-xs text-muted-foreground mt-1">
+                Install Claude Code locally — everything runs on this computer.
+              </p>
             </div>
           </button>
 
           <!-- Remote -->
           <button
             class="flex flex-col items-start gap-3 rounded-xl border border-border p-5 text-left transition-colors hover:border-primary/50 hover:bg-accent/40"
-            onclick={() => { step = "remote_setup"; }}
+            onclick={() => {
+              step = "remote_setup";
+            }}
           >
             <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <svg class="h-5 w-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/>
+              <svg
+                class="h-5 w-5 text-primary"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M5 12.55a11 11 0 0 1 14.08 0" /><path
+                  d="M1.42 9a16 16 0 0 1 21.16 0"
+                /><path d="M8.53 16.11a6 6 0 0 1 6.95 0" /><circle
+                  cx="12"
+                  cy="20"
+                  r="1"
+                  fill="currentColor"
+                />
               </svg>
             </div>
             <div>
               <p class="font-semibold text-sm">Remote Server</p>
-              <p class="text-xs text-muted-foreground mt-1">Connect via SSH to a Linux or Mac machine where Claude Code is already set up.</p>
+              <p class="text-xs text-muted-foreground mt-1">
+                Connect via SSH to a Linux or Mac machine where Claude Code is already set up.
+              </p>
             </div>
-            <span class="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Recommended</span>
+            <span
+              class="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+              >Recommended</span
+            >
           </button>
         </div>
 
@@ -455,7 +510,6 @@
           You can change this any time in Settings → Remote Hosts.
         </p>
       </div>
-
     {:else if step === "remote_setup"}
       <!-- Remote server SSH setup -->
       <div class="flex flex-col gap-5 max-h-[85vh] overflow-y-auto pr-1">
@@ -463,10 +517,23 @@
         <div class="flex items-center gap-2">
           <button
             class="rounded-md p-1 hover:bg-accent transition-colors"
-            onclick={() => { step = "connection_type"; remoteTestResult = null; remoteError = ""; sshKeyStep = "idle"; }}
+            onclick={() => {
+              step = "connection_type";
+              remoteTestResult = null;
+              remoteError = "";
+              sshKeyStep = "idle";
+            }}
             aria-label="Back"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            <svg
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"><path d="m15 18-6-6 6-6" /></svg
+            >
           </button>
           <h2 class="text-lg font-semibold">Connect to Remote Server</h2>
         </div>
@@ -475,17 +542,23 @@
         <div class="flex flex-col gap-3">
           <div class="grid grid-cols-3 gap-3">
             <div class="col-span-2 flex flex-col gap-1.5">
-              <label for="remote-host" class="text-xs font-medium text-muted-foreground">Host / IP Address</label>
+              <label for="remote-host" class="text-xs font-medium text-muted-foreground"
+                >Host / IP Address</label
+              >
               <input
                 id="remote-host"
                 type="text"
                 bind:value={remoteFormHost}
                 placeholder="192.168.1.x or hostname"
-                class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:border-ring {remoteFormTouched && !remoteFormHost.trim() ? 'border-destructive' : ''}"
+                class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:border-ring {remoteFormTouched &&
+                !remoteFormHost.trim()
+                  ? 'border-destructive'
+                  : ''}"
               />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label for="remote-port" class="text-xs font-medium text-muted-foreground">Port</label>
+              <label for="remote-port" class="text-xs font-medium text-muted-foreground">Port</label
+              >
               <input
                 id="remote-port"
                 type="number"
@@ -498,17 +571,24 @@
 
           <div class="grid grid-cols-2 gap-3">
             <div class="flex flex-col gap-1.5">
-              <label for="remote-user" class="text-xs font-medium text-muted-foreground">Username</label>
+              <label for="remote-user" class="text-xs font-medium text-muted-foreground"
+                >Username</label
+              >
               <input
                 id="remote-user"
                 type="text"
                 bind:value={remoteFormUser}
                 placeholder="username"
-                class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:border-ring {remoteFormTouched && !remoteFormUser.trim() ? 'border-destructive' : ''}"
+                class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:border-ring {remoteFormTouched &&
+                !remoteFormUser.trim()
+                  ? 'border-destructive'
+                  : ''}"
               />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label for="remote-name" class="text-xs font-medium text-muted-foreground">Nickname (optional)</label>
+              <label for="remote-name" class="text-xs font-medium text-muted-foreground"
+                >Nickname (optional)</label
+              >
               <input
                 id="remote-name"
                 type="text"
@@ -525,64 +605,102 @@
           <div class="flex items-center justify-between">
             <div>
               <p class="text-sm font-medium">SSH Key Authentication</p>
-              <p class="text-xs text-muted-foreground mt-0.5">Needed to connect without a password.</p>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                Needed to connect without a password.
+              </p>
             </div>
             {#if sshKeyStep === "idle"}
               <button
                 class="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors"
-                onclick={startSshKeySetup}
-              >Set up SSH Key</button>
+                onclick={startSshKeySetup}>Set up SSH Key</button
+              >
             {/if}
           </div>
 
           {#if sshKeyStep === "checking" || sshKeyStep === "generating"}
             <div class="flex items-center gap-2 text-xs text-muted-foreground">
-              <span class="h-3 w-3 border border-foreground/30 border-t-foreground rounded-full animate-spin"></span>
+              <span
+                class="h-3 w-3 border border-foreground/30 border-t-foreground rounded-full animate-spin"
+              ></span>
               {sshKeyStep === "generating" ? "Generating key…" : "Checking for SSH keys…"}
             </div>
-
           {:else if sshKeyStep === "no_key"}
             <div class="flex flex-col gap-2">
               <p class="text-xs text-muted-foreground">No SSH key found. Generate one now:</p>
               <button
                 class="self-start rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-                onclick={doGenerateSshKey}
-              >Generate SSH Key</button>
+                onclick={doGenerateSshKey}>Generate SSH Key</button
+              >
             </div>
-
           {:else if sshKeyStep === "has_key" || sshKeyStep === "pub_missing"}
             <div class="flex flex-col gap-2">
               {#if sshKeyStep === "pub_missing"}
-                <p class="text-xs text-amber-500">Private key found but public key is missing — key may not work.</p>
+                <p class="text-xs text-amber-500">
+                  Private key found but public key is missing — key may not work.
+                </p>
               {:else}
                 <div class="flex items-center gap-1.5 text-xs text-green-500">
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-                  SSH key ready — {sshKeyInfo?.key_type ?? "RSA"} key at <code class="font-mono">{sshKeyInfo?.key_path}</code>
+                  <svg
+                    class="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg
+                  >
+                  SSH key ready — {sshKeyInfo?.key_type ?? "RSA"} key at
+                  <code class="font-mono">{sshKeyInfo?.key_path}</code>
                 </div>
               {/if}
               {#if remoteFormHost.trim() && remoteFormUser.trim() && sshKeyInfo}
                 <div class="flex flex-col gap-1.5">
-                  <p class="text-xs text-muted-foreground">Run this on <strong>this machine</strong> to authorize the key on your server{IS_WINDOWS ? ' — paste into <strong>PowerShell</strong>, not Command Prompt' : ''}:</p>
-                  <div class="flex items-center gap-2 rounded-md bg-background border border-border p-2">
-                    <code class="flex-1 text-[10px] font-mono text-foreground/80 break-all select-all">{buildCopyCommand(sshKeyInfo)}</code>
+                  <p class="text-xs text-muted-foreground">
+                    Run this on <strong>this machine</strong> to authorize the key on your server{IS_WINDOWS
+                      ? " — paste into <strong>PowerShell</strong>, not Command Prompt"
+                      : ""}:
+                  </p>
+                  <div
+                    class="flex items-center gap-2 rounded-md bg-background border border-border p-2"
+                  >
+                    <code
+                      class="flex-1 text-[10px] font-mono text-foreground/80 break-all select-all"
+                      >{buildCopyCommand(sshKeyInfo)}</code
+                    >
                     <button
-                      class="shrink-0 rounded px-2 py-0.5 text-xs border border-border {sshCopied ? 'text-green-500 border-green-500/30' : 'text-muted-foreground'} hover:text-foreground transition-colors"
-                      onclick={async () => { await navigator.clipboard.writeText(buildCopyCommand(sshKeyInfo!)); sshCopied = true; setTimeout(() => sshCopied = false, 1500); }}
-                    >{sshCopied ? "Copied!" : "Copy"}</button>
+                      class="shrink-0 rounded px-2 py-0.5 text-xs border border-border {sshCopied
+                        ? 'text-green-500 border-green-500/30'
+                        : 'text-muted-foreground'} hover:text-foreground transition-colors"
+                      onclick={async () => {
+                        await navigator.clipboard.writeText(buildCopyCommand(sshKeyInfo!));
+                        sshCopied = true;
+                        setTimeout(() => (sshCopied = false), 1500);
+                      }}>{sshCopied ? "Copied!" : "Copy"}</button
+                    >
                   </div>
-                  <p class="text-[10px] text-muted-foreground">After running that command, click "Test Connection" below.</p>
+                  <p class="text-[10px] text-muted-foreground">
+                    After running that command, click "Test Connection" below.
+                  </p>
                 </div>
               {:else}
-                <p class="text-xs text-muted-foreground">Fill in the host and username above to get the setup command.</p>
+                <p class="text-xs text-muted-foreground">
+                  Fill in the host and username above to get the setup command.
+                </p>
               {/if}
             </div>
-
           {:else if sshKeyStep === "done"}
             <div class="flex items-center gap-1.5 text-xs text-green-500">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              <svg
+                class="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg
+              >
               SSH verified and connected.
             </div>
-
           {:else if sshKeyStep === "error"}
             <p class="text-xs text-destructive">{sshKeyError}</p>
           {/if}
@@ -590,24 +708,44 @@
 
         <!-- Test result -->
         {#if remoteTestResult}
-          <div class="rounded-lg border p-3 flex flex-col gap-1.5
+          <div
+            class="rounded-lg border p-3 flex flex-col gap-1.5
             {remoteTestResult.ssh_ok && remoteTestResult.cli_found
               ? 'border-green-500/30 bg-green-500/5'
               : remoteTestResult.ssh_ok
                 ? 'border-amber-500/30 bg-amber-500/5'
-                : 'border-destructive/30 bg-destructive/5'}">
+                : 'border-destructive/30 bg-destructive/5'}"
+          >
             <!-- Status row -->
-            <div class="flex items-center gap-2 text-xs font-medium
+            <div
+              class="flex items-center gap-2 text-xs font-medium
               {remoteTestResult.ssh_ok && remoteTestResult.cli_found
                 ? 'text-green-500'
                 : remoteTestResult.ssh_ok
                   ? 'text-amber-400'
-                  : 'text-destructive'}">
+                  : 'text-destructive'}"
+            >
               {#if remoteTestResult.ssh_ok}
-                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                <svg
+                  class="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg
+                >
                 SSH connected
               {:else}
-                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                <svg
+                  class="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg
+                >
                 Connection failed
               {/if}
             </div>
@@ -615,14 +753,18 @@
             <!-- Claude Code found -->
             {#if remoteTestResult.ssh_ok && remoteTestResult.cli_found}
               <p class="text-xs text-muted-foreground">
-                Claude Code ready: <code class="font-mono">{remoteTestResult.cli_version ?? "unknown version"}</code>
+                Claude Code ready: <code class="font-mono"
+                  >{remoteTestResult.cli_version ?? "unknown version"}</code
+                >
               </p>
             {/if}
 
             <!-- Claude not found, no install attempted yet -->
             {#if remoteTestResult.ssh_ok && !remoteTestResult.cli_found && remoteInstallLog.length === 0}
               <div class="flex flex-col gap-2 mt-1">
-                <p class="text-xs text-amber-400">SSH works but Claude Code wasn't found on the remote machine.</p>
+                <p class="text-xs text-amber-400">
+                  SSH works but Claude Code wasn't found on the remote machine.
+                </p>
                 <button
                   class="w-full rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
                   onclick={installClaudeOnRemote}
@@ -669,7 +811,9 @@
             onclick={testRemoteConnection}
           >
             {#if remoteTesting}
-              <span class="h-3 w-3 border border-foreground/30 border-t-foreground rounded-full animate-spin"></span>
+              <span
+                class="h-3 w-3 border border-foreground/30 border-t-foreground rounded-full animate-spin"
+              ></span>
               Testing…
             {:else}
               Test Connection
@@ -681,7 +825,9 @@
             onclick={saveRemoteAndComplete}
           >
             {#if remoteSaving}
-              <span class="h-3 w-3 border border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></span>
+              <span
+                class="h-3 w-3 border border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"
+              ></span>
               Saving…
             {:else}
               Save & Launch
@@ -693,7 +839,6 @@
           "Save & Launch" becomes available after a successful connection test.
         </p>
       </div>
-
     {:else if step === "cli_not_found"}
       <!-- CLI not found — show install commands to copy -->
       <div class="flex flex-col gap-6">

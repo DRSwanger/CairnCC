@@ -400,9 +400,11 @@
     // user input (permission prompts, AskUserQuestion) so those are never silently dropped.
     tl = tl.filter((e) => {
       if (e.kind !== "tool") return true;
-      return e.tool.status === "permission_prompt" ||
-             e.tool.status === "ask_pending" ||
-             (e.tool.tool_name === "AskUserQuestion" && e.tool.status === "running");
+      return (
+        e.tool.status === "permission_prompt" ||
+        e.tool.status === "ask_pending" ||
+        (e.tool.tool_name === "AskUserQuestion" && e.tool.status === "running")
+      );
     });
     return tl;
   });
@@ -1236,7 +1238,8 @@
   });
 
   // Auto-greeting: on fresh app open with no active run, start a session and have Claude confirm memory
-  const GREETING_PROMPT = "Review your memory files silently, then greet me in 1-2 sentences confirming memory recall is working. Do not list everything — just confirm and say hi.";
+  const GREETING_PROMPT =
+    "Review your memory files silently, then greet me in 1-2 sentences confirming memory recall is working. Do not list everything — just confirm and say hi.";
   let greetingRunId = $state<string | null>(null);
   let greetingStarted = $state(false);
 
@@ -1302,17 +1305,17 @@
   /** True while the greeting is pending or actively running (first turn only). */
   let isGreetingActive = $derived(
     greetingStarted &&
-    (greetingRunId === null ||
-      (store.run?.id === greetingRunId &&
-        store.isRunning &&
-        store.timeline.filter((e) => e.kind === "user").length <= 1))
+      (greetingRunId === null ||
+        (store.run?.id === greetingRunId &&
+          store.isRunning &&
+          store.timeline.filter((e) => e.kind === "user").length <= 1)),
   );
   /** True after greeting finishes but before user sends a second message. */
   let isGreetingDone = $derived(
     greetingRunId !== null &&
-    store.run?.id === greetingRunId &&
-    !store.isRunning &&
-    store.timeline.filter((e) => e.kind === "user").length <= 1
+      store.run?.id === greetingRunId &&
+      !store.isRunning &&
+      store.timeline.filter((e) => e.kind === "user").length <= 1,
   );
 
   // Delete the greeting run from history as soon as it finishes
@@ -1324,9 +1327,12 @@
     if (userCount >= 1 && !store.isRunning) {
       const id = greetingRunId;
       // Don't null greetingRunId yet — isGreetingDone still needs it for the badge
-      api.softDeleteRuns([id]).then(() => {
-        window.dispatchEvent(new Event("ocv:runs-changed"));
-      }).catch(() => {});
+      api
+        .softDeleteRuns([id])
+        .then(() => {
+          window.dispatchEvent(new Event("ocv:runs-changed"));
+        })
+        .catch(() => {});
     }
   });
 
@@ -1923,9 +1929,12 @@
     if (pending.length === 0) return;
     for (const { tool, requestId } of pending) {
       dbg("chat", "bypass auto-approve", { requestId, tool: tool.tool_name });
-      handlePermissionRespond(requestId, "allow", undefined, tool.input as Record<string, unknown>).catch(
-        (e) => dbgWarn("chat", "bypass auto-approve failed", { requestId, reason: e }),
-      );
+      handlePermissionRespond(
+        requestId,
+        "allow",
+        undefined,
+        tool.input as Record<string, unknown>,
+      ).catch((e) => dbgWarn("chat", "bypass auto-approve failed", { requestId, reason: e }));
     }
   });
 
@@ -3836,7 +3845,13 @@
           <ul class="flex flex-col gap-0.5 text-xs text-muted-foreground">
             {#each pendingTransfer.filenames.slice(0, 4) as name}
               <li class="flex items-center gap-1.5">
-                <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  class="h-3.5 w-3.5 shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
@@ -3872,7 +3887,10 @@
               <span class="text-xs font-medium text-foreground">{t("drag_actionTransfer")}</span>
               <span class="text-[11px] text-muted-foreground">
                 {t("drag_actionTransferDesc", {
-                  host: remoteHosts.find((h) => h.name === store.remoteHostName)?.host ?? store.remoteHostName ?? "",
+                  host:
+                    remoteHosts.find((h) => h.name === store.remoteHostName)?.host ??
+                    store.remoteHostName ??
+                    "",
                   dir: remoteHosts.find((h) => h.name === store.remoteHostName)?.remote_cwd ?? "~",
                 })}
               </span>
@@ -3881,7 +3899,9 @@
           <!-- Dismiss -->
           <button
             class="text-xs text-muted-foreground/60 hover:text-muted-foreground text-center transition-colors"
-            onclick={() => { pendingTransfer = null; }}
+            onclick={() => {
+              pendingTransfer = null;
+            }}
           >
             Cancel
           </button>
@@ -4150,7 +4170,10 @@
             <div class="pb-[32vh]">
               {#if isGreetingDone}
                 <!-- Memory status banner -->
-                <div class="chat-content-width pt-6 pb-2" in:fly={{ y: 8, duration: 400, easing: cubicOut }}>
+                <div
+                  class="chat-content-width pt-6 pb-2"
+                  in:fly={{ y: 8, duration: 400, easing: cubicOut }}
+                >
                   <div class="ocv-memory-banner">
                     <div class="ocv-memory-dot"></div>
                     <span class="ocv-memory-label">Memory active</span>
@@ -4204,7 +4227,9 @@
                     id="msg-{entry.anchorId}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
-                    in:fly={historyLoaded ? { y: 10, duration: 600, easing: cubicOut } : { duration: 0 }}
+                    in:fly={historyLoaded
+                      ? { y: 10, duration: 600, easing: cubicOut }
+                      : { duration: 0 }}
                     class:opacity-40={lastClearSepId !== null &&
                       (timelineIdIndex.get(entry.id) ?? 0) <
                         (timelineIdIndex.get(lastClearSepId) ?? 0)}
@@ -4760,119 +4785,130 @@
 
     <!-- Input area wrapper: relative so thinking panel can float above without shifting layout -->
     <div class="relative">
-
-    <!-- ── Thinking popup panel ──────────────────────────────────────────────
+      <!-- ── Thinking popup panel ──────────────────────────────────────────────
          Absolutely positioned above the input bar — no layout impact on chat content.
          Appears once when extended thinking starts, stays up for the entire run,
          flies out smoothly when store.isRunning goes false. -->
-    {#if thinkingPanelVisible && !inputBlockedByPermission}
-      <div
-        class="absolute bottom-full left-0 right-0 px-3 pb-1.5"
-        in:fly={{ y: 20, duration: 220, easing: cubicOut }}
-        out:fly={{ y: 20, duration: 180, easing: cubicOut }}
-      >
-        <button
-          class="w-full text-left rounded-xl border border-blue-500/20 bg-background/95 shadow-lg shadow-blue-950/20 px-3 py-2.5 backdrop-blur-sm transition-colors hover:bg-muted/50"
-          onclick={() => (thinkingExpanded = !thinkingExpanded)}
+      {#if thinkingPanelVisible && !inputBlockedByPermission}
+        <div
+          class="absolute bottom-full left-0 right-0 px-3 pb-1.5"
+          in:fly={{ y: 20, duration: 220, easing: cubicOut }}
+          out:fly={{ y: 20, duration: 180, easing: cubicOut }}
         >
-          <div class="flex items-center gap-2">
-            <!-- Small neural net animation -->
-            <div class="shrink-0 rounded overflow-hidden" style="width:28px;height:28px;">
-              <ThinkingAnimation size={28} />
+          <button
+            class="w-full text-left rounded-xl border border-blue-500/20 bg-background/95 shadow-lg shadow-blue-950/20 px-3 py-2.5 backdrop-blur-sm transition-colors hover:bg-muted/50"
+            onclick={() => (thinkingExpanded = !thinkingExpanded)}
+          >
+            <div class="flex items-center gap-2">
+              <!-- Small neural net animation -->
+              <div class="shrink-0 rounded overflow-hidden" style="width:28px;height:28px;">
+                <ThinkingAnimation size={28} />
+              </div>
+
+              <!-- Status label (three states) -->
+              {#if store.thinkingText && store.isRunning}
+                <span class="text-xs font-medium thinking-shimmer">{spinnerVerb}…</span>
+                <span class="thinking-bounce-dots" aria-hidden="true"
+                  ><span></span><span></span><span></span></span
+                >
+              {:else if store.isRunning}
+                <span class="text-xs font-medium text-blue-400/60">{spinnerVerb}…</span>
+                <div
+                  class="h-2 w-2 rounded-full border border-blue-400/30 border-t-blue-400 animate-spin shrink-0"
+                ></div>
+              {:else}
+                <span class="text-xs font-medium text-blue-400/40">{spinnerVerb}…</span>
+              {/if}
+
+              <!-- Chevron toggle -->
+              <svg
+                class="h-3 w-3 text-muted-foreground/30 shrink-0 ml-auto transition-transform {thinkingExpanded
+                  ? 'rotate-180'
+                  : ''}"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg
+              >
             </div>
 
-            <!-- Status label (three states) -->
-            {#if store.thinkingText && store.isRunning}
-              <span class="text-xs font-medium thinking-shimmer">{spinnerVerb}…</span>
-              <span class="thinking-bounce-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-            {:else if store.isRunning}
-              <span class="text-xs font-medium text-blue-400/60">{spinnerVerb}…</span>
-              <div class="h-2 w-2 rounded-full border border-blue-400/30 border-t-blue-400 animate-spin shrink-0"></div>
-            {:else}
-              <span class="text-xs font-medium text-blue-400/40">{spinnerVerb}…</span>
+            <!-- Expandable thinking text -->
+            {#if thinkingExpanded && displayThinkingText}
+              <div class="mt-2 max-h-48 overflow-y-auto rounded-lg bg-blue-950/30 px-2.5 py-2">
+                <pre
+                  class="text-xs font-mono whitespace-pre-wrap break-words text-blue-300/70 leading-relaxed">{displayThinkingText.trimEnd()}</pre>
+              </div>
             {/if}
+          </button>
+        </div>
+      {/if}
 
-            <!-- Chevron toggle -->
-            <svg
-              class="h-3 w-3 text-muted-foreground/30 shrink-0 ml-auto transition-transform {thinkingExpanded ? 'rotate-180' : ''}"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-            ><path d="m6 9 6 6 6-6" /></svg>
-          </div>
-
-          <!-- Expandable thinking text -->
-          {#if thinkingExpanded && displayThinkingText}
-            <div class="mt-2 max-h-48 overflow-y-auto rounded-lg bg-blue-950/30 px-2.5 py-2">
-              <pre class="text-xs font-mono whitespace-pre-wrap break-words text-blue-300/70 leading-relaxed">{displayThinkingText.trimEnd()}</pre>
-            </div>
-          {/if}
-        </button>
-      </div>
-    {/if}
-
-    {#if store.sessionAlive || !store.run || store.phase === "empty" || store.phase === "ready" || TERMINAL_PHASES.includes(store.phase)}
-      <PromptInput
-        bind:this={promptRef}
-        agent={store.agent}
-        running={store.isActivelyRunning}
-        disabled={inputBlockedByPermission}
-        pendingPermission={store.hasInlinePermission}
-        hasRun={!!store.run}
-        sessionAlive={store.sessionAlive}
-        canResume={!store.sessionAlive &&
-          canResumeNow(store.run, store.phase, agentSettings?.no_session_persistence ?? false)}
-        useStreamSession={store.useStreamSession}
-        isRemote={store.isRemote}
-        cliCommands={store.sessionInitReceived && store.sessionCommands.length > 0
-          ? store.sessionCommands
-          : mergeProjectCommands(getCliCommands(), projectCommands)}
-        models={effectiveModels}
-        currentModel={store.model}
-        permissionMode={store.permissionMode}
-        cwd={store.effectiveCwd ||
-          folderCwdOverride ||
-          localStorage.getItem("ocv:project-cwd") ||
-          ""}
-        authMode={store.authMode}
-        platformId={store.platformId ?? "anthropic"}
-        platformCredentials={settings?.platform_credentials ?? []}
-        onSend={sendMessage}
-        onBtwSend={handleBtwSend}
-        onAgentChange={undefined}
-        onInterrupt={() => store.interrupt()}
-        onModelSwitch={handleModelChange}
-        onPermissionModeChange={store.features.permissionModeSwitch
-          ? handlePermissionModeChange
-          : undefined}
-        onVirtualCommand={handleVirtualCommand}
-        fastModeState={store.fastModeState}
-        onFastModeSwitch={handleFastModeSwitch}
-        onPlatformChange={handlePlatformChange}
-        {authOverview}
-        authSourceLabel={store.authSourceLabel}
-        authSourceCategory={store.authSourceCategory}
-        apiKeySource={store.apiKeySource}
-        onAuthModeChange={handleAuthModeChange}
-        {localProxyStatuses}
-        showAuthBadge={!welcomeVisible}
-        onShortcutHelp={() => (shortcutHelpOpen = !shortcutHelpOpen)}
-        availableSkills={store.availableSkills}
-        {skillItems}
-        agents={preloadedAgents.map((a) => ({ name: a.name, description: a.description }))}
-        hasStash={!!stashedInput}
-        {userHistory}
-        runId={store.run?.id ?? ""}
-        onRestoreStash={() => {
-          if (stashedInput) {
-            promptRef?.restoreSnapshot(stashedInput);
-            stashedInput = null;
-            showChatToast(t("toast_stashRestored"));
-            dbg("chat", "stash restored via badge click");
-          }
-        }}
-      />
-    {/if}
-
-    </div> <!-- /relative input wrapper -->
+      {#if store.sessionAlive || !store.run || store.phase === "empty" || store.phase === "ready" || TERMINAL_PHASES.includes(store.phase)}
+        <PromptInput
+          bind:this={promptRef}
+          agent={store.agent}
+          running={store.isActivelyRunning}
+          disabled={inputBlockedByPermission}
+          pendingPermission={store.hasInlinePermission}
+          hasRun={!!store.run}
+          sessionAlive={store.sessionAlive}
+          canResume={!store.sessionAlive &&
+            canResumeNow(store.run, store.phase, agentSettings?.no_session_persistence ?? false)}
+          useStreamSession={store.useStreamSession}
+          isRemote={store.isRemote}
+          cliCommands={store.sessionInitReceived && store.sessionCommands.length > 0
+            ? store.sessionCommands
+            : mergeProjectCommands(getCliCommands(), projectCommands)}
+          models={effectiveModels}
+          currentModel={store.model}
+          permissionMode={store.permissionMode}
+          cwd={store.effectiveCwd ||
+            folderCwdOverride ||
+            localStorage.getItem("ocv:project-cwd") ||
+            ""}
+          authMode={store.authMode}
+          platformId={store.platformId ?? "anthropic"}
+          platformCredentials={settings?.platform_credentials ?? []}
+          onSend={sendMessage}
+          onBtwSend={handleBtwSend}
+          onAgentChange={undefined}
+          onInterrupt={() => store.interrupt()}
+          onModelSwitch={handleModelChange}
+          onPermissionModeChange={store.features.permissionModeSwitch
+            ? handlePermissionModeChange
+            : undefined}
+          onVirtualCommand={handleVirtualCommand}
+          fastModeState={store.fastModeState}
+          onFastModeSwitch={handleFastModeSwitch}
+          onPlatformChange={handlePlatformChange}
+          {authOverview}
+          authSourceLabel={store.authSourceLabel}
+          authSourceCategory={store.authSourceCategory}
+          apiKeySource={store.apiKeySource}
+          onAuthModeChange={handleAuthModeChange}
+          {localProxyStatuses}
+          showAuthBadge={!welcomeVisible}
+          onShortcutHelp={() => (shortcutHelpOpen = !shortcutHelpOpen)}
+          availableSkills={store.availableSkills}
+          {skillItems}
+          agents={preloadedAgents.map((a) => ({ name: a.name, description: a.description }))}
+          hasStash={!!stashedInput}
+          {userHistory}
+          runId={store.run?.id ?? ""}
+          onRestoreStash={() => {
+            if (stashedInput) {
+              promptRef?.restoreSnapshot(stashedInput);
+              stashedInput = null;
+              showChatToast(t("toast_stashRestored"));
+              dbg("chat", "stash restored via badge click");
+            }
+          }}
+        />
+      {/if}
+    </div>
+    <!-- /relative input wrapper -->
   </div>
 
   <!-- Tool Activity sidebar -->

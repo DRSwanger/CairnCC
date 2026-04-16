@@ -26,7 +26,7 @@
   // Drip animation — purely time-based, no per-frame char cap.
   // Elapsed time is clamped to 50ms so backgrounded/frozen tabs don't
   // produce a huge single-frame jump when they resume.
-  const MAX_ELAPSED = 50;  // ms — clamp elapsed to avoid jump after tab-suspend
+  const MAX_ELAPSED = 50; // ms — clamp elapsed to avoid jump after tab-suspend
   // Start from "" when mounting during active streaming so there's no burst of
   // pre-buffered text. Start from the full text for historical (already-complete)
   // messages so they render instantly without animating on page load.
@@ -118,7 +118,9 @@
     const cleanups: Array<() => void> = [];
     imgs.forEach((img) => {
       img.classList.add("md-img-clickable");
-      const handler = () => { lightboxSrc = img.src; };
+      const handler = () => {
+        lightboxSrc = img.src;
+      };
       img.addEventListener("click", handler);
       cleanups.push(() => img.removeEventListener("click", handler));
     });
