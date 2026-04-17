@@ -61,9 +61,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__-14
-          releaseName: "CairnCC v__VERSION__-14"
-          releaseBody: "Draft build — not for public release."
-          releaseDraft: true
+          tagName: v__VERSION__
+          releaseName: "CairnCC v__VERSION__"
+          releaseBody: |
+            ## What's new in v0.1.65
+
+            - **Text effects system** — selectable streaming animations (Standard, Fade Edge, Blur Edge, Decode) applied on top of the drip. Decode is the default.
+            - **Single-render streaming** — eliminated the dual-container flash ("remove and paste") by merging streaming directly into timeline entries.
+            - **macOS update instructions** — update banner now opens the releases page with Gatekeeper bypass command (`xattr -cr`) for unsigned builds.
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
