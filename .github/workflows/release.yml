@@ -71,4 +71,5 @@ jobs:
             - **macOS update instructions** — update banner now opens the releases page with Gatekeeper bypass command (`xattr -cr`) for unsigned builds.
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
