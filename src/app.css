@@ -202,19 +202,82 @@
   animation: fade-in 0.25s ease-out both;
 }
 
-.drip-reveal {
-  animation: drip-reveal 0.5s ease-out both;
+/* ── Streaming drip edge effects ── */
+/* These apply to the MarkdownContent container DURING streaming */
+
+/* Fade: bottom edge fades out, creating a soft reveal as text grows */
+.drip-edge-fade {
+  position: relative;
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 3em), transparent 100%);
+  mask-image: linear-gradient(to bottom, black calc(100% - 3em), transparent 100%);
 }
 
-@keyframes drip-reveal {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Blur: bottom edge blurs, new text sharpens as it scrolls up */
+.drip-edge-blur {
+  position: relative;
+}
+.drip-edge-blur::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3.5em;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black);
+  mask-image: linear-gradient(to bottom, transparent, black);
+  pointer-events: none;
+}
+
+/* Scale: subtle pulse when content grows */
+.drip-edge-scale {
+  animation: drip-scale-pulse 0.15s ease-out;
+}
+@keyframes drip-scale-pulse {
+  from { transform: scale(1.003); }
+  to   { transform: scale(1); }
+}
+
+/* Wipe: horizontal wipe reveal on the bottom portion */
+.drip-edge-wipe {
+  position: relative;
+}
+.drip-edge-wipe::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1.8em;
+  background: linear-gradient(to bottom, transparent, hsl(var(--background)));
+  pointer-events: none;
+}
+
+/* Cascade: glow sweep using CSS custom property --cascade-pos */
+.drip-cascade {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black var(--cascade-pos, 0%),
+    rgba(0,0,0,0.15) calc(var(--cascade-pos, 0%) + 8%),
+    rgba(0,0,0,0.08) 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black var(--cascade-pos, 0%),
+    rgba(0,0,0,0.15) calc(var(--cascade-pos, 0%) + 8%),
+    rgba(0,0,0,0.08) 100%
+  );
+}
+
+/* Decode: scramble tail styling */
+.decode-scramble {
+  color: hsl(var(--primary));
+  opacity: 0.6;
+  font-family: monospace;
+  letter-spacing: -0.02em;
 }
 
 .animate-slide-up {

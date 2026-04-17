@@ -530,6 +530,11 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
             all.user.drip_rate = n.clamp(10, 300) as u32;
         }
     }
+    if let Some(v) = patch.get("reveal_animation") {
+        if let Some(s) = v.as_str() {
+            all.user.reveal_animation = s.to_string();
+        }
+    }
     all.user.updated_at = crate::models::now_iso();
     save(&all)?;
     Ok(all.user)

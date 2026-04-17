@@ -17,6 +17,7 @@
   import KeybindingEditor from "$lib/components/KeybindingEditor.svelte";
   import { formatKeyDisplay } from "$lib/stores/keybindings.svelte";
   import { dripRateStore } from "$lib/stores/drip-rate.svelte";
+  import { revealAnimationStore, REVEAL_STYLES } from "$lib/stores/reveal-animation.svelte";
   import {
     PLATFORM_PRESETS,
     buildPlatformList,
@@ -1118,6 +1119,7 @@
     try {
       settings = await api.getUserSettings();
       dripRateStore.value = settings.drip_rate ?? 35;
+      revealAnimationStore.value = (settings.reveal_animation as typeof revealAnimationStore.value) ?? "slide";
       authMode = settings.auth_mode ?? "cli";
       remoteHosts = settings.remote_hosts ?? [];
       platformCredentials = settings.platform_credentials ?? [];
@@ -1466,6 +1468,36 @@
               <span class="text-xs text-muted-foreground w-16 text-right">
                 {dripRateStore.value} chars/s
               </span>
+            </div>
+          </div>
+
+          <!-- Reveal animation style -->
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-sm font-medium">Text effect</p>
+              <p class="text-xs text-muted-foreground">
+                Extra visual effect applied during text streaming.
+              </p>
+            </div>
+            <div class="flex items-center gap-3">
+              <select
+                value={revealAnimationStore.value}
+                onchange={async (e) => {
+                  const v = (e.target as HTMLSelectElement).value as typeof revealAnimationStore.value;
+                  revealAnimationStore.value = v;
+                  if (settings) {
+                    settings = await api.updateUserSettings({ reveal_animation: v });
+                  }
+                }}
+                style="background-color: hsl(var(--muted)); color: hsl(var(--foreground));"
+                class="rounded-md border border-border px-3 py-1.5 text-xs
+                       focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer
+                       appearance-none"
+              >
+                {#each REVEAL_STYLES.filter(s => !s.experimental) as opt}
+                  <option value={opt.value} style="background-color: hsl(var(--muted)); color: hsl(var(--foreground));">{opt.label}</option>
+                {/each}
+              </select>
             </div>
           </div>
         </Card>

@@ -75,6 +75,7 @@
   import { randomSpinnerVerb } from "$lib/utils/spinner-verbs";
   import { type TurnUsage, classifyError } from "$lib/stores/types";
   import { dripRateStore } from "$lib/stores/drip-rate.svelte";
+  import { revealAnimationStore } from "$lib/stores/reveal-animation.svelte";
   import {
     mergeWithVirtual,
     mergeProjectCommands,
@@ -358,9 +359,9 @@
 
   /** Latches true the moment streaming text appears in the current run; resets when run ends. */
   let runHasStreamed = $state(false);
-  /** Keeps the streaming container alive while MarkdownContent drains its backlog. */
+  /** True while MarkdownContent is still draining its drip backlog after streaming ends. */
   let streamingDraining = $state(false);
-  /** Last non-empty streaming text — held so the draining container has text after store clears. */
+  /** Last non-empty streaming text — held so the entry has text after store clears. */
   let lastStreamingText = $state("");
   $effect(() => {
     if (store.streamingText) {
@@ -371,32 +372,24 @@
     }
   });
   /**
-   * ID of the last assistant timeline entry while the streaming container is active.
-   * That entry renders the full text immediately (no drip), so we suppress it until the
-   * drain is done. Also suppressed while the run is active and has streamed — prevents
-   * a single-frame flash when the drip momentarily catches up between chunks.
+   * ID of the last assistant timeline entry that is actively streaming.
+   * This entry's ChatMessage receives streaming props so MarkdownContent renders
+   * with the drip animation — no separate streaming container, no handoff flash.
    */
-  let suppressedEntryId = $derived.by(() => {
+  let streamingEntryId = $derived.by(() => {
     const activelyStreaming = store.isRunning && runHasStreamed;
     if (!store.streamingText && !streamingDraining && !activelyStreaming) return null;
     const tl = filteredTimeline;
+    // Find the last user entry, then look for an assistant entry after it.
+    // This prevents injecting streaming text into a previous turn's assistant message.
+    let lastUserIdx = -1;
     for (let i = tl.length - 1; i >= 0; i--) {
+      if (tl[i].kind === "user") { lastUserIdx = i; break; }
+    }
+    for (let i = tl.length - 1; i > lastUserIdx; i--) {
       if (tl[i].kind === "assistant") return tl[i].id;
     }
     return null;
-  });
-
-  /** Tracks the entry that just transitioned from suppressed → visible for a smooth reveal. */
-  let revealingEntryId = $state<string | null>(null);
-  let _prevSuppressedId = $state<string | null>(null);
-  $effect(() => {
-    if (_prevSuppressedId && !suppressedEntryId) {
-      revealingEntryId = _prevSuppressedId;
-      setTimeout(() => {
-        revealingEntryId = null;
-      }, 600);
-    }
-    _prevSuppressedId = suppressedEntryId;
   });
 
   let filteredTimeline = $derived.by(() => {
@@ -1047,6 +1040,7 @@
     try {
       settings = await api.getUserSettings();
       dripRateStore.value = settings.drip_rate ?? 35;
+      revealAnimationStore.value = (settings.reveal_animation as typeof revealAnimationStore.value) ?? "decode";
       store.authMode = settings.auth_mode ?? "cli";
       remoteHosts = settings.remote_hosts ?? [];
       // Restore last target selection
@@ -4242,9 +4236,7 @@
                     id="msg-{entry.anchorId}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
-                    class:hidden={entry.id === suppressedEntryId}
-                    class:drip-reveal={entry.id === revealingEntryId}
-                    in:fly={historyLoaded && entry.id !== suppressedEntryId && entry.id !== revealingEntryId
+                    in:fly={historyLoaded
                       ? { y: 10, duration: 600, easing: cubicOut }
                       : { duration: 0 }}
                     class:opacity-40={lastClearSepId !== null &&
@@ -4321,6 +4313,11 @@
                           timestamp: entry.ts,
                         }}
                         thinkingText={entry.thinkingText}
+                        streaming={entry.id === streamingEntryId && !!store.streamingText}
+                        streamingText={entry.id === streamingEntryId ? (store.streamingText || lastStreamingText) : ""}
+                        bind:draining={streamingDraining}
+                        rate={dripRateStore.value}
+                        revealStyle={revealAnimationStore.value}
                       />
                     {:else if entry.kind === "tool"}
                       {#if claudeTurnStarts.has(i)}
@@ -4465,9 +4462,10 @@
 
               <!-- Thinking popup moved above PromptInput — see below -->
 
-              <!-- Streaming text: kept alive via streamingDraining until drip backlog clears -->
-              {#if store.streamingText || streamingDraining}
-                <div class="w-full animate-fade-in">
+              <!-- Fallback streaming container: shown only when streaming text exists
+                   but the assistant timeline entry hasn't appeared yet -->
+              {#if (store.streamingText || streamingDraining) && !streamingEntryId}
+                <div class="w-full">
                   <div class="chat-content-width py-4">
                     <div class="mb-1.5 flex items-center gap-2">
                       <div
@@ -4495,6 +4493,7 @@
                         streaming={!!store.streamingText}
                         bind:draining={streamingDraining}
                         rate={dripRateStore.value}
+                        revealStyle={revealAnimationStore.value}
                       />
                     </div>
                   </div>

@@ -5,17 +5,28 @@
   import FileAttachment from "./FileAttachment.svelte";
   import { IMAGE_TYPES } from "$lib/utils/file-types";
   import type { ChatMessage, Attachment } from "$lib/types";
+  import type { RevealStyle } from "$lib/stores/reveal-animation.svelte";
 
   let {
     message,
     attachments,
     thinkingText,
     onRewind,
+    streaming = false,
+    streamingText = "",
+    draining = $bindable(false),
+    rate = 35,
+    revealStyle = "slide" as RevealStyle,
   }: {
     message: ChatMessage;
     attachments?: Attachment[];
     thinkingText?: string;
     onRewind?: () => void;
+    streaming?: boolean;
+    streamingText?: string;
+    draining?: boolean;
+    rate?: number;
+    revealStyle?: RevealStyle;
   } = $props();
 
   function isImage(att: Attachment): boolean {
@@ -205,7 +216,13 @@
       {:else}
         <!-- Thinking text shown in the popup panel above the input during the run; not repeated here -->
         <div class="prose-chat">
-          <MarkdownContent text={message.content} />
+          <MarkdownContent
+            text={streaming ? streamingText : message.content}
+            {streaming}
+            bind:draining
+            {rate}
+            {revealStyle}
+          />
         </div>
       {/if}
     </div>

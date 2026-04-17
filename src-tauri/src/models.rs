@@ -265,6 +265,12 @@ pub struct UserSettings {
         skip_serializing_if = "is_default_drip_rate"
     )]
     pub drip_rate: u32,
+    /// Reveal animation style for drip→timeline handoff. Default "slide".
+    #[serde(
+        default = "default_reveal_animation",
+        skip_serializing_if = "is_default_reveal_animation"
+    )]
+    pub reveal_animation: String,
     pub updated_at: String,
 }
 
@@ -273,6 +279,12 @@ fn default_drip_rate() -> u32 {
 }
 fn is_default_drip_rate(v: &u32) -> bool {
     *v == 35
+}
+fn default_reveal_animation() -> String {
+    "decode".to_string()
+}
+fn is_default_reveal_animation(v: &str) -> bool {
+    v == "decode"
 }
 
 fn default_auth_mode() -> String {
@@ -361,6 +373,7 @@ impl Default for UserSettings {
             web_server_allowed_origins: None,
             web_server_tunnel_url: None,
             drip_rate: default_drip_rate(),
+            reveal_animation: default_reveal_animation(),
             updated_at: now_iso(),
         }
     }

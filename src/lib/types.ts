@@ -152,6 +152,8 @@ export interface UserSettings {
   web_server_tunnel_url?: string;
   /** Text drip speed chars/sec during streaming. Drain = drip_rate * 2. Default 35. */
   drip_rate?: number;
+  /** Reveal animation style for drip→timeline handoff. Default "slide". */
+  reveal_animation?: string;
   updated_at: string;
 }
 
