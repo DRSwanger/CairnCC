@@ -1119,7 +1119,11 @@
     try {
       settings = await api.getUserSettings();
       dripRateStore.value = settings.drip_rate ?? 35;
-      revealAnimationStore.value = (settings.reveal_animation as typeof revealAnimationStore.value) ?? "slide";
+      revealAnimationStore.value = (settings.reveal_animation as typeof revealAnimationStore.value) ?? "decode";
+      // Persist migration if the stored value was experimental
+      if (settings.reveal_animation && settings.reveal_animation !== revealAnimationStore.value) {
+        settings = await api.updateUserSettings({ reveal_animation: revealAnimationStore.value });
+      }
       authMode = settings.auth_mode ?? "cli";
       remoteHosts = settings.remote_hosts ?? [];
       platformCredentials = settings.platform_credentials ?? [];
