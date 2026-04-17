@@ -48,7 +48,8 @@
   let decodeTail = $state("");
   function randomGlyphs(n: number): string {
     let s = "";
-    for (let i = 0; i < n; i++) s += DECODE_GLYPHS[Math.floor(Math.random() * DECODE_GLYPHS.length)];
+    for (let i = 0; i < n; i++)
+      s += DECODE_GLYPHS[Math.floor(Math.random() * DECODE_GLYPHS.length)];
     return s;
   }
 
@@ -133,18 +134,24 @@
   let edgeClass = $derived.by(() => {
     if (!draining) return "";
     switch (revealStyle) {
-      case "fade": return "drip-edge-fade";
-      case "blur": return "drip-edge-blur";
-      case "scale": return "drip-edge-scale";
-      case "wipe": return "drip-edge-wipe";
-      case "cascade": return "drip-cascade";
-      default: return "";
+      case "fade":
+        return "drip-edge-fade";
+      case "blur":
+        return "drip-edge-blur";
+      case "scale":
+        return "drip-edge-scale";
+      case "wipe":
+        return "drip-edge-wipe";
+      case "cascade":
+        return "drip-cascade";
+      default:
+        return "";
     }
   });
 
   // ── Cascade: CSS custom property ──
   let cascadeStyle = $derived(
-    revealStyle === "cascade" ? `--cascade-pos: ${Math.round(revealFrac * 100)}%` : ""
+    revealStyle === "cascade" ? `--cascade-pos: ${Math.round(revealFrac * 100)}%` : "",
   );
 
   // ── Fly-in: wrap words and animate ──
@@ -189,7 +196,8 @@
           span.textContent = part;
           span.className = "fly-word";
           span.style.display = "inline-block";
-          span.style.transition = "opacity 0.35s ease-out, transform 0.45s cubic-bezier(0.22,1,0.36,1)";
+          span.style.transition =
+            "opacity 0.35s ease-out, transform 0.45s cubic-bezier(0.22,1,0.36,1)";
           if (wordIdx < revealCount) {
             span.style.opacity = "1";
             span.style.transform = "none";
@@ -220,8 +228,13 @@
           await navigator.clipboard.writeText(codeEl.textContent || "");
           btn.textContent = "Copied!";
           btn.classList.add("copied");
-          setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 1500);
-        } catch { /* ignore */ }
+          setTimeout(() => {
+            btn.textContent = "Copy";
+            btn.classList.remove("copied");
+          }, 1500);
+        } catch {
+          /* ignore */
+        }
       };
       btn.addEventListener("click", handler);
       cleanups.push(() => btn.removeEventListener("click", handler));
@@ -244,7 +257,9 @@
     const cleanups: Array<() => void> = [];
     imgs.forEach((img) => {
       img.classList.add("md-img-clickable");
-      const handler = () => { lightboxSrc = img.src; };
+      const handler = () => {
+        lightboxSrc = img.src;
+      };
       img.addEventListener("click", handler);
       cleanups.push(() => img.removeEventListener("click", handler));
     });
@@ -263,8 +278,12 @@
       const abs = basePath.replace(/\\/g, "/") + "/" + src.replace(/\\/g, "/");
       dbg("markdown", "resolve-img", { src, abs });
       readFileBase64(abs)
-        .then(([base64, mime]) => { img.src = `data:${mime};base64,${base64}`; })
-        .catch((e) => { dbgWarn("markdown", "img-load-failed", { src, abs, error: e }); });
+        .then(([base64, mime]) => {
+          img.src = `data:${mime};base64,${base64}`;
+        })
+        .catch((e) => {
+          dbgWarn("markdown", "img-load-failed", { src, abs, error: e });
+        });
     }
   });
 </script>

@@ -384,7 +384,10 @@
     // This prevents injecting streaming text into a previous turn's assistant message.
     let lastUserIdx = -1;
     for (let i = tl.length - 1; i >= 0; i--) {
-      if (tl[i].kind === "user") { lastUserIdx = i; break; }
+      if (tl[i].kind === "user") {
+        lastUserIdx = i;
+        break;
+      }
     }
     for (let i = tl.length - 1; i > lastUserIdx; i--) {
       if (tl[i].kind === "assistant") return tl[i].id;
@@ -1040,7 +1043,8 @@
     try {
       settings = await api.getUserSettings();
       dripRateStore.value = settings.drip_rate ?? 35;
-      revealAnimationStore.value = (settings.reveal_animation as typeof revealAnimationStore.value) ?? "decode";
+      revealAnimationStore.value =
+        (settings.reveal_animation as typeof revealAnimationStore.value) ?? "decode";
       if (settings.reveal_animation && settings.reveal_animation !== revealAnimationStore.value) {
         settings = await api.updateUserSettings({ reveal_animation: revealAnimationStore.value });
       }
@@ -4317,7 +4321,9 @@
                         }}
                         thinkingText={entry.thinkingText}
                         streaming={entry.id === streamingEntryId && !!store.streamingText}
-                        streamingText={entry.id === streamingEntryId ? (store.streamingText || lastStreamingText) : ""}
+                        streamingText={entry.id === streamingEntryId
+                          ? store.streamingText || lastStreamingText
+                          : ""}
                         bind:draining={streamingDraining}
                         rate={dripRateStore.value}
                         revealStyle={revealAnimationStore.value}

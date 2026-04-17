@@ -29,7 +29,7 @@ export const REVEAL_STYLES: { value: RevealStyle; label: string; experimental?: 
 let _style = $state<RevealStyle>("decode");
 
 /** Set of styles visible in the dropdown (non-experimental). */
-const VISIBLE = new Set(REVEAL_STYLES.filter(s => !s.experimental).map(s => s.value));
+const VISIBLE = new Set(REVEAL_STYLES.filter((s) => !s.experimental).map((s) => s.value));
 
 export const revealAnimationStore = {
   get value(): RevealStyle {

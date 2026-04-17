@@ -1119,7 +1119,8 @@
     try {
       settings = await api.getUserSettings();
       dripRateStore.value = settings.drip_rate ?? 35;
-      revealAnimationStore.value = (settings.reveal_animation as typeof revealAnimationStore.value) ?? "decode";
+      revealAnimationStore.value =
+        (settings.reveal_animation as typeof revealAnimationStore.value) ?? "decode";
       // Persist migration if the stored value was experimental
       if (settings.reveal_animation && settings.reveal_animation !== revealAnimationStore.value) {
         settings = await api.updateUserSettings({ reveal_animation: revealAnimationStore.value });
@@ -1487,7 +1488,8 @@
               <select
                 value={revealAnimationStore.value}
                 onchange={async (e) => {
-                  const v = (e.target as HTMLSelectElement).value as typeof revealAnimationStore.value;
+                  const v = (e.target as HTMLSelectElement)
+                    .value as typeof revealAnimationStore.value;
                   revealAnimationStore.value = v;
                   if (settings) {
                     settings = await api.updateUserSettings({ reveal_animation: v });
@@ -1498,8 +1500,12 @@
                        focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer
                        appearance-none"
               >
-                {#each REVEAL_STYLES.filter(s => !s.experimental) as opt}
-                  <option value={opt.value} style="background-color: hsl(var(--muted)); color: hsl(var(--foreground));">{opt.label}</option>
+                {#each REVEAL_STYLES.filter((s) => !s.experimental) as opt}
+                  <option
+                    value={opt.value}
+                    style="background-color: hsl(var(--muted)); color: hsl(var(--foreground));"
+                    >{opt.label}</option
+                  >
                 {/each}
               </select>
             </div>

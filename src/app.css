@@ -217,7 +217,7 @@
   position: relative;
 }
 .drip-edge-blur::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: 0;
   left: 0;
@@ -235,8 +235,12 @@
   animation: drip-scale-pulse 0.15s ease-out;
 }
 @keyframes drip-scale-pulse {
-  from { transform: scale(1.003); }
-  to   { transform: scale(1); }
+  from {
+    transform: scale(1.003);
+  }
+  to {
+    transform: scale(1);
+  }
 }
 
 /* Wipe: horizontal wipe reveal on the bottom portion */
@@ -244,7 +248,7 @@
   position: relative;
 }
 .drip-edge-wipe::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: 0;
   left: 0;
@@ -260,15 +264,15 @@
     to bottom,
     black 0%,
     black var(--cascade-pos, 0%),
-    rgba(0,0,0,0.15) calc(var(--cascade-pos, 0%) + 8%),
-    rgba(0,0,0,0.08) 100%
+    rgba(0, 0, 0, 0.15) calc(var(--cascade-pos, 0%) + 8%),
+    rgba(0, 0, 0, 0.08) 100%
   );
   mask-image: linear-gradient(
     to bottom,
     black 0%,
     black var(--cascade-pos, 0%),
-    rgba(0,0,0,0.15) calc(var(--cascade-pos, 0%) + 8%),
-    rgba(0,0,0,0.08) 100%
+    rgba(0, 0, 0, 0.15) calc(var(--cascade-pos, 0%) + 8%),
+    rgba(0, 0, 0, 0.08) 100%
   );
 }
 

@@ -70,7 +70,9 @@
   async function copyXattrCommand() {
     try {
       await navigator.clipboard.writeText("xattr -cr /Applications/CairnCC.app");
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   onMount(() => {
@@ -92,9 +94,7 @@
 </script>
 
 {#if hasUpdate}
-  <div
-    class="border-b border-primary/30 bg-primary/10 px-4 py-1.5 text-sm"
-  >
+  <div class="border-b border-primary/30 bg-primary/10 px-4 py-1.5 text-sm">
     <div class="flex items-center justify-between gap-2">
       {#if restartNeeded}
         <span class="text-xs text-foreground">
@@ -153,18 +153,38 @@
       </div>
     </div>
     {#if IS_MAC && showMacHelp}
-      <div class="mt-2 rounded-md bg-muted/60 border border-border/40 px-3 py-2 text-xs text-muted-foreground">
-        <p class="font-medium text-foreground mb-1">After downloading the .dmg and dragging CairnCC to Applications:</p>
-        <p class="mb-1.5">macOS may block the app because it isn't signed with an Apple Developer license. Run this in Terminal to allow it:</p>
+      <div
+        class="mt-2 rounded-md bg-muted/60 border border-border/40 px-3 py-2 text-xs text-muted-foreground"
+      >
+        <p class="font-medium text-foreground mb-1">
+          After downloading the .dmg and dragging CairnCC to Applications:
+        </p>
+        <p class="mb-1.5">
+          macOS may block the app because it isn't signed with an Apple Developer license. Run this
+          in Terminal to allow it:
+        </p>
         <div class="flex items-center gap-2">
-          <code class="flex-1 rounded bg-background/80 px-2 py-1 font-mono text-[11px] text-foreground select-all">xattr -cr /Applications/CairnCC.app</code>
+          <code
+            class="flex-1 rounded bg-background/80 px-2 py-1 font-mono text-[11px] text-foreground select-all"
+            >xattr -cr /Applications/CairnCC.app</code
+          >
           <button
             class="shrink-0 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
             onclick={copyXattrCommand}
             title="Copy command"
           >
-            <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect width="14" height="14" x="8" y="8" rx="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+            <svg
+              class="h-3 w-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect width="14" height="14" x="8" y="8" rx="2" /><path
+                d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+              />
             </svg>
           </button>
         </div>
