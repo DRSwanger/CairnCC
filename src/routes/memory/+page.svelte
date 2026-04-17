@@ -84,7 +84,12 @@
     } catch (e) {
       if (seq !== loadSeq) return;
       const msg = String(e);
-      if (msg.includes("No such file") || msg.includes("not found")) {
+      if (
+        msg.includes("No such file") ||
+        msg.includes("not found") ||
+        msg.includes("cannot find") ||
+        msg.includes("os error 2")
+      ) {
         content = "";
         savedContent = "";
         saveCwd = projectCwd;
@@ -112,8 +117,8 @@
       if (seq !== autoSelectSeq) return; // stale — discard
       // Prefer first existing project file
       const existing = candidates.find((f) => f.exists && f.scope === "project");
-      const fallback = candidates.find((f) => f.exists) ?? candidates[0];
-      const pick = existing ?? fallback;
+      const fallback = candidates.find((f) => f.exists);
+      const pick = existing ?? fallback ?? candidates[0];
       if (pick) {
         selectedFile = pick.path;
         // Sync sidebar highlight — but only when not in customFile mode,
