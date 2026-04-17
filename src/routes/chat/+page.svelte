@@ -4224,12 +4224,13 @@
               {/if}
               <!-- Tool filter pill bar: hidden -->
               {#each visibleTimeline as entry, i (entry.id)}
-                {#if !(burstHiddenIndices.has(i) && !toolBursts.has(i)) && entry.id !== suppressedEntryId}
+                {#if !(burstHiddenIndices.has(i) && !toolBursts.has(i))}
                   <div
                     id="msg-{entry.anchorId}"
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
-                    in:fly={historyLoaded
+                    class:hidden={entry.id === suppressedEntryId}
+                    in:fly={historyLoaded && entry.id !== suppressedEntryId
                       ? { y: 10, duration: 600, easing: cubicOut }
                       : { duration: 0 }}
                     class:opacity-40={lastClearSepId !== null &&
