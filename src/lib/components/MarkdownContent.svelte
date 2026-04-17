@@ -33,10 +33,11 @@
   let dripText = $state(streaming ? "" : text);
 
   // Eagerly mark draining=true the moment text grows beyond dripText.
-  // This runs synchronously in Svelte's reactive flush — before DOM updates —
-  // so the parent {#if streamingDraining} container never collapses mid-drain,
-  // preventing the race condition that flashes the fully-rendered timeline entry.
-  $effect(() => {
+  // Must be $effect.pre (not $effect) so the flag propagates to the parent
+  // BEFORE DOM updates — preventing a single-frame flash where the fully-
+  // rendered timeline entry bleeds through between drip catch-up and the
+  // next streaming chunk.
+  $effect.pre(() => {
     if (text.length > dripText.length) draining = true;
   });
 

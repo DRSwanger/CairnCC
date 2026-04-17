@@ -373,10 +373,12 @@
   /**
    * ID of the last assistant timeline entry while the streaming container is active.
    * That entry renders the full text immediately (no drip), so we suppress it until the
-   * drain is done — both changes share the same streamingDraining signal and update atomically.
+   * drain is done. Also suppressed while the run is active and has streamed — prevents
+   * a single-frame flash when the drip momentarily catches up between chunks.
    */
   let suppressedEntryId = $derived.by(() => {
-    if (!store.streamingText && !streamingDraining) return null;
+    const activelyStreaming = store.isRunning && runHasStreamed;
+    if (!store.streamingText && !streamingDraining && !activelyStreaming) return null;
     const tl = filteredTimeline;
     for (let i = tl.length - 1; i >= 0; i--) {
       if (tl[i].kind === "assistant") return tl[i].id;
