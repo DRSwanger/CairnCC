@@ -32,12 +32,13 @@
   // messages so they render instantly without animating on page load.
   let dripText = $state(streaming ? "" : text);
 
-  // Eagerly mark draining=true the moment text grows beyond dripText.
-  // Must be $effect.pre (not $effect) so the flag propagates to the parent
-  // BEFORE DOM updates — preventing a single-frame flash where the fully-
-  // rendered timeline entry bleeds through between drip catch-up and the
-  // next streaming chunk.
+  // If text is no longer an extension of dripText, a new message started while the
+  // component was still alive (streaming container reused via streamingDraining).
+  // Reset drip to avoid flashing the previous message's completed text.
   $effect.pre(() => {
+    if (dripText && !text.startsWith(dripText)) {
+      dripText = streaming ? "" : text;
+    }
     if (text.length > dripText.length) draining = true;
   });
 

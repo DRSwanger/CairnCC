@@ -386,6 +386,19 @@
     return null;
   });
 
+  /** Tracks the entry that just transitioned from suppressed → visible for a smooth reveal. */
+  let revealingEntryId = $state<string | null>(null);
+  let _prevSuppressedId = $state<string | null>(null);
+  $effect(() => {
+    if (_prevSuppressedId && !suppressedEntryId) {
+      revealingEntryId = _prevSuppressedId;
+      setTimeout(() => {
+        revealingEntryId = null;
+      }, 600);
+    }
+    _prevSuppressedId = suppressedEntryId;
+  });
+
   let filteredTimeline = $derived.by(() => {
     let tl = store.timeline;
     // During greeting: hide user prompt and all tool activity — only show Claude's final response
@@ -4230,7 +4243,8 @@
                     class:cv-auto={!IS_WEBKIT && entry.kind !== "tool"}
                     class="group/msg"
                     class:hidden={entry.id === suppressedEntryId}
-                    in:fly={historyLoaded && entry.id !== suppressedEntryId
+                    class:drip-reveal={entry.id === revealingEntryId}
+                    in:fly={historyLoaded && entry.id !== suppressedEntryId && entry.id !== revealingEntryId
                       ? { y: 10, duration: 600, easing: cubicOut }
                       : { duration: 0 }}
                     class:opacity-40={lastClearSepId !== null &&
