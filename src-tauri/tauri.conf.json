@@ -71,7 +71,7 @@
       "open": true
     },
     "updater": {
-      "pubkey": "RWS6XGewClZNNAqsWgfbjs4VLFoWGGV71pZua4R3ghfXg3ljPJsy1V3O",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM0NEQ1NjBBQjA2NzVDQkEKUldTNlhHZXdDbFpOTkFxc1dnZmJqczRWTEZvV0dHVjcxcFp1YTRSM2doZlhnM2xqUEpzeTFWM08K",
       "endpoints": [
         "https://github.com/DRSwanger/CairnCC/releases/latest/download/latest.json"
       ]
