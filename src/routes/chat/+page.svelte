@@ -1300,8 +1300,7 @@
   }
 
   onMount(() => {
-    const alreadyGreeted = sessionStorage.getItem("cairncc:greeted") === "1";
-    if (!runId && !store.run && !alreadyGreeted) {
+    if (!runId && !store.run) {
       (async () => {
         try {
           const runs = await api.listRuns();
@@ -1309,15 +1308,11 @@
             (r) => !r.prompt?.startsWith("Review your memory files"),
           );
           if (existing.length > 0) {
-            sessionStorage.setItem("cairncc:greeted", "1");
             goto(`/chat?run=${existing[0].id}`, { replaceState: true });
-            return;
           }
         } catch (e) {
-          dbgWarn("chat", "failed to list existing runs, falling back to greeting:", e);
+          dbgWarn("chat", "failed to list existing runs:", e);
         }
-        await tick();
-        startGreeting();
       })();
     }
 

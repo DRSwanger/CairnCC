@@ -63,10 +63,10 @@ jobs:
           tagName: v__VERSION__-1
           releaseName: "CairnCC v__VERSION__-1"
           releaseBody: |
-            ## Draft v0.1.66-1
+            ## Draft v0.1.67-1
 
+            - **No auto-greeting on launch** — fresh opens no longer spawn an automatic "review memory" session. Existing sessions still auto-resume to the most recent chat.
             - **Fix: stale error banner** — "Process exited with code Some(-1)" no longer lingers after session recovery.
-            - **Auto-resume most recent session** — on fresh app open, loads the latest chat instead of starting a new greeting.
             - **Single-instance** — launching CairnCC while it's already running focuses the existing window instead of spawning a duplicate process.
           releaseDraft: true
           prerelease: true
