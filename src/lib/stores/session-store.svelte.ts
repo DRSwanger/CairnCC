@@ -2901,8 +2901,13 @@ export class SessionStore {
           // Sync run.status for non-terminal states so status bar reflects reality
           // (terminal states update run via api.getRun above)
           if (ev.state === "running" || ev.state === "idle") {
-            if (ctx) ctx.runStatus = ev.state;
-            else if (this.run) this.run = { ...this.run, status: ev.state };
+            if (ctx) {
+              ctx.runStatus = ev.state;
+              ctx.error = "";
+            } else {
+              if (this.run) this.run = { ...this.run, status: ev.state };
+              this.error = "";
+            }
           }
         }
         // Show error to user only for genuine failures, not user-initiated stops.

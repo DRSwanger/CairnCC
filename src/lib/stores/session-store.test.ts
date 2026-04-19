@@ -265,6 +265,26 @@ describe("SessionStore reducer", () => {
     it("still has timeline from before failure", () => {
       expect(store.timeline).toHaveLength(2); // user + assistant
     });
+
+  });
+
+  describe("stale error recovery on replay", () => {
+    it("clears historical failed error when subsequent idle event is replayed", () => {
+      store.run = makeRun("run-4");
+      store.phase = "running";
+      store.applyEventBatch([
+        {
+          type: "run_state",
+          run_id: "run-4",
+          state: "failed",
+          error: "Process exited with code Some(-1)",
+          exit_code: -1,
+        },
+        { type: "run_state", run_id: "run-4", state: "idle", error: null, exit_code: null },
+      ] as BusEvent[]);
+      expect(store.error).toBe("");
+      expect(store.phase).toBe("idle");
+    });
   });
 
   // ── Resume replay (replayOnly=true) ──

@@ -118,6 +118,14 @@ pub fn run() {
     let ws_warning = WebServerWarning(Arc::new(tokio::sync::RwLock::new(None)));
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            log::debug!("[app] single-instance: second launch detected, focusing main window");
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.unminimize();
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())

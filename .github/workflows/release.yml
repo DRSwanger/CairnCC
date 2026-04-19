@@ -60,15 +60,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__
-          releaseName: "CairnCC v__VERSION__"
+          tagName: v__VERSION__-1
+          releaseName: "CairnCC v__VERSION__-1"
           releaseBody: |
-            ## What's new in v0.1.65
+            ## Draft v0.1.66-1
 
-            - **Text effects system** — selectable streaming animations (Standard, Fade Edge, Blur Edge, Decode) applied on top of the drip. Decode is the default.
-            - **Single-render streaming** — eliminated the dual-container flash ("remove and paste") by merging streaming directly into timeline entries.
-            - **macOS update instructions** — update banner now opens the releases page with Gatekeeper bypass command (`xattr -cr`) for unsigned builds.
-          releaseDraft: false
-          prerelease: false
+            - **Fix: stale error banner** — "Process exited with code Some(-1)" no longer lingers after session recovery.
+            - **Auto-resume most recent session** — on fresh app open, loads the latest chat instead of starting a new greeting.
+            - **Single-instance** — launching CairnCC while it's already running focuses the existing window instead of spawning a duplicate process.
+          releaseDraft: true
+          prerelease: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}
