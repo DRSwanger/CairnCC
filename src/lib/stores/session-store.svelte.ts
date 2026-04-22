@@ -1547,6 +1547,13 @@ export class SessionStore {
           snapshotHit = true;
           this._lastSnapshotSeq = this._lastProcessedSeq;
 
+          // Clear transient mid-turn buffers: if the cache was captured while
+          // a previous turn was streaming, these would show a ghost "thinking"
+          // bubble until catchup settled. For running sessions, live events will
+          // repopulate them; for non-running, they should be empty anyway.
+          this.thinkingText = "";
+          this.streamingText = "";
+
           // Phase may need correction for idle — _tryApplySnapshot restores
           // timeline but not phase; phase above was set from run.status.
           if (this.run!.status === "idle" && this.phase !== "idle") {
@@ -2042,6 +2049,9 @@ export class SessionStore {
       if (isStream) {
         if (snapshotObj && this._tryApplySnapshot(snapshotObj)) {
           snapshotHit = true;
+          // Clear transient mid-turn buffers to avoid ghost thinking bubble from stale cache.
+          this.thinkingText = "";
+          this.streamingText = "";
           // Catchup any events appended since cached seq (usually zero for terminal
           // sessions being resumed, but covers idle→event races).
           const catchupEvents = await api.getBusEvents(runId, this._lastProcessedSeq);

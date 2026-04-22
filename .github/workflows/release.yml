@@ -60,14 +60,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-2
-          releaseName: "CairnCC v__VERSION__-2"
+          tagName: v__VERSION__-3
+          releaseName: "CairnCC v__VERSION__-3"
           releaseBody: |
-            ## Draft v0.1.68-2
+            ## Draft v0.1.68-3
 
-            - **Resume no longer freezes the UI** — clicking the resume (↻) button on a long-stopped session (e.g. Rift CNC) now hits the in-memory snapshot cache + tiny seq-based catchup instead of synchronously replaying thousands of events. The UI stays responsive.
-            - **Draft prompts persist across session switches** — typed-but-unsent input is preserved per-run. Switch to another chat and back, and your draft is still there. LRU-capped at 50 runs.
+            - **Auto-updater now actually notifies** — GitHub's `/releases/latest/` redirect ignores prereleases, so the updater endpoint was frozen at v0.1.65 even as newer builds shipped. Releases are no longer marked prerelease; once this one is published, in-app update notifications should start appearing for users already on v0.1.66+.
+            - **No more ghost thinking bubble on session switch** — stale mid-turn buffers restored from the in-memory cache were briefly showing a "thinking" popup on switch-back even when no chat was active. Cleared on cache restore; live events repopulate as needed.
           releaseDraft: true
-          prerelease: true
+          prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
