@@ -63,11 +63,10 @@ jobs:
           tagName: v__VERSION__-1
           releaseName: "CairnCC v__VERSION__-1"
           releaseBody: |
-            ## Draft v0.1.67-1
+            ## Draft v0.1.68-1
 
-            - **No auto-greeting on launch** — fresh opens no longer spawn an automatic "review memory" session. Existing sessions still auto-resume to the most recent chat.
-            - **Fix: stale error banner** — "Process exited with code Some(-1)" no longer lingers after session recovery.
-            - **Single-instance** — launching CairnCC while it's already running focuses the existing window instead of spawning a duplicate process.
+            - **Faster session switching** — in-memory snapshot cache skips the disk read + full timeline replay on switch-back. Dramatically improves latency for long chats (e.g. Rift CNC).
+            - **Thinking panel chevron** — the expand caret is now hidden when there's no thinking text to show, so clicking it no longer opens an empty box.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true

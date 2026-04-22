@@ -321,6 +321,11 @@ export class SessionStore {
   /** _lastProcessedSeq at last snapshot write — throttles idle snapshot rewrites. */
   private _lastSnapshotSeq = 0;
 
+  /** In-memory session cache: runId → serialized snapshot object. Skips disk read
+   *  on session switch. Capped LRU (insertion-order Map) to bound memory. */
+  private _memCache = new Map<string, Record<string, unknown>>();
+  private static readonly _MEM_CACHE_MAX = 10;
+
   // Generation counter: prevents stale async loadRun from overwriting state
   private _loadGen = 0;
   /** True while loadRun is replaying events — suppresses isThinking flash on session switch. */
@@ -1276,9 +1281,10 @@ export class SessionStore {
 
   // ── Snapshot cache helpers ──
 
-  /** Serialize current store state into a JSON string for IDB caching. */
-  private _buildSnapshot(): string {
-    const obj: Record<string, unknown> = {
+  /** Build the snapshot as a plain object. Used for both IDB serialization and
+   *  in-memory cache (avoids JSON roundtrip on fast session-switch path). */
+  private _buildSnapshotObj(): Record<string, unknown> {
+    return {
       // A group (ReduceCtx-derived)
       timeline: this.timeline,
       tools: this.tools,
@@ -1316,7 +1322,24 @@ export class SessionStore {
       taskNotifications: [...this.taskNotifications.entries()],
       _lastProcessedSeq: this._lastProcessedSeq,
     };
-    return JSON.stringify(obj);
+  }
+
+  /** Serialize current store state into a JSON string for IDB caching. */
+  private _buildSnapshot(): string {
+    return JSON.stringify(this._buildSnapshotObj());
+  }
+
+  /** Save current run state to the in-memory cache, trimming LRU to cap. */
+  private _saveToMemCache(runId: string): void {
+    if (!runId) return;
+    // Re-insert to move to end of insertion order (LRU tail).
+    this._memCache.delete(runId);
+    this._memCache.set(runId, this._buildSnapshotObj());
+    while (this._memCache.size > SessionStore._MEM_CACHE_MAX) {
+      const oldestKey = this._memCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      this._memCache.delete(oldestKey);
+    }
   }
 
   /** Parse snapshot body string. Returns parsed object or null if invalid JSON. */
@@ -1436,6 +1459,13 @@ export class SessionStore {
     id: string,
     xtermRef?: { clear(): void; writeText(s: string): void },
   ): Promise<void> {
+    // Snapshot outgoing run to in-memory cache before clearing state so a
+    // future switch-back can skip the full disk replay.
+    const outgoingId = this.run?.id;
+    if (outgoingId && outgoingId !== id && this.useStreamSession && this.timeline.length > 0) {
+      this._saveToMemCache(outgoingId);
+    }
+
     const gen = ++this._loadGen;
     const loadStart = performance.now();
     dbg("store", "loadRun id=", id, "gen=", gen);
@@ -1506,11 +1536,47 @@ export class SessionStore {
       if (this.useStreamSession) {
         let reducerMs = 0;
         let snapshotHit = false;
+        let memCacheHit = false;
 
-        // Try IDB snapshot (terminal + idle sessions)
+        // Fast path: in-memory cache covers all statuses (including running) and
+        // avoids the disk read + full reducer replay that dominates switch latency
+        // for long sessions (e.g. Rift CNC chats with thousands of events).
+        const memCached = this._memCache.get(id);
+        if (memCached && this._tryApplySnapshot(memCached)) {
+          memCacheHit = true;
+          snapshotHit = true;
+          this._lastSnapshotSeq = this._lastProcessedSeq;
+
+          // Phase may need correction for idle — _tryApplySnapshot restores
+          // timeline but not phase; phase above was set from run.status.
+          if (this.run!.status === "idle" && this.phase !== "idle") {
+            this._setPhase("idle");
+          }
+
+          // Incremental catchup from cached seq — captures events appended while
+          // the user was viewing another chat.
+          const catchupEvents = await api.getBusEvents(id, this._lastProcessedSeq);
+          if (gen !== this._loadGen) return;
+          if (catchupEvents.length > 0) {
+            reducerMs = this.applyEventBatch(catchupEvents, { replayOnly: isTerminal });
+          }
+          // Keep WS subscription (no-op on desktop) aligned with last applied seq.
+          this._wsSubscribeWithSeq(id, this._lastProcessedSeq);
+          // Refresh cache with latest post-catchup state.
+          this._saveToMemCache(id);
+          dbg("store", "loadRun memCache hit", {
+            total: Math.round(performance.now() - loadStart),
+            catchup: catchupEvents.length,
+            reducer: Math.round(reducerMs),
+            entries: this.timeline.length,
+          });
+        }
+
+        // Try IDB snapshot (terminal + idle sessions) — skipped when memcache
+        // already satisfied the load.
         const snapshotEligible = isTerminal || this.run!.status === "idle";
         let snapshotBody: string | null = null;
-        if (snapshotEligible) {
+        if (!memCacheHit && snapshotEligible) {
           try {
             snapshotBody = await snapshotCache.readSnapshot(id, this.run!.status);
           } catch {

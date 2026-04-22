@@ -4856,18 +4856,20 @@
                 <span class="text-xs font-medium text-blue-400/40">{spinnerVerb}…</span>
               {/if}
 
-              <!-- Chevron toggle -->
-              <svg
-                class="h-3 w-3 text-muted-foreground/30 shrink-0 ml-auto transition-transform {thinkingExpanded
-                  ? 'rotate-180'
-                  : ''}"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg
-              >
+              <!-- Chevron toggle — only shown when thinking text exists to expand -->
+              {#if displayThinkingText}
+                <svg
+                  class="h-3 w-3 text-muted-foreground/30 shrink-0 ml-auto transition-transform {thinkingExpanded
+                    ? 'rotate-180'
+                    : ''}"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg
+                >
+              {/if}
             </div>
 
             <!-- Expandable thinking text -->
