@@ -1304,9 +1304,7 @@
       (async () => {
         try {
           const runs = await api.listRuns();
-          const existing = runs.filter(
-            (r) => !r.prompt?.startsWith("Review your memory files"),
-          );
+          const existing = runs.filter((r) => !r.prompt?.startsWith("Review your memory files"));
           if (existing.length > 0) {
             goto(`/chat?run=${existing[0].id}`, { replaceState: true });
           }
