@@ -60,13 +60,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-1
-          releaseName: "CairnCC v__VERSION__-1"
+          tagName: v__VERSION__-2
+          releaseName: "CairnCC v__VERSION__-2"
           releaseBody: |
-            ## Draft v0.1.68-1
+            ## Draft v0.1.68-2
 
-            - **Faster session switching** — in-memory snapshot cache skips the disk read + full timeline replay on switch-back. Dramatically improves latency for long chats (e.g. Rift CNC).
-            - **Thinking panel chevron** — the expand caret is now hidden when there's no thinking text to show, so clicking it no longer opens an empty box.
+            - **Resume no longer freezes the UI** — clicking the resume (↻) button on a long-stopped session (e.g. Rift CNC) now hits the in-memory snapshot cache + tiny seq-based catchup instead of synchronously replaying thousands of events. The UI stays responsive.
+            - **Draft prompts persist across session switches** — typed-but-unsent input is preserved per-run. Switch to another chat and back, and your draft is still there. LRU-capped at 50 runs.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true

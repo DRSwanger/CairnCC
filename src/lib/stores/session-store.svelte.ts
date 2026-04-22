@@ -1962,6 +1962,14 @@ export class SessionStore {
     if (!this._resumeGuard.acquire()) return null;
 
     try {
+      // Save outgoing state to memCache so Phase 1 fast-paths the resume — covers
+      // both "resuming the currently-viewed run" (→ memCache hit on same runId) and
+      // "switching to resume another run" (→ preserves state for future switch-back).
+      const outgoingId = this.run?.id;
+      if (outgoingId && this.useStreamSession && this.timeline.length > 0) {
+        this._saveToMemCache(outgoingId);
+      }
+
       let run = await api.getRun(runId);
       if (!this._resumeGuard.isMounted) return runId;
 
@@ -1998,20 +2006,27 @@ export class SessionStore {
 
       // ★ Phase 1: async data fetch BEFORE clearing state (avoids flash)
       const isStream = run.execution_path === "session_actor"; // run-level, not agent identity
+      let snapshotObj: Record<string, unknown> | null = null;
       let snapshotBody: string | null = null;
       let busEvents: BusEvent[] = [];
 
       if (isStream) {
-        try {
-          snapshotBody = await snapshotCache.readSnapshot(runId, run.status);
-        } catch {
-          /* IDB unavailable */
-        }
-        if (!this._resumeGuard.isMounted) return runId;
-        if (!snapshotBody) {
-          busEvents = await api.getBusEvents(runId);
+        // In-memory cache first — avoids IDB read + big event fetch + big reducer.
+        // Critical for large sessions (e.g. Rift CNC with thousands of events), where
+        // the full-replay path would block the UI for seconds.
+        snapshotObj = this._memCache.get(runId) ?? null;
+        if (!snapshotObj) {
+          try {
+            snapshotBody = await snapshotCache.readSnapshot(runId, run.status);
+          } catch {
+            /* IDB unavailable */
+          }
           if (!this._resumeGuard.isMounted) return runId;
-          dbg("store", "resumeSession: fetched", busEvents.length, "bus events for replay");
+          if (!snapshotBody) {
+            busEvents = await api.getBusEvents(runId);
+            if (!this._resumeGuard.isMounted) return runId;
+            dbg("store", "resumeSession: fetched", busEvents.length, "bus events for replay");
+          }
         }
       }
 
@@ -2025,12 +2040,22 @@ export class SessionStore {
       let reducerMs = 0;
       let snapshotHit = false;
       if (isStream) {
-        if (snapshotBody && this._tryApplySnapshot(snapshotBody)) {
+        if (snapshotObj && this._tryApplySnapshot(snapshotObj)) {
+          snapshotHit = true;
+          // Catchup any events appended since cached seq (usually zero for terminal
+          // sessions being resumed, but covers idle→event races).
+          const catchupEvents = await api.getBusEvents(runId, this._lastProcessedSeq);
+          if (!this._resumeGuard.isMounted) return runId;
+          if (catchupEvents.length > 0) {
+            reducerMs = this.applyEventBatch(catchupEvents, { replayOnly: true });
+          }
+          this._wsSubscribeWithSeq(runId, this._lastProcessedSeq);
+        } else if (snapshotBody && this._tryApplySnapshot(snapshotBody)) {
           snapshotHit = true;
           this._wsSubscribeWithSeq(runId, this._lastProcessedSeq);
         } else {
           // Fallback: snapshot corrupted → re-fetch events if needed
-          if (!busEvents.length && snapshotBody) {
+          if (!busEvents.length && (snapshotBody || snapshotObj)) {
             busEvents = await api.getBusEvents(runId);
             if (!this._resumeGuard.isMounted) return runId;
           }
@@ -2041,7 +2066,8 @@ export class SessionStore {
           this._wsSubscribeAfterLoad(runId, busEvents);
         }
 
-        // Resume makes session go live → old snapshot is always stale
+        // Resume makes session go live → old IDB snapshot is always stale.
+        // (memCache entry will be refreshed naturally via next switch-out.)
         snapshotCache.deleteSnapshot(runId).catch(() => {});
       }
 

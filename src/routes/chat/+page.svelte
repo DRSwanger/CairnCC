@@ -255,6 +255,35 @@
   let stashedInput: PromptInputSnapshot | null = $state(null);
   let sidebarRequestedTab = $state<"tools" | "context" | "files" | "info" | "tasks" | null>(null);
 
+  // Per-run draft prompts: preserves typed-but-unsent input across session switches.
+  // LRU-capped to avoid unbounded memory when users open many runs.
+  const draftsByRunId = new Map<string, PromptInputSnapshot>();
+  const DRAFTS_MAX = 50;
+  function snapshotHasContent(s: PromptInputSnapshot | null | undefined): boolean {
+    if (!s) return false;
+    return !!(
+      s.text.trim() ||
+      s.attachments.length ||
+      s.pastedBlocks.length ||
+      (s.pathRefs?.length ?? 0) > 0
+    );
+  }
+  function saveDraftFor(runId: string): void {
+    if (!runId) return;
+    const snap = promptRef?.getInputSnapshot();
+    if (snapshotHasContent(snap)) {
+      draftsByRunId.delete(runId); // re-insert at LRU tail
+      draftsByRunId.set(runId, snap!);
+      while (draftsByRunId.size > DRAFTS_MAX) {
+        const oldest = draftsByRunId.keys().next().value;
+        if (oldest === undefined) break;
+        draftsByRunId.delete(oldest);
+      }
+    } else {
+      draftsByRunId.delete(runId);
+    }
+  }
+
   // ── Verbose state (chat page level) ──
   let verboseEnabled = $state(false);
   let verboseSeq = 0;
@@ -1450,6 +1479,17 @@
     const id = runId;
     const hasResume = hasResumeParam;
     untrack(() => {
+      // Save outgoing run's draft, then apply incoming run's draft (or clear).
+      const outgoingId = store.run?.id;
+      if (outgoingId && outgoingId !== id) saveDraftFor(outgoingId);
+      if (id && outgoingId !== id) {
+        const incomingDraft = draftsByRunId.get(id);
+        requestAnimationFrame(() => {
+          if (incomingDraft) promptRef?.restoreSnapshot(incomingDraft);
+          else if (snapshotHasContent(promptRef?.getInputSnapshot())) promptRef?.clearAll();
+        });
+      }
+
       middleware.subscribeCurrent(id, store);
 
       // Strongest guard: resume operation in progress — don't interfere.
