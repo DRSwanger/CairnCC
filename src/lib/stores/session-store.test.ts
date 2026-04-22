@@ -265,7 +265,6 @@ describe("SessionStore reducer", () => {
     it("still has timeline from before failure", () => {
       expect(store.timeline).toHaveLength(2); // user + assistant
     });
-
   });
 
   describe("stale error recovery on replay", () => {
