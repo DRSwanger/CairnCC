@@ -2346,14 +2346,8 @@
       });
     }
 
-    // Only persist default_model for Anthropic — third-party models managed per-credential
     if (!isThirdParty) {
       lastKnownGoodAnthropicModel = newModel;
-      try {
-        await api.updateUserSettings({ default_model: newModel });
-      } catch (e) {
-        dbgWarn("chat", "failed to persist model change", e);
-      }
     }
   }
 

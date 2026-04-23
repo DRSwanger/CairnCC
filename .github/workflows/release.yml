@@ -60,13 +60,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-3
-          releaseName: "CairnCC v__VERSION__-3"
+          tagName: v__VERSION__-4
+          releaseName: "CairnCC v__VERSION__-4"
           releaseBody: |
-            ## Draft v0.1.68-3
+            ## Draft v0.1.68-4
 
-            - **Auto-updater now actually notifies** — GitHub's `/releases/latest/` redirect ignores prereleases, so the updater endpoint was frozen at v0.1.65 even as newer builds shipped. Releases are no longer marked prerelease; once this one is published, in-app update notifications should start appearing for users already on v0.1.66+.
-            - **No more ghost thinking bubble on session switch** — stale mid-turn buffers restored from the in-memory cache were briefly showing a "thinking" popup on switch-back even when no chat was active. Cleared on cache restore; live events repopulate as needed.
+            - **Model selection is now purely per-session** — picking a model in one chat no longer overwrites the global `default_model` in settings. Each chat keeps its own model in its run meta; new chats still seed from the default configured in Settings. Switch freely between Opus, Haiku, etc. per chat without cross-contamination.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
