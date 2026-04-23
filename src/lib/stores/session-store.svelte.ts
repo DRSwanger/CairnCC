@@ -1072,9 +1072,16 @@ export class SessionStore {
       toolHeIndex: batchHeIndex,
     };
     for (const ev of events) {
-      // Track WS sequence checkpoint
+      // Seq checkpoint + duplicate skip. Without this, a live bus event that
+      // arrived DURING loadRun's catchup can land twice: once via catchup (which
+      // sets cliUuid on the timeline entry), then again via the middleware's
+      // rAF flush — and user_message content-dedup only matches entries WITHOUT
+      // cliUuid, so the second application appends a duplicate bubble.
       const evSeq = ((ev as Record<string, unknown>)._seq as number) ?? 0;
-      if (evSeq > 0) this._lastProcessedSeq = Math.max(this._lastProcessedSeq, evSeq);
+      if (evSeq > 0) {
+        if (evSeq <= this._lastProcessedSeq) continue;
+        this._lastProcessedSeq = evSeq;
+      }
       this._reduce(ev, ctx, replayOnly);
     }
     // If the session ended, resolve any leftover incomplete tools

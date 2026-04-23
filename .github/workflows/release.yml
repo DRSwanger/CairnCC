@@ -60,22 +60,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-6
-          releaseName: "CairnCC v__VERSION__-6"
+          tagName: v__VERSION__-7
+          releaseName: "CairnCC v__VERSION__-7"
           releaseBody: |
-            ## Draft v0.1.68-6
+            ## Draft v0.1.68-7
 
-            Follow-ups to v0.1.68-5 based on Rift CNC test:
+            Follow-up to v0.1.68-6 — fixes duplicate-user-bubble bug reported during thinking.
 
-            - **Large chats load in tiers now.** Only the last ~60 entries render on switch; the full backlog expands after the browser paints. The chunked replay alone wasn't enough — mounting thousands of Svelte entries was the actual freeze. You can click into another session mid-load.
-            - **Draft text is preserved for new (unstarted) chats.** Typing into the welcome/new-chat input and clicking into a saved session now stashes the draft under a sentinel key, so it comes back when you return to the new-chat screen. Previously a missing outgoing run id silently dropped the draft.
+            - **Fixes duplicate user message on switch-into-thinking-session.** When you click into a chat that's actively generating, the middleware buffers bus events while `loadRun`'s catchup runs; both paths were processing the same `user_message` event, and content-dedup only fires on entries without a CLI UUID — so the second application stamped an identical bubble below the response. `applyEventBatch` now skips events whose `_seq` is already processed (same gate `applyEvent` uses). Regression test added.
 
-            Carries the v0.1.68-5 fixes:
-            - Effort is per-chat (persisted to run meta, restored on switch, seeded on new runs).
+            Carries v0.1.68-6:
+            - Tiered render on chat switch (60 entries first, full history after paint).
+            - New-chat draft preserved across session clicks via sentinel key.
+
+            Carries v0.1.68-5:
+            - Effort persisted per-run (restored on switch, seeded on new runs).
             - Model selector falls back to CLI's current model when run has no pinned model.
             - Switch+submit ordering race fixed — new turns always land below the prior response.
             - Chunked event replay with event-loop yields during initial load.
-            - Opus label now reads "Opus 4.7" consistently.
+            - Opus label reads "Opus 4.7" consistently.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true

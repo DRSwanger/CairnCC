@@ -440,6 +440,29 @@ describe("SessionStore reducer", () => {
         expect(userEntry.cliUuid).toBe("cli-uuid-merge");
       }
     });
+
+    it("does not duplicate user_message when middleware flush overlaps catchup", () => {
+      // Regression: switching INTO an actively-thinking session races the
+      // middleware's rAF flush against loadRun's catchup. Both batches may
+      // contain the same user_message; without seq-based skip in
+      // applyEventBatch, the second application appends a duplicate bubble
+      // because content-dedup only matches entries WITHOUT cliUuid.
+      store.run = makeRun("run-race");
+      store.phase = "running";
+      const ev = {
+        type: "user_message",
+        run_id: "run-race",
+        text: "hello world",
+        uuid: "cli-race-uuid",
+        _seq: 5,
+      } as unknown as BusEvent;
+      // Catchup batch processes it first.
+      store.applyEventBatch([ev]);
+      // Middleware flush delivers the same event moments later.
+      store.applyEventBatch([ev]);
+      const users = store.timeline.filter((e) => e.kind === "user");
+      expect(users).toHaveLength(1);
+    });
   });
 
   // ── applyEvent (single live event) ──
