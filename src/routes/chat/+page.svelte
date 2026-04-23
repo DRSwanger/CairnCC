@@ -257,6 +257,9 @@
 
   // Per-run draft prompts: preserves typed-but-unsent input across session switches.
   // LRU-capped to avoid unbounded memory when users open many runs.
+  // Sentinel key used when the outgoing state has no run yet (e.g. welcome screen
+  // with text typed into the input) so drafts don't get silently dropped.
+  const NEW_CHAT_DRAFT_KEY = "__new_chat__";
   const draftsByRunId = new Map<string, PromptInputSnapshot>();
   const DRAFTS_MAX = 50;
   function snapshotHasContent(s: PromptInputSnapshot | null | undefined): boolean {
@@ -268,19 +271,19 @@
       (s.pathRefs?.length ?? 0) > 0
     );
   }
-  function saveDraftFor(runId: string): void {
-    if (!runId) return;
+  function saveDraftFor(runId: string | undefined): void {
+    const key = runId || NEW_CHAT_DRAFT_KEY;
     const snap = promptRef?.getInputSnapshot();
     if (snapshotHasContent(snap)) {
-      draftsByRunId.delete(runId); // re-insert at LRU tail
-      draftsByRunId.set(runId, snap!);
+      draftsByRunId.delete(key); // re-insert at LRU tail
+      draftsByRunId.set(key, snap!);
       while (draftsByRunId.size > DRAFTS_MAX) {
         const oldest = draftsByRunId.keys().next().value;
         if (oldest === undefined) break;
         draftsByRunId.delete(oldest);
       }
     } else {
-      draftsByRunId.delete(runId);
+      draftsByRunId.delete(key);
     }
   }
 
@@ -705,9 +708,15 @@
 
   // ── Progressive timeline rendering ── helpers
 
+  /** Initial cap for a fresh chat switch. Large chats (e.g. Rift CNC) have
+   *  thousands of timeline entries; mounting all at once blocks the main
+   *  thread for seconds. We show the last N first, let the browser paint,
+   *  then bump to Infinity for full history. */
+  const INITIAL_RENDER_LIMIT = 60;
+
   function cancelProgressive() {
     progressiveGen++;
-    renderLimit = Infinity;
+    renderLimit = INITIAL_RENDER_LIMIT;
   }
 
   /**
@@ -774,10 +783,11 @@
     }
 
     if (gen !== progressiveGen) return;
-    renderLimit = Infinity;
     dbg("chat", "loadRun complete", { timeline: filteredTimeline.length, gen });
 
     if (scrollTo) {
+      // scrollTo needs the full history to find the target — bump immediately
+      renderLimit = Infinity;
       await tick();
       historyLoaded = true;
       scrollToMessage(scrollTo);
@@ -788,11 +798,17 @@
       clean.searchParams.delete("scrollTo");
       replaceState(clean, {});
     } else {
-      // Scroll to bottom after DOM update — ensures content-visibility triggers re-layout
+      // Render the last INITIAL_RENDER_LIMIT entries first so the user sees
+      // current context and can interact. Bump to Infinity after two rAFs
+      // so the browser has time to paint and stay responsive.
       await tick();
       historyLoaded = true;
       requestAnimationFrame(() => {
         if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
+        requestAnimationFrame(() => {
+          if (gen !== progressiveGen) return;
+          renderLimit = Infinity;
+        });
       });
     }
   }
@@ -1494,11 +1510,14 @@
     const id = runId;
     const hasResume = hasResumeParam;
     untrack(() => {
-      // Save outgoing run's draft, then apply incoming run's draft (or clear).
+      // Save outgoing run's draft (or the new-chat sentinel draft), then apply
+      // incoming run's draft (or clear).
       const outgoingId = store.run?.id;
-      if (outgoingId && outgoingId !== id) saveDraftFor(outgoingId);
-      if (id && outgoingId !== id) {
-        const incomingDraft = draftsByRunId.get(id);
+      const outgoingKey = outgoingId || NEW_CHAT_DRAFT_KEY;
+      const incomingKey = id || NEW_CHAT_DRAFT_KEY;
+      if (outgoingKey !== incomingKey) saveDraftFor(outgoingId);
+      if (outgoingKey !== incomingKey) {
+        const incomingDraft = draftsByRunId.get(incomingKey);
         requestAnimationFrame(() => {
           if (incomingDraft) promptRef?.restoreSnapshot(incomingDraft);
           else if (snapshotHasContent(promptRef?.getInputSnapshot())) promptRef?.clearAll();
