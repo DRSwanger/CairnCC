@@ -733,6 +733,21 @@
     await store.loadRun(id, xtermRef);
     if (id) folderCwdOverride = ""; // clear folder override when a real run loads
 
+    // Restore per-run effort: each chat remembers its own thinking level.
+    // Only apply when the run has an explicit saved effort — runs created before
+    // this feature have no meta.effort, so we leave the current CLI setting alone
+    // and let the next handleEffortChange snapshot it.
+    if (store.run && store.run.effort) {
+      const runEffort = store.run.effort;
+      if (runEffort !== currentEffort) {
+        dbg("chat", "restore run effort on switch", { from: currentEffort, to: runEffort });
+        currentEffort = runEffort;
+        api.updateCliConfig({ effortLevel: runEffort }).catch((e) => {
+          dbgWarn("chat", "failed to sync effort to CLI config on switch", e);
+        });
+      }
+    }
+
     // Reload project data with the run's cwd
     if (id && store.effectiveCwd) {
       reloadProjectData(store.effectiveCwd);
@@ -2053,6 +2068,12 @@
         }
 
         const runId = await store.startSession(text, cwd, attachments);
+        // Pin current effort to the new run so it survives chat switches.
+        if (currentEffort) {
+          api.updateRunEffort(runId, currentEffort).catch((e) => {
+            dbgWarn("chat", "failed to seed effort on new run", e);
+          });
+        }
         goto(`/chat?run=${runId}`, { replaceState: true });
         window.dispatchEvent(new Event("ocv:runs-changed"));
         // Re-detect CLI version on new session (picks up external updates)
@@ -2362,6 +2383,12 @@
     api.updateCliConfig({ effortLevel: newEffort || null }).catch((e) => {
       dbgWarn("chat", "failed to persist effort to CLI config", e);
     });
+    // Persist to per-run meta so effort is restored on chat switch.
+    if (store.run) {
+      api.updateRunEffort(store.run.id, newEffort || null).catch((e) => {
+        dbgWarn("chat", "failed to persist run effort", e);
+      });
+    }
   }
 
   async function handleAuthModeChange(mode: string) {

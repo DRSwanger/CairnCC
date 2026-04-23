@@ -147,6 +147,8 @@ pub struct TaskRun {
     pub result_subtype: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
     /// The run_id this session was forked from (None if not a fork).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_run_id: Option<String>,
@@ -503,6 +505,10 @@ pub struct RunMeta {
     /// The model used in this run (updated on hot-switch).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// The effort level used in this run (e.g. "low", "medium", "high", "max").
+    /// Updated on effort change; restored on chat switch so thinking stays per-chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
     /// The run_id this session was forked from (None if not a fork).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_run_id: Option<String>,
@@ -599,6 +605,7 @@ impl RunMeta {
             session_id: self.session_id.clone(),
             result_subtype: self.result_subtype.clone(),
             model: self.model.clone(),
+            effort: self.effort.clone(),
             parent_run_id: self.parent_run_id.clone(),
             name: self.name.clone(),
             remote_host_name: self.remote_host_name.clone(),

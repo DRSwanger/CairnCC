@@ -97,6 +97,7 @@ pub fn create_run(
         session_id: None,
         result_subtype: None,
         model,
+        effort: None,
         parent_run_id,
         name: None,
         remote_host_name,
@@ -218,6 +219,24 @@ pub fn update_run_model(id: &str, model: &str) -> Result<(), String> {
     );
     with_meta(id, |meta| {
         meta.model = Some(model.to_string());
+        Ok(())
+    })
+}
+
+pub fn update_run_effort(id: &str, effort: Option<&str>) -> Result<(), String> {
+    log::debug!(
+        "[storage/runs] update_run_effort: id={}, effort={:?}",
+        id,
+        effort
+    );
+    with_meta(id, |meta| {
+        meta.effort = effort.and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
+        });
         Ok(())
     })
 }

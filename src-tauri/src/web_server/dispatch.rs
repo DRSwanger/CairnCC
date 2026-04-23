@@ -80,6 +80,15 @@ pub async fn dispatch_command(
             crate::commands::runs::update_run_model(id, model)?;
             Ok(json!(true))
         }
+        "update_run_effort" => {
+            let id = extract_str(&params, "id")?;
+            let effort = params
+                .get("effort")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            crate::commands::runs::update_run_effort(id, effort)?;
+            Ok(json!(true))
+        }
         "stop_run" => {
             let id = extract_str(&params, "id")?;
             let result = stop_run_impl(id, state).await?;

@@ -107,6 +107,11 @@ export async function updateRunModel(id: string, model: string): Promise<void> {
   return invoke<void>("update_run_model", { id, model });
 }
 
+export async function updateRunEffort(id: string, effort: string | null): Promise<void> {
+  dbg("api", "updateRunEffort", { id, effort });
+  return invoke<void>("update_run_effort", { id, effort });
+}
+
 export async function softDeleteRuns(ids: string[]): Promise<number> {
   dbg("api", "softDeleteRuns", { ids });
   return invoke<number>("soft_delete_runs", { ids });

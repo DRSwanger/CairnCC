@@ -35,6 +35,8 @@ export interface TaskRun {
   result_subtype?: string;
   /** Model used in this run (persisted on hot-switch). */
   model?: string;
+  /** Effort level used in this run ("low" | "medium" | "high" | "max"). */
+  effort?: string;
   /** The run_id this session was forked from. */
   parent_run_id?: string;
   /** User-assigned display name. */

@@ -217,10 +217,18 @@ async fn read_control_response(
             let data = response.get("response").unwrap_or(response);
 
             // Parse models
-            let models: Vec<CliModelInfo> = data
+            let mut models: Vec<CliModelInfo> = data
                 .get("models")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
+
+            // Patch stale descriptions from older CLI builds that haven't updated their
+            // display text (e.g. "Opus 4.6" when the alias now resolves to claude-opus-4-7).
+            for m in &mut models {
+                if m.value == "opus" && m.description == "Opus 4.6" {
+                    m.description = "Opus 4.7".to_string();
+                }
+            }
 
             let commands: Vec<CliCommand> = data
                 .get("commands")
@@ -297,7 +305,7 @@ pub fn fallback_cli_info() -> CliInfo {
             CliModelInfo {
                 value: "opus".to_string(),
                 display_name: "Opus".to_string(),
-                description: "Opus 4.6".to_string(),
+                description: "Opus 4.7".to_string(),
                 supports_effort: Some(true),
                 supported_effort_levels: Some(vec![
                     "low".into(),

@@ -157,6 +157,12 @@ pub fn update_run_model(id: String, model: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn update_run_effort(id: String, effort: Option<String>) -> Result<(), String> {
+    log::debug!("[runs] update_run_effort: id={}, effort={:?}", id, effort);
+    storage::runs::update_run_effort(&id, effort.as_deref())
+}
+
+#[tauri::command]
 pub async fn stop_run(
     id: String,
     sessions: tauri::State<'_, ActorSessionMap>,

@@ -1271,6 +1271,7 @@ pub fn import_session(
         session_id: Some(session_id.to_string()),
         result_subtype: None,
         model,
+        effort: None,
         parent_run_id: None,
         name: None,
         remote_host_name: None,

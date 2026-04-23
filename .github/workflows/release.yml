@@ -60,12 +60,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-4
-          releaseName: "CairnCC v__VERSION__-4"
+          tagName: v__VERSION__-5
+          releaseName: "CairnCC v__VERSION__-5"
           releaseBody: |
-            ## Draft v0.1.68-4
+            ## Draft v0.1.68-5
 
-            - **Model selection is now purely per-session** — picking a model in one chat no longer overwrites the global `default_model` in settings. Each chat keeps its own model in its run meta; new chats still seed from the default configured in Settings. Switch freely between Opus, Haiku, etc. per chat without cross-contamination.
+            Bundled fixes for the four issues surfaced while testing v0.1.68-4:
+
+            - **Effort is now per-chat.** Changing effort in one chat no longer leaks into others. The selected level is persisted to that run's meta and restored on chat switch. New chats are seeded with the current effort at creation time.
+            - **Model selector no longer shows "Default" when you're actually on Opus.** On load, if a chat has no pinned model, the selector falls back to whatever the CLI is actually using (`~/.claude/settings.json`).
+            - **Switching chats while typing no longer flips the order** of your new message vs. the prior response. `sendMessage` now waits for the replay gate to settle before pushing the optimistic user bubble, so the new turn always lands at the bottom.
+            - **Large chats (e.g. Rift CNC) no longer freeze the UI on load.** Initial replay is chunked and yields to the event loop between chunks — you can click away to a different chat mid-load and it aborts cleanly.
+            - Patched stale "Opus 4.6" label in the CLI control response so Opus now displays as "Opus 4.7" consistently.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true

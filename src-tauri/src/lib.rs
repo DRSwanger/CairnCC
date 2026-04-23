@@ -156,6 +156,7 @@ pub fn run() {
             commands::runs::start_run,
             commands::runs::stop_run,
             commands::runs::update_run_model,
+            commands::runs::update_run_effort,
             commands::runs::rename_run,
             commands::runs::soft_delete_runs,
             commands::runs::search_prompts,

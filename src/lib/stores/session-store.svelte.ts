@@ -30,7 +30,11 @@ import {
   assertTransition,
 } from "./types";
 import { getEventMiddleware } from "./event-middleware";
-import { updateInstalledVersion, getCliCommands } from "./cli-info.svelte";
+import {
+  updateInstalledVersion,
+  getCliCommands,
+  getCliCurrentModel,
+} from "./cli-info.svelte";
 import * as snapshotCache from "$lib/utils/snapshot-cache";
 import { getTransport } from "$lib/transport";
 import { getAgentFeatures, type AgentFeatures } from "$lib/utils/agent-features";
@@ -330,6 +334,25 @@ export class SessionStore {
   private _loadGen = 0;
   /** True while loadRun is replaying events — suppresses isThinking flash on session switch. */
   private _isLoadingReplay = false;
+  /** Resolvers awaiting replay completion — used by sendMessage to avoid sandwiching an
+   *  optimistic user message between historical events during a concurrent switch-load. */
+  private _loadResolvers: Array<() => void> = [];
+
+  private _settleLoad(): void {
+    this._isLoadingReplay = false;
+    if (this._loadResolvers.length > 0) {
+      const resolvers = this._loadResolvers;
+      this._loadResolvers = [];
+      for (const r of resolvers) r();
+    }
+  }
+
+  /** Await completion of any in-flight loadRun/resumeSession replay. Resolves immediately
+   *  when no replay is in progress. */
+  private async _awaitLoadSettle(): Promise<void> {
+    if (!this._isLoadingReplay) return;
+    await new Promise<void>((resolve) => this._loadResolvers.push(resolve));
+  }
 
   // Spawn timeout: fail if CLI never emits session_init
   private _spawnTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1132,6 +1155,41 @@ export class SessionStore {
     return performance.now() - t0;
   }
 
+  /**
+   * Chunked event replay for large batches. Yields to the event loop between
+   * chunks so the UI stays responsive (e.g. user can navigate away from a chat
+   * with thousands of historical events without the app freezing).
+   * Falls back to a single synchronous `applyEventBatch` below the threshold.
+   */
+  async applyEventBatchChunked(
+    events: BusEvent[],
+    opts?: { replayOnly?: boolean; gen?: number },
+  ): Promise<number> {
+    const CHUNK_SIZE = 400;
+    if (events.length <= CHUNK_SIZE) {
+      return this.applyEventBatch(events, opts);
+    }
+    let totalMs = 0;
+    for (let i = 0; i < events.length; i += CHUNK_SIZE) {
+      const chunk = events.slice(i, i + CHUNK_SIZE);
+      totalMs += this.applyEventBatch(chunk, opts);
+      const next = i + CHUNK_SIZE;
+      if (next < events.length) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (opts?.gen !== undefined && opts.gen !== this._loadGen) {
+          dbg("store", "chunked replay aborted (stale gen)", {
+            gen: opts.gen,
+            current: this._loadGen,
+            processed: next,
+            total: events.length,
+          });
+          return totalMs;
+        }
+      }
+    }
+    return totalMs;
+  }
+
   /** Apply a hook event (from hook-event Tauri listener). */
   applyHookEvent(event: HookEvent): void {
     if (!this.run || event.run_id !== this.run.id) return;
@@ -1275,7 +1333,7 @@ export class SessionStore {
   reset(): void {
     this._setPhase("empty");
     this.run = null;
-    this._isLoadingReplay = false;
+    this._settleLoad();
     this._clearContentState();
   }
 
@@ -1651,7 +1709,14 @@ export class SessionStore {
             dbg("store", "stale after getBusEvents, gen=", gen);
             return;
           }
-          reducerMs = this.applyEventBatch(busEvents, { replayOnly: isTerminal });
+          reducerMs = await this.applyEventBatchChunked(busEvents, {
+            replayOnly: isTerminal,
+            gen,
+          });
+          if (gen !== this._loadGen) {
+            dbg("store", "stale after chunked replay, gen=", gen);
+            return;
+          }
           this._wsSubscribeAfterLoad(id, busEvents);
           // Write guard: distinguish "legit empty session" from "reducer anomaly"
           if (snapshotEligible && (this.timeline.length > 0 || busEvents.length === 0)) {
@@ -1659,7 +1724,7 @@ export class SessionStore {
           }
         }
 
-        this._isLoadingReplay = false;
+        this._settleLoad();
         dbg("store", "loadRun", {
           total: Math.round(performance.now() - loadStart),
           snapshotHit,
@@ -1667,7 +1732,7 @@ export class SessionStore {
           entries: this.timeline.length,
         });
       } else {
-        this._isLoadingReplay = false;
+        this._settleLoad();
         // CLI mode: replay history in terminal
         const events = await api.getRunEvents(id);
         if (gen !== this._loadGen) {
@@ -1707,14 +1772,23 @@ export class SessionStore {
         this.error = "";
       }
 
-      // Restore per-run model from meta.json (overrides session_init if user hot-switched)
+      // Restore per-run model from meta.json (overrides session_init if user hot-switched).
+      // If the run has no per-run model (older runs predate the feature), fall back to
+      // whatever the CLI is currently configured to use — avoids showing "Default" in the
+      // selector for runs that haven't pinned a model yet.
       if (this.run?.model) {
         dbg("store", "restore run model from meta:", this.run.model);
         this.model = this.run.model;
+      } else if (!this.model) {
+        const cliCurrent = getCliCurrentModel();
+        if (cliCurrent) {
+          dbg("store", "no run.model — fallback to cli current:", cliCurrent);
+          this.model = cliCurrent;
+        }
       }
     } catch (e) {
       if (gen !== this._loadGen) return;
-      this._isLoadingReplay = false;
+      this._settleLoad();
       this.error = String(e);
       this._setPhase("failed");
     }
@@ -1835,6 +1909,13 @@ export class SessionStore {
     this.error = "";
     // Invalidate idle snapshot — user is sending a new message
     snapshotCache.deleteSnapshot(this.run.id).catch(() => {});
+
+    // If a loadRun replay is still in flight (just switched chats), wait for it
+    // to finish before pushing the optimistic user entry. Otherwise the reducer's
+    // `ctx.tl = [...this.timeline]` would carry the optimistic message into replay,
+    // landing it before the historical events and producing inverted ordering
+    // until the next event reconciles it.
+    await this._awaitLoadSettle();
 
     try {
       if (this.useStreamSession && this.sessionAlive) {
@@ -2088,10 +2169,18 @@ export class SessionStore {
         entries: this.timeline.length,
       });
 
-      // Restore per-run model from meta.json (overrides session_init if user hot-switched)
+      // Restore per-run model from meta.json (overrides session_init if user hot-switched).
+      // Fall back to CLI current model when run.model is unset so the selector never
+      // briefly reads "Default" for older runs.
       if (run.model) {
         dbg("store", "resume: restore run model from meta:", run.model);
         this.model = run.model;
+      } else if (!this.model) {
+        const cliCurrent = getCliCurrentModel();
+        if (cliCurrent) {
+          dbg("store", "resume: no run.model — fallback to cli current:", cliCurrent);
+          this.model = cliCurrent;
+        }
       }
 
       // Optimistic user message: add AFTER replay so it appears at the end of timeline.
