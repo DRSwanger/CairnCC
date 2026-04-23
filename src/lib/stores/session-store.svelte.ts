@@ -1438,8 +1438,14 @@ export class SessionStore {
       this.timeline = (obj.timeline as TimelineEntry[]).map(backfillAnchorId);
       this.tools = (obj.tools ?? []) as HookEvent[];
       this.hookEvents = (obj.hookEvents ?? []) as typeof this.hookEvents;
-      this.streamingText = (obj.streamingText as string) ?? "";
-      this.thinkingText = (obj.thinkingText as string) ?? "";
+      // Transient mid-turn buffers: never restore from snapshot. If the snapshot
+      // was captured during active thinking/streaming, reviving the buffer would
+      // render a ghost "Envisioning…" bubble on the next session load — and if
+      // the snapshot pre-dated a cross-session bug, that bubble could carry
+      // another session's text. Live catchup events will repopulate if the run
+      // is still actively thinking.
+      this.streamingText = "";
+      this.thinkingText = "";
       this.model = (obj.model as string) ?? "";
       this.usage = obj.usage as UsageState;
       this.turnUsages = (obj.turnUsages ?? []) as TurnUsage[];

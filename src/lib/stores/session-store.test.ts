@@ -441,6 +441,27 @@ describe("SessionStore reducer", () => {
       }
     });
 
+    it("does not revive thinkingText/streamingText from snapshot (cross-session ghost)", () => {
+      // Regression: an IDB snapshot captured mid-turn carried thinkingText into
+      // the next load, showing an "Envisioning…" bubble with stale (sometimes
+      // cross-session) content. _tryApplySnapshot must treat these transient
+      // buffers as non-persistent.
+      store.run = makeRun("run-ghost");
+      store.phase = "running";
+      const snapshot = {
+        timeline: [],
+        tools: [],
+        streamingText: "leftover stream from another turn",
+        thinkingText: "mushroom APE behavior is normal for the strain",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0 },
+        _lastProcessedSeq: 5,
+      };
+      // @ts-expect-error private
+      store._tryApplySnapshot(snapshot);
+      expect(store.thinkingText).toBe("");
+      expect(store.streamingText).toBe("");
+    });
+
     it("does not duplicate user_message when middleware flush overlaps catchup", () => {
       // Regression: switching INTO an actively-thinking session races the
       // middleware's rAF flush against loadRun's catchup. Both batches may

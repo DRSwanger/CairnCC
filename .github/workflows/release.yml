@@ -60,14 +60,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-7
-          releaseName: "CairnCC v__VERSION__-7"
+          tagName: v__VERSION__-8
+          releaseName: "CairnCC v__VERSION__-8"
           releaseBody: |
-            ## Draft v0.1.68-7
+            ## Draft v0.1.68-8
 
-            Follow-up to v0.1.68-6 — fixes duplicate-user-bubble bug reported during thinking.
+            Two more fixes on top of -7 from the Rift/Mushroom test pass:
 
-            - **Fixes duplicate user message on switch-into-thinking-session.** When you click into a chat that's actively generating, the middleware buffers bus events while `loadRun`'s catchup runs; both paths were processing the same `user_message` event, and content-dedup only fires on entries without a CLI UUID — so the second application stamped an identical bubble below the response. `applyEventBatch` now skips events whose `_seq` is already processed (same gate `applyEvent` uses). Regression test added.
+            - **Duplicate user bubble on switch-into-thinking-session.** Middleware was buffering bus events while `loadRun`'s catchup ran; both paths processed the same `user_message` event. Content-dedup only matches entries without a CLI UUID, so the second pass appended an identical bubble. `applyEventBatch` now skips events whose `_seq` is already processed (same gate `applyEvent` uses).
+            - **"Envisioning…" thinking bubble showing another session's text.** IDB snapshots were persisting `thinkingText`/`streamingText` — transient mid-turn buffers — and reviving them on the next load. The memCache path already cleared these (v0.1.68-3 fix); `_tryApplySnapshot` now treats both buffers as non-persistent everywhere. Live catchup events repopulate if the run is still actively thinking.
 
             Carries v0.1.68-6:
             - Tiered render on chat switch (60 entries first, full history after paint).
