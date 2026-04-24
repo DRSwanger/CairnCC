@@ -255,6 +255,13 @@
   let stashedInput: PromptInputSnapshot | null = $state(null);
   let sidebarRequestedTab = $state<"tools" | "context" | "files" | "info" | "tasks" | null>(null);
 
+  // Incoming draft key to apply once PromptInput is mounted and store.run matches.
+  // PromptInput is conditionally rendered (line ~5040), so during session switch it
+  // unmounts while phase is "loading". A direct rAF restoreSnapshot on the runId
+  // $effect misses because promptRef is null at rAF time. A reactive effect below
+  // reapplies whenever promptRef/store.run change.
+  let pendingDraftKey = $state<string | null>(null);
+
   // Per-run draft prompts: preserves typed-but-unsent input across session switches.
   // LRU-capped to avoid unbounded memory when users open many runs.
   // Sentinel key used when the outgoing state has no run yet (e.g. welcome screen
@@ -1584,18 +1591,16 @@
     const id = runId;
     const hasResume = hasResumeParam;
     untrack(() => {
-      // Save outgoing run's draft (or the new-chat sentinel draft), then apply
-      // incoming run's draft (or clear).
+      // Save outgoing run's draft (or the new-chat sentinel draft). Apply happens
+      // in a separate reactive $effect that watches promptRef + store.run — see
+      // pendingDraftKey. PromptInput unmounts during phase="loading" so an rAF
+      // here misses.
       const outgoingId = store.run?.id;
       const outgoingKey = outgoingId || NEW_CHAT_DRAFT_KEY;
       const incomingKey = id || NEW_CHAT_DRAFT_KEY;
-      if (outgoingKey !== incomingKey) saveDraftFor(outgoingId);
       if (outgoingKey !== incomingKey) {
-        const incomingDraft = draftsByRunId.get(incomingKey);
-        requestAnimationFrame(() => {
-          if (incomingDraft) promptRef?.restoreSnapshot(incomingDraft);
-          else if (snapshotHasContent(promptRef?.getInputSnapshot())) promptRef?.clearAll();
-        });
+        saveDraftFor(outgoingId);
+        pendingDraftKey = incomingKey;
       }
 
       middleware.subscribeCurrent(id, store);
@@ -1630,6 +1635,27 @@
       }
 
       loadRunProgressive(id, xtermRef);
+    });
+  });
+
+  // Apply the incoming run's draft once PromptInput is actually mounted. The runId
+  // $effect only queues the apply via pendingDraftKey because PromptInput is
+  // conditionally rendered and unmounts during the phase="loading" gap.
+  $effect(() => {
+    const ref = promptRef;
+    const target = pendingDraftKey;
+    const currentRunId = store.run?.id;
+    if (!ref || !target) return;
+    untrack(() => {
+      const currentKey = currentRunId || NEW_CHAT_DRAFT_KEY;
+      if (currentKey !== target) return; // wait for store.run to catch up
+      const draft = draftsByRunId.get(target);
+      if (draft) {
+        ref.restoreSnapshot(draft);
+      } else if (snapshotHasContent(ref.getInputSnapshot())) {
+        ref.clearAll();
+      }
+      pendingDraftKey = null;
     });
   });
 
@@ -2120,6 +2146,11 @@
     // Follow to new reply when sending a message
     isChatAutoScroll = true;
     showChatScrollHint = false;
+
+    // Sent text is no longer a draft. Delete eagerly so switching away + back
+    // doesn't rehydrate the just-sent message from localStorage.
+    const sentDraftKey = store.run?.id || NEW_CHAT_DRAFT_KEY;
+    if (draftsByRunId.delete(sentDraftKey)) persistDrafts();
 
     // Detect slash command (same check as store timeout skip)
     const isSlash = store.isKnownSlashCommand(text);

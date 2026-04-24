@@ -60,20 +60,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-9
-          releaseName: "CairnCC v__VERSION__-9"
+          tagName: v__VERSION__-10
+          releaseName: "CairnCC v__VERSION__-10"
           releaseBody: |
-            ## Draft v0.1.68-9
+            ## Draft v0.1.68-10
 
-            Composer draft persistence:
+            Draft persistence — actually fixed this time:
 
-            - **Draft survives reload / app restart.** `draftsByRunId` was an in-memory Map — closing CairnCC or hitting reload wiped every unsent composer. Now persisted to `localStorage` (`cairncc:drafts:v1`) with the existing LRU cap. Attachments are stripped before write (base64 payloads exceed the ~5MB quota); text, pasted blocks, and path refs round-trip.
-            - **Race closed on New Chat click.** `onNewChat` now calls `saveDraftFor(store.run?.id)` synchronously before `loadRun("")` nulls `store.run`, so the runId `$effect` can't race in with `outgoingId=undefined` and skip the save.
+            - **Drafts now survive session switches.** Root cause: `PromptInput` is conditionally rendered (`{#if sessionAlive || phase === ready || ...}`), so during the switch window when `phase === "loading"` the component unmounts. The rAF-scheduled `promptRef?.restoreSnapshot(incomingDraft)` fired while `promptRef` was `undefined` and silently no-op'd — the draft stayed in `draftsByRunId` + `localStorage` but never made it back into the UI. Replaced the rAF-based apply with a reactive `$effect` that watches `promptRef` and `store.run?.id` and re-applies the pending draft the moment the composer remounts.
+            - **Sent text no longer rehydrates on switch-back.** `sendMessage` now eagerly deletes the draft entry for the current run (+ persists), so typing → send → switch-away → switch-back cannot restore the just-sent message into the composer.
 
-            Blank / spinner flash fixes:
+            Carries v0.1.68-9:
 
-            - **No more blank during session switch.** `loadRun` set phase to `running`/`ready` from `run.status` *before* `getBusEvents()`/IDB snapshot resolved, so the spinner guard (`phase === "loading"`) failed and the `{:else}` branch rendered an empty timeline. New `store.isLoadingReplay` getter keeps the spinner visible through the replay gap.
-            - **No more welcome flash on startup auto-resume.** `autoResumeResolving` now covers the window between `api.listRuns()` kicking off and `goto(/chat?run=...)` landing, suppressing the hero page and showing the spinner instead.
+            - Draft persistence across reload / app restart via `localStorage` (`cairncc:drafts:v1`), attachments stripped for quota.
+            - Race closed on New Chat click (`saveDraftFor` before `loadRun("")`).
+            - Blank during session switch — `isLoadingReplay` getter.
+            - Welcome flash on startup auto-resume — `autoResumeResolving`.
 
             Carries v0.1.68-8:
             - Duplicate user bubble on switch-into-thinking-session — `applyEventBatch` now skips already-processed `_seq`.
