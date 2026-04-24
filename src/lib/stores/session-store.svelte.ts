@@ -474,6 +474,13 @@ export class SessionStore {
     return ACTIVE_PHASES.includes(this.phase);
   }
 
+  /** True while loadRun/resumeSession is fetching + replaying events. Phase may have
+   *  already advanced to running/ready from run.status, but timeline is still empty —
+   *  consumers use this to keep a spinner visible instead of rendering a blank chat. */
+  get isLoadingReplay(): boolean {
+    return this._isLoadingReplay;
+  }
+
   get isIdle(): boolean {
     return this.phase === "idle";
   }

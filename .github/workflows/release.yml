@@ -60,15 +60,24 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-8
-          releaseName: "CairnCC v__VERSION__-8"
+          tagName: v__VERSION__-9
+          releaseName: "CairnCC v__VERSION__-9"
           releaseBody: |
-            ## Draft v0.1.68-8
+            ## Draft v0.1.68-9
 
-            Two more fixes on top of -7 from the Rift/Mushroom test pass:
+            Composer draft persistence:
 
-            - **Duplicate user bubble on switch-into-thinking-session.** Middleware was buffering bus events while `loadRun`'s catchup ran; both paths processed the same `user_message` event. Content-dedup only matches entries without a CLI UUID, so the second pass appended an identical bubble. `applyEventBatch` now skips events whose `_seq` is already processed (same gate `applyEvent` uses).
-            - **"Envisioning…" thinking bubble showing another session's text.** IDB snapshots were persisting `thinkingText`/`streamingText` — transient mid-turn buffers — and reviving them on the next load. The memCache path already cleared these (v0.1.68-3 fix); `_tryApplySnapshot` now treats both buffers as non-persistent everywhere. Live catchup events repopulate if the run is still actively thinking.
+            - **Draft survives reload / app restart.** `draftsByRunId` was an in-memory Map — closing CairnCC or hitting reload wiped every unsent composer. Now persisted to `localStorage` (`cairncc:drafts:v1`) with the existing LRU cap. Attachments are stripped before write (base64 payloads exceed the ~5MB quota); text, pasted blocks, and path refs round-trip.
+            - **Race closed on New Chat click.** `onNewChat` now calls `saveDraftFor(store.run?.id)` synchronously before `loadRun("")` nulls `store.run`, so the runId `$effect` can't race in with `outgoingId=undefined` and skip the save.
+
+            Blank / spinner flash fixes:
+
+            - **No more blank during session switch.** `loadRun` set phase to `running`/`ready` from `run.status` *before* `getBusEvents()`/IDB snapshot resolved, so the spinner guard (`phase === "loading"`) failed and the `{:else}` branch rendered an empty timeline. New `store.isLoadingReplay` getter keeps the spinner visible through the replay gap.
+            - **No more welcome flash on startup auto-resume.** `autoResumeResolving` now covers the window between `api.listRuns()` kicking off and `goto(/chat?run=...)` landing, suppressing the hero page and showing the spinner instead.
+
+            Carries v0.1.68-8:
+            - Duplicate user bubble on switch-into-thinking-session — `applyEventBatch` now skips already-processed `_seq`.
+            - "Envisioning…" thinking bubble showing another session's text — `_tryApplySnapshot` treats `thinkingText`/`streamingText` as non-persistent.
 
             Carries v0.1.68-6:
             - Tiered render on chat switch (60 entries first, full history after paint).

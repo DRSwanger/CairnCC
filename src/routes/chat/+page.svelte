@@ -259,9 +259,36 @@
   // LRU-capped to avoid unbounded memory when users open many runs.
   // Sentinel key used when the outgoing state has no run yet (e.g. welcome screen
   // with text typed into the input) so drafts don't get silently dropped.
+  // Persisted to localStorage (attachments stripped — base64 can blow the quota)
+  // so drafts survive full reloads and app restarts.
   const NEW_CHAT_DRAFT_KEY = "__new_chat__";
+  const DRAFT_STORAGE_KEY = "cairncc:drafts:v1";
   const draftsByRunId = new Map<string, PromptInputSnapshot>();
   const DRAFTS_MAX = 50;
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Array<[string, PromptInputSnapshot]>;
+        if (Array.isArray(parsed)) {
+          for (const entry of parsed) {
+            if (!Array.isArray(entry) || entry.length !== 2) continue;
+            const [k, v] = entry;
+            if (typeof k !== "string" || !v || typeof v !== "object") continue;
+            draftsByRunId.set(k, {
+              text: typeof v.text === "string" ? v.text : "",
+              attachments: [],
+              pastedBlocks: Array.isArray(v.pastedBlocks) ? v.pastedBlocks : [],
+              pathRefs: Array.isArray(v.pathRefs) ? v.pathRefs : [],
+            });
+            if (draftsByRunId.size >= DRAFTS_MAX) break;
+          }
+        }
+      }
+    } catch (e) {
+      dbgWarn("chat", "failed to hydrate drafts from storage", e);
+    }
+  }
   function snapshotHasContent(s: PromptInputSnapshot | null | undefined): boolean {
     if (!s) return false;
     return !!(
@@ -270,6 +297,20 @@
       s.pastedBlocks.length ||
       (s.pathRefs?.length ?? 0) > 0
     );
+  }
+  function persistDrafts(): void {
+    if (typeof window === "undefined") return;
+    try {
+      // Strip attachments: base64 payloads can exceed the ~5MB localStorage quota.
+      // Text, pasted blocks, and path refs survive reload; attachments don't.
+      const entries = Array.from(draftsByRunId.entries()).map(([k, v]) => [
+        k,
+        { text: v.text, attachments: [], pastedBlocks: v.pastedBlocks, pathRefs: v.pathRefs ?? [] },
+      ]);
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(entries));
+    } catch (e) {
+      dbgWarn("chat", "failed to persist drafts", e);
+    }
   }
   function saveDraftFor(runId: string | undefined): void {
     const key = runId || NEW_CHAT_DRAFT_KEY;
@@ -285,6 +326,7 @@
     } else {
       draftsByRunId.delete(key);
     }
+    persistDrafts();
   }
 
   // ── Verbose state (chat page level) ──
@@ -713,10 +755,26 @@
    *  thread for seconds. We show the last N first, let the browser paint,
    *  then bump to Infinity for full history. */
   const INITIAL_RENDER_LIMIT = 60;
+  const RENDER_GROW_CHUNK = 200;
 
   function cancelProgressive() {
     progressiveGen++;
     renderLimit = INITIAL_RENDER_LIMIT;
+  }
+
+  /** Grow renderLimit in chunks across animation frames so a big chat (thousands
+   *  of entries) doesn't mount every ChatMessage in one frame and stall the main
+   *  thread. Final step bumps to Infinity so existing `renderLimit === Infinity`
+   *  checks (scrollToTool, scrollToMessage) still recognize "fully rendered". */
+  function growRenderLimitChunked(gen: number) {
+    if (gen !== progressiveGen) return;
+    const total = filteredTimeline.length;
+    if (renderLimit >= total) {
+      renderLimit = Infinity;
+      return;
+    }
+    renderLimit = Math.min(renderLimit + RENDER_GROW_CHUNK, total);
+    requestAnimationFrame(() => growRenderLimitChunked(gen));
   }
 
   /**
@@ -799,22 +857,30 @@
       replaceState(clean, {});
     } else {
       // Render the last INITIAL_RENDER_LIMIT entries first so the user sees
-      // current context and can interact. Bump to Infinity after two rAFs
-      // so the browser has time to paint and stay responsive.
+      // current context and can interact. Then grow the limit in chunks across
+      // animation frames so a massive chat (e.g. Rift CNC, thousands of entries)
+      // doesn't mount every ChatMessage in a single frame and stall the UI.
       await tick();
       historyLoaded = true;
       requestAnimationFrame(() => {
         if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
         requestAnimationFrame(() => {
-          if (gen !== progressiveGen) return;
-          renderLimit = Infinity;
+          growRenderLimitChunked(gen);
         });
       });
     }
   }
 
+  // True during the initial listRuns() check — suppresses welcome flash before
+  // we know whether to auto-resume an existing session.
+  let autoResumeResolving = $state(false);
+
   let welcomeVisible = $derived(
-    store.timeline.length === 0 && !store.streamingText && !store.run && store.phase !== "loading",
+    store.timeline.length === 0 &&
+      !store.streamingText &&
+      !store.run &&
+      store.phase !== "loading" &&
+      !autoResumeResolving,
   );
 
   let inputBlockedByPermission = $derived(store.hasPendingPermission || store.hasElicitation);
@@ -1361,21 +1427,29 @@
 
   onMount(() => {
     if (!runId && !store.run) {
+      autoResumeResolving = true;
       (async () => {
         try {
           const runs = await api.listRuns();
           const existing = runs.filter((r) => !r.prompt?.startsWith("Review your memory files"));
           if (existing.length > 0) {
+            // Keep autoResumeResolving=true — the runId $effect will trigger loadRun
+            // and isLoadingReplay takes over. Clearing it here causes a welcome flash.
             goto(`/chat?run=${existing[0].id}`, { replaceState: true });
+            return;
           }
         } catch (e) {
           dbgWarn("chat", "failed to list existing runs:", e);
         }
+        autoResumeResolving = false;
       })();
     }
 
     // Listen for explicit "New Chat" requests from the layout (handles same-route navigation)
     function onNewChat() {
+      // Save outgoing draft before loadRun("") nulls store.run — the runId $effect
+      // may race with this handler and see outgoingId=undefined.
+      saveDraftFor(store.run?.id);
       greetingStarted = false;
       greetingRunId = null;
       tick().then(async () => {
@@ -4251,8 +4325,10 @@
                 </div>
               </div>
             </div>
-          {:else if store.phase === "loading" && store.timeline.length === 0}
-            <!-- Loading state — avoids welcome page flash during loadRun -->
+          {:else if (store.phase === "loading" || store.isLoadingReplay || autoResumeResolving) && store.timeline.length === 0}
+            <!-- Loading state — avoids welcome/blank flash during startup auto-resume
+                 and loadRun. isLoadingReplay covers the gap where phase has advanced
+                 past "loading" (set from run.status) but timeline is still empty. -->
             <div class="flex h-full items-center justify-center">
               <div
                 class="h-5 w-5 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin"
