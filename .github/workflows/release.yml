@@ -60,10 +60,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-10
-          releaseName: "CairnCC v__VERSION__-10"
+          tagName: v__VERSION__-11
+          releaseName: "CairnCC v__VERSION__-11"
           releaseBody: |
-            ## Draft v0.1.68-10
+            ## Draft v0.1.68-11
+
+            Running-session snapshot cache — cold-start load for big live chats (e.g. Rift CNC):
+
+            - **Previously:** only terminal + idle sessions wrote IDB snapshots. A session in `running` status always re-read every event from disk + ran the full reducer on each app-lifetime first-load — seconds of blocking work for large chats.
+            - **Now:** snapshots are written for running sessions too, throttled to once per 200 events (`_maybePersistRunningSnapshot`), called from both `applyEvent` and `applyEventBatch`. Idle↔running transitions no longer invalidate the snapshot: `readSnapshot` accepts a `[idle, running]` crossover and catchup-from-`_lastProcessedSeq` resolves any drift. `sendMessage` also stopped deleting the snapshot — the periodic save overwrites it as the turn streams.
+            - Net effect: second-ever open of a large running session hits the snapshot + a tiny catchup instead of replaying thousands of events.
+
+            Carries v0.1.68-10:
 
             Draft persistence — actually fixed this time:
 

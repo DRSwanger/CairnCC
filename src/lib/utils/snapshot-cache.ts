@@ -58,7 +58,11 @@ function getDb(): Promise<IDBDatabase> {
  * Returns body string on hit, null on miss/stale.
  * Validates: version === SNAPSHOT_VERSION && runStatus === expectedStatus.
  */
-export async function readSnapshot(runId: string, expectedStatus: string): Promise<string | null> {
+export async function readSnapshot(
+  runId: string,
+  expectedStatus: string | string[],
+): Promise<string | null> {
+  const allowed = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
   try {
     const db = await getDb();
     const tx = db.transaction(STORE_NAME, "readonly");
@@ -85,18 +89,23 @@ export async function readSnapshot(runId: string, expectedStatus: string): Promi
       return null;
     }
 
-    if (record.runStatus !== expectedStatus) {
+    if (!allowed.includes(record.runStatus)) {
       dbg("snapshot", "read:stale", {
         runId,
         reason: "status",
         got: record.runStatus,
-        want: expectedStatus,
+        want: allowed,
       });
       deleteSnapshot(runId).catch(() => {});
       return null;
     }
 
-    dbg("snapshot", "read", { runId, hit: true, bytes: record.body.length });
+    dbg("snapshot", "read", {
+      runId,
+      hit: true,
+      status: record.runStatus,
+      bytes: record.body.length,
+    });
     return record.body;
   } catch (err) {
     dbgWarn("snapshot", "read:error", err);

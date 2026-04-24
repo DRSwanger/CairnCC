@@ -30,11 +30,7 @@ import {
   assertTransition,
 } from "./types";
 import { getEventMiddleware } from "./event-middleware";
-import {
-  updateInstalledVersion,
-  getCliCommands,
-  getCliCurrentModel,
-} from "./cli-info.svelte";
+import { updateInstalledVersion, getCliCommands, getCliCurrentModel } from "./cli-info.svelte";
 import * as snapshotCache from "$lib/utils/snapshot-cache";
 import { getTransport } from "$lib/transport";
 import { getAgentFeatures, type AgentFeatures } from "$lib/utils/agent-features";
@@ -1041,6 +1037,19 @@ export class SessionStore {
       this._lastProcessedSeq = evSeq;
     }
     this._reduce(ev, null);
+    this._maybePersistRunningSnapshot();
+  }
+
+  /** Throttled running-session snapshot save. Writes once per
+   *  RUNNING_SNAPSHOT_SEQ_DELTA events so cold starts of large live chats
+   *  (e.g. Rift CNC) skip the full event replay. */
+  private _maybePersistRunningSnapshot(): void {
+    if (!this.run || this.run.status !== "running") return;
+    const RUNNING_SNAPSHOT_SEQ_DELTA = 200;
+    if (this._lastProcessedSeq - this._lastSnapshotSeq >= RUNNING_SNAPSHOT_SEQ_DELTA) {
+      this._saveSnapshotToIdb(this.run.id);
+      this._lastSnapshotSeq = this._lastProcessedSeq;
+    }
   }
 
   /** Apply a batch of events (e.g. during loadRun replay). Avoids N reactive updates.
@@ -1165,6 +1174,8 @@ export class SessionStore {
       this.ralphLoop = { ...this.ralphLoop, active: false, reason: "interrupted" };
       dbg("store", "ralph loop marked interrupted after replay");
     }
+
+    if (!replayOnly) this._maybePersistRunningSnapshot();
 
     return performance.now() - t0;
   }
@@ -1657,13 +1668,18 @@ export class SessionStore {
           });
         }
 
-        // Try IDB snapshot (terminal + idle sessions) — skipped when memcache
-        // already satisfied the load.
-        const snapshotEligible = isTerminal || this.run!.status === "idle";
+        // Try IDB snapshot (terminal + idle + running sessions) — skipped when
+        // memcache already satisfied the load. Running snapshots let large chats
+        // skip the full disk replay on first load of each app lifetime.
+        const isLive = this.run!.status === "idle" || this.run!.status === "running";
+        const snapshotEligible = isTerminal || isLive;
         let snapshotBody: string | null = null;
         if (!memCacheHit && snapshotEligible) {
           try {
-            snapshotBody = await snapshotCache.readSnapshot(id, this.run!.status);
+            // For live sessions, accept idle/running crossover — the session may
+            // have transitioned since the snapshot was written; catchup resolves drift.
+            const expected = isLive ? ["idle", "running"] : this.run!.status;
+            snapshotBody = await snapshotCache.readSnapshot(id, expected);
           } catch {
             /* IDB unavailable → miss */
           }
@@ -1671,17 +1687,17 @@ export class SessionStore {
         }
 
         if (snapshotBody) {
-          const isIdleSnap = !isTerminal;
+          const isLiveSnap = !isTerminal;
           // Parse once, used for both seq check and apply
           const parsed = this._parseSnapshotBody(snapshotBody);
           if (!parsed) {
             snapshotBody = null; // corrupted JSON
           } else {
-            const snapSeq = isIdleSnap ? ((parsed._lastProcessedSeq as number) ?? 0) : 1;
+            const snapSeq = isLiveSnap ? ((parsed._lastProcessedSeq as number) ?? 0) : 1;
 
-            if (snapSeq === 0 && isIdleSnap) {
+            if (snapSeq === 0 && isLiveSnap) {
               // seq=0: skip snapshot, delete stale entry to prevent repeated hit-then-skip
-              dbg("store", "idle snapshot seq=0, skipping for full replay");
+              dbg("store", "live snapshot seq=0, skipping for full replay");
               snapshotCache.deleteSnapshot(id).catch(() => {});
               snapshotBody = null; // fall through to miss path
             } else if (this._tryApplySnapshot(parsed)) {
@@ -1689,19 +1705,26 @@ export class SessionStore {
               // Align _lastSnapshotSeq to prevent unnecessary rewrite on first idle
               this._lastSnapshotSeq = this._lastProcessedSeq;
 
-              // Fix: idle snapshot hit → phase must be "idle", not "ready"
-              if (isIdleSnap) this._setPhase("idle");
+              // Phase correction: snapshot restores timeline but not phase;
+              // set from current run.status (may have drifted from snapshot write).
+              if (isLiveSnap) {
+                this._setPhase(this.run!.status === "running" ? "running" : "idle");
+              }
 
-              // Desktop idle: incremental catchup (no WS available)
-              if (isIdleSnap && getTransport().isDesktop()) {
+              // Live (idle/running): desktop does incremental catchup, web uses WS
+              if (isLiveSnap && getTransport().isDesktop()) {
                 const catchupEvents = await api.getBusEvents(id, this._lastProcessedSeq);
                 if (gen !== this._loadGen) return;
                 if (catchupEvents.length > 0) {
-                  dbg("store", "idle snapshot catchup", { count: catchupEvents.length });
+                  dbg("store", "live snapshot catchup", {
+                    count: catchupEvents.length,
+                    status: this.run?.status,
+                  });
                   this.applyEventBatch(catchupEvents, { replayOnly: false });
                   const catchupSt = this.run?.status;
                   if (
                     catchupSt === "idle" ||
+                    catchupSt === "running" ||
                     catchupSt === "completed" ||
                     catchupSt === "failed" ||
                     catchupSt === "stopped"
@@ -1709,11 +1732,11 @@ export class SessionStore {
                     this._saveSnapshotToIdb(id);
                   }
                 }
-              } else if (isIdleSnap) {
+              } else if (isLiveSnap) {
                 this._wsSubscribeWithSeq(id, this._lastProcessedSeq);
               }
               // Terminal: no catchup needed, just subscribe for WS if applicable
-              if (!isIdleSnap) {
+              if (!isLiveSnap) {
                 this._wsSubscribeWithSeq(id, this._lastProcessedSeq);
               }
             } else {
@@ -1927,8 +1950,8 @@ export class SessionStore {
   async sendMessage(text: string, attachments: Attachment[]): Promise<void> {
     if (!this.run) return;
     this.error = "";
-    // Invalidate idle snapshot — user is sending a new message
-    snapshotCache.deleteSnapshot(this.run.id).catch(() => {});
+    // Keep the snapshot — catchup from _lastProcessedSeq picks up new events on
+    // reload, and the periodic running-save overwrites it as the turn streams.
 
     // If a loadRun replay is still in flight (just switched chats), wait for it
     // to finish before pushing the optimistic user entry. Otherwise the reducer's
@@ -3084,10 +3107,9 @@ export class SessionStore {
             const newPhase: SessionPhase = ev.state === "spawning" ? "spawning" : "running";
             if (ctx) ctx.phase = newPhase;
             else this._setPhase(newPhase);
-            // Invalidate idle snapshot — session is now active
-            if (!ctx && this.run) {
-              snapshotCache.deleteSnapshot(this.run.id).catch(() => {});
-            }
+            // Note: keep the existing snapshot. Running snapshots are valid and
+            // get overwritten by the periodic save below; idle snapshots still
+            // serve as a usable starting point with catchup on reload.
           } else if (ev.state === "idle") {
             if (ctx) ctx.phase = "idle";
             else this._setPhase("idle");

@@ -453,7 +453,13 @@ describe("SessionStore reducer", () => {
         tools: [],
         streamingText: "leftover stream from another turn",
         thinkingText: "mushroom APE behavior is normal for the strain",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0 },
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          cost: 0,
+        },
         _lastProcessedSeq: 5,
       };
       // @ts-expect-error private
@@ -4214,7 +4220,9 @@ describe("SessionStore reducer", () => {
         const testStore = new SessionStore();
         await testStore.loadRun("run-idle-1");
 
-        expect(mockReadSnapshot).toHaveBeenCalledWith("run-idle-1", "idle");
+        // Live sessions accept idle/running crossover so running snapshots can
+        // survive idle↔running transitions without being invalidated.
+        expect(mockReadSnapshot).toHaveBeenCalledWith("run-idle-1", ["idle", "running"]);
         expect(mockGetBusEvents).not.toHaveBeenCalled();
         expect(testStore.phase).toBe("idle");
         expect(testStore.timeline.length).toBeGreaterThan(0);
@@ -4286,6 +4294,58 @@ describe("SessionStore reducer", () => {
 
         // writeSnapshot should NOT have been called (status changed from idle→running)
         expect(mockWriteSnapshot).not.toHaveBeenCalled();
+        vi.useRealTimers();
+        warnSpy.mockClear();
+      });
+
+      it("running snapshot hit → skip full getBusEvents, phase = running", async () => {
+        const runningRun = makeRun("run-running-1", { status: "running", agent: "claude" });
+        mockGetRun.mockResolvedValue(runningRun);
+
+        const refStore = new SessionStore();
+        refStore.run = runningRun;
+        refStore.phase = "running";
+        refStore.applyEventBatch(simpleChatEvents as BusEvent[]);
+        (refStore as any)._lastProcessedSeq = 42;
+        const snapshotBody = (refStore as any)._buildSnapshot();
+
+        mockReadSnapshot.mockResolvedValue(snapshotBody);
+
+        const testStore = new SessionStore();
+        await testStore.loadRun("run-running-1");
+
+        // readSnapshot called with live crossover list
+        expect(mockReadSnapshot).toHaveBeenCalledWith("run-running-1", ["idle", "running"]);
+        // Full getBusEvents (no seq arg) must NOT fire — snapshot covered the load
+        expect(mockGetBusEvents).not.toHaveBeenCalledWith("run-running-1");
+        expect(testStore.phase).toBe("running");
+        expect(testStore.timeline.length).toBeGreaterThan(0);
+        warnSpy.mockClear();
+      });
+
+      it("running session: applyEventBatch crosses seq threshold → triggers snapshot save", () => {
+        vi.useFakeTimers();
+        const s = new SessionStore();
+        s.run = makeRun("run-snap-threshold", { status: "running", agent: "claude" });
+        s.phase = "running";
+        (s as any)._lastSnapshotSeq = 0;
+
+        // Craft 205 no-op user events with increasing _seq to cross the 200 threshold
+        const events: BusEvent[] = [];
+        for (let i = 1; i <= 205; i++) {
+          events.push({
+            type: "user_message",
+            run_id: "run-snap-threshold",
+            text: `e${i}`,
+            _seq: i,
+          } as unknown as BusEvent);
+        }
+        s.applyEventBatch(events, { replayOnly: false });
+
+        vi.advanceTimersByTime(1);
+        expect(mockWriteSnapshot).toHaveBeenCalled();
+        const [, runStatus] = mockWriteSnapshot.mock.calls[0];
+        expect(runStatus).toBe("running");
         vi.useRealTimers();
         warnSpy.mockClear();
       });
