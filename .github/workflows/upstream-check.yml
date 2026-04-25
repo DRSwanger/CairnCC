@@ -57,6 +57,10 @@ jobs:
           git commit -m "chore: track upstream $tag"
           git push
 
+          gh label create upstream-update \
+            --description "Tracks new upstream OpenCovibe stable releases" \
+            --color "0E8A16" 2>/dev/null || true
+
           existing=$(gh issue list --label upstream-update --state open --json title \
             --jq "map(select(.title | contains(\"$tag\"))) | length")
           if [[ "$existing" -gt 0 ]]; then
