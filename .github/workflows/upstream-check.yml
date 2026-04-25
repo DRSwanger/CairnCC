@@ -1,0 +1,80 @@
+name: Upstream Release Check
+
+on:
+  schedule:
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check upstream release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          latest=$(gh api repos/AnyiWang/OpenCovibe/releases/latest)
+          tag=$(jq -r .tag_name <<<"$latest")
+          prerelease=$(jq -r .prerelease <<<"$latest")
+          notes=$(jq -r .body <<<"$latest")
+
+          if [[ "$prerelease" == "true" || "$tag" =~ -(alpha|beta|rc|pre) ]]; then
+            echo "Skipping prerelease $tag"
+            exit 0
+          fi
+
+          tracked="v0.1.50"
+          [[ -f .upstream-version ]] && tracked=$(cat .upstream-version)
+
+          tag_v="${tag#v}"
+          tracked_v="${tracked#v}"
+
+          if [[ "$tag_v" == "$tracked_v" ]]; then
+            echo "No new upstream release. Tracked: $tracked"
+            exit 0
+          fi
+
+          newest=$(printf '%s\n%s\n' "$tracked_v" "$tag_v" | sort -V | tail -1)
+          if [[ "$newest" != "$tag_v" ]]; then
+            echo "Upstream $tag is older than tracked $tracked. Skipping."
+            exit 0
+          fi
+
+          echo "New upstream release: $tag (was $tracked)"
+
+          echo "$tag" > .upstream-version
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git config user.name  'github-actions[bot]'
+          git add .upstream-version
+          git commit -m "chore: track upstream $tag"
+          git push
+
+          existing=$(gh issue list --label upstream-update --state open --json title \
+            --jq "map(select(.title | contains(\"$tag\"))) | length")
+          if [[ "$existing" -gt 0 ]]; then
+            echo "Issue for $tag already open, skipping"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "Upstream release: AnyiWang/OpenCovibe $tag" \
+            --label upstream-update \
+            --body "$(cat <<EOF
+          A new stable release is available upstream.
+
+          **Version:** $tag
+
+          **Release notes:**
+          $notes
+
+          Review and cherry-pick relevant changes into our fork.
+          EOF
+          )"
