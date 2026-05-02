@@ -89,6 +89,8 @@
   let favoriteRunIds = $derived(new Set(sidebarFavorites.map((f) => f.runId)));
   let settings = $state<UserSettings | null>(null);
   let sidebarOpen = $state(true);
+  // Mobile/narrow viewport: auto-close sidebar on conversation tap
+  let isNarrow = $state(false);
   let projectCwd = $state("");
   type ThemeMode = "light" | "dark" | "system";
   type ColorScheme = "warm" | "neutral";
@@ -552,6 +554,15 @@
         })
         .catch(() => {});
     }
+
+    // Track narrow viewport for mobile sidebar auto-close
+    const narrowMql = window.matchMedia("(max-width: 767px)");
+    const updateNarrow = () => {
+      isNarrow = narrowMql.matches;
+    };
+    updateNarrow();
+    if (isNarrow) sidebarOpen = false;
+    narrowMql.addEventListener("change", updateNarrow);
 
     // Remove splash screen
     const splash = document.getElementById("app-splash");
@@ -2205,8 +2216,14 @@
                     expanded={expandedProjects.has(folder.folderKey)}
                     {selectedRunId}
                     onToggle={() => toggleProject(folder.folderKey)}
-                    onSelectConversation={(runId) => goto(`/chat?run=${runId}`)}
-                    onResume={(runId, mode) => goto(`/chat?run=${runId}&resume=${mode}`)}
+                    onSelectConversation={(runId) => {
+                      goto(`/chat?run=${runId}`);
+                      if (isNarrow) sidebarOpen = false;
+                    }}
+                    onResume={(runId, mode) => {
+                      goto(`/chat?run=${runId}&resume=${mode}`);
+                      if (isNarrow) sidebarOpen = false;
+                    }}
                     onDelete={requestDeleteConversation}
                     onRemove={folder.isUncategorized
                       ? undefined
