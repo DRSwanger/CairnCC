@@ -1021,6 +1021,16 @@
       displayThinkingText = "";
     }
   });
+  $effect(() => {
+    // Hard reset thinking panel state on session switch so the previous
+    // session's latched thinking text and expanded state cannot bleed into
+    // the next session's panel before its own thinking arrives.
+    const _ = store.run?.id;
+    void _;
+    displayThinkingText = "";
+    thinkingExpanded = false;
+    _thinkingUserCount = store.timeline.filter((e) => e.kind === "user").length;
+  });
   let spinnerVerb = $state(randomSpinnerVerb());
   /** Plain flag (not $state) — avoids $effect dependency cycle with thinkingElapsed. */
   let thinkingVerbPicked = false;

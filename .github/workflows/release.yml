@@ -59,11 +59,12 @@ jobs:
           releaseBody: |
             ## Draft v0.1.68-12
 
-            Three small quality-of-life fixes:
+            Four small quality-of-life fixes:
 
             - **Session-wide rename.** Renaming a conversation that lives across multiple runs (a `s:`-grouped session) now renames every run sharing that `session_id` in one shot, and any new run that later attaches to the session inherits the name automatically (`inherit_session_name_on_attach`). Old per-run rename still applies for ungrouped runs.
             - **Mobile sidebar auto-close.** On viewports `≤767px`, picking a conversation or resume action closes the sidebar so the chat actually has room to breathe. Initial load on a narrow viewport starts collapsed.
             - **Debug-only dev token override.** Setting `CAIRNCC_DEV_TOKEN` in a debug build now seeds the live web-server token and writes it to `~/.cairncc/dev_token` for curl/Playwright smoke tests. Release builds keep the random 32-char token — no behavior change for users.
+            - **Thinking-panel cross-session bleed fixed.** `displayThinkingText` and `thinkingExpanded` were latched (only cleared when a *new user message* landed on the active session), so switching into a Haiku session — or any session whose own thinking hadn't yet started — would re-display the previous Opus/Sonnet session's thinking trace under the spinner. Now both reset whenever `store.run?.id` changes.
 
             Carries v0.1.68-11:
 
