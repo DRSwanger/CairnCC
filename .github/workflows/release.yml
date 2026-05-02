@@ -60,10 +60,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-11
-          releaseName: "CairnCC v__VERSION__-11"
+          tagName: v__VERSION__-12
+          releaseName: "CairnCC v__VERSION__-12"
           releaseBody: |
-            ## Draft v0.1.68-11
+            ## Draft v0.1.68-12
+
+            Three small quality-of-life fixes:
+
+            - **Session-wide rename.** Renaming a conversation that lives across multiple runs (a `s:`-grouped session) now renames every run sharing that `session_id` in one shot, and any new run that later attaches to the session inherits the name automatically (`inherit_session_name_on_attach`). Old per-run rename still applies for ungrouped runs.
+            - **Mobile sidebar auto-close.** On viewports `≤767px`, picking a conversation or resume action closes the sidebar so the chat actually has room to breathe. Initial load on a narrow viewport starts collapsed.
+            - **Debug-only dev token override.** Setting `CAIRNCC_DEV_TOKEN` in a debug build now seeds the live web-server token and writes it to `~/.cairncc/dev_token` for curl/Playwright smoke tests. Release builds keep the random 32-char token — no behavior change for users.
+
+            Carries v0.1.68-11:
 
             Running-session snapshot cache — cold-start load for big live chats (e.g. Rift CNC):
 
