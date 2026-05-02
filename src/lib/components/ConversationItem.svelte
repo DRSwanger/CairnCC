@@ -58,12 +58,18 @@
     const trimmed = editValue.trim();
     if (trimmed && trimmed !== conversation.title) {
       try {
-        const { renameRun } = await import("$lib/api");
-        await renameRun(conversation.latestRun.id, trimmed);
-        dbg("conv-item", "renamed", {
-          runId: conversation.latestRun.id,
-          name: trimmed,
-        });
+        const { renameRun, renameSession } = await import("$lib/api");
+        const sessionId = conversation.latestRun.session_id;
+        if (sessionId && conversation.groupKey.startsWith("s:")) {
+          const count = await renameSession(sessionId, trimmed);
+          dbg("conv-item", "renamed session", { sessionId, name: trimmed, count });
+        } else {
+          await renameRun(conversation.latestRun.id, trimmed);
+          dbg("conv-item", "renamed run", {
+            runId: conversation.latestRun.id,
+            name: trimmed,
+          });
+        }
         window.dispatchEvent(new Event("ocv:runs-changed"));
       } catch (e) {
         dbgWarn("conv-item", "rename failed", e);

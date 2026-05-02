@@ -66,6 +66,13 @@ pub async fn dispatch_command(
             crate::commands::runs::rename_run(id, name)?;
             Ok(json!(true))
         }
+        "rename_session" => {
+            let session_id = extract_str(&params, "sessionId")
+                .or_else(|_| extract_str(&params, "session_id"))?;
+            let name = extract_str(&params, "name")?;
+            let count = crate::commands::runs::rename_session(session_id, name)?;
+            Ok(json!(count))
+        }
         "soft_delete_runs" => {
             let ids: Vec<String> = params
                 .get("ids")

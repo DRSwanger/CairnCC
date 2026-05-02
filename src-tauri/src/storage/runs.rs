@@ -196,7 +196,9 @@ pub fn update_session_id(id: &str, session_id: &str) -> Result<(), String> {
         );
         meta.session_id = Some(session_id.to_string());
         Ok(())
-    })
+    })?;
+    inherit_session_name_on_attach(id, session_id);
+    Ok(())
 }
 
 pub fn rename_run(id: &str, name: &str) -> Result<(), String> {
@@ -209,6 +211,52 @@ pub fn rename_run(id: &str, name: &str) -> Result<(), String> {
         };
         Ok(())
     })
+}
+
+/// Rename every run sharing this session_id. New runs that later join the session
+/// also inherit the name via `inherit_session_name_on_attach`.
+pub fn rename_session(session_id: &str, name: &str) -> Result<u32, String> {
+    log::debug!(
+        "[storage/runs] rename_session: session_id={}, name={}",
+        session_id,
+        name
+    );
+    if session_id.is_empty() {
+        return Err("rename_session: empty session_id".to_string());
+    }
+    let mut count = 0u32;
+    for meta in list_all_run_metas() {
+        if meta.session_id.as_deref() == Some(session_id) {
+            rename_run(&meta.id, name)?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// When a run joins an existing session, copy a name from any sibling that already has one.
+/// No-op if this run already has a name or no sibling does.
+fn inherit_session_name_on_attach(id: &str, session_id: &str) {
+    let current = match get_run(id) {
+        Some(m) => m,
+        None => return,
+    };
+    if current.name.is_some() {
+        return;
+    }
+    let inherited = list_all_run_metas()
+        .into_iter()
+        .find(|m| m.id != id && m.session_id.as_deref() == Some(session_id) && m.name.is_some())
+        .and_then(|m| m.name);
+    if let Some(n) = inherited {
+        log::debug!(
+            "[storage/runs] inherit_session_name_on_attach: id={} session_id={} name={}",
+            id,
+            session_id,
+            n
+        );
+        let _ = rename_run(id, &n);
+    }
 }
 
 pub fn update_run_model(id: &str, model: &str) -> Result<(), String> {

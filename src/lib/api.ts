@@ -102,6 +102,11 @@ export async function renameRun(id: string, name: string): Promise<void> {
   return invoke<void>("rename_run", { id, name });
 }
 
+export async function renameSession(sessionId: string, name: string): Promise<number> {
+  dbg("api", "renameSession", { sessionId, name });
+  return invoke<number>("rename_session", { sessionId, name });
+}
+
 export async function updateRunModel(id: string, model: string): Promise<void> {
   dbg("api", "updateRunModel", { id, model });
   return invoke<void>("update_run_model", { id, model });

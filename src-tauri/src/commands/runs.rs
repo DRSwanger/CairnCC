@@ -145,6 +145,16 @@ pub fn rename_run(id: String, name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn rename_session(session_id: String, name: String) -> Result<u32, String> {
+    log::debug!(
+        "[runs] rename_session: session_id={}, name={}",
+        session_id,
+        name
+    );
+    storage::runs::rename_session(&session_id, &name)
+}
+
+#[tauri::command]
 pub fn soft_delete_runs(ids: Vec<String>) -> Result<u32, String> {
     log::debug!("[cmd/runs] soft_delete_runs: ids={:?}", ids);
     storage::runs::soft_delete_runs(&ids)
