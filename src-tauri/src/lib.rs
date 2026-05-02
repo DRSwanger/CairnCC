@@ -67,6 +67,15 @@ impl ShutdownGate {
     }
 }
 
+fn random_live_token() -> String {
+    use rand::Rng;
+    rand::thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect()
+}
+
 pub fn run() {
     // Initialize logging — our crate at debug level by default
     // Override with RUST_LOG env var, e.g. RUST_LOG=warn cargo tauri dev
@@ -100,13 +109,35 @@ pub fn run() {
     let ws_shutdown_sender: WsShutdownSender = Arc::new(broadcast::channel::<()>(1).0);
     let shared_token_version: SharedTokenVersion = Arc::new(AtomicU64::new(0));
     let shared_live_token: SharedLiveToken = {
-        use rand::Rng;
-        let token: String = rand::thread_rng()
-            .sample_iter(&rand::distributions::Alphanumeric)
-            .take(32)
-            .map(char::from)
-            .collect();
-        log::debug!("[app] ephemeral web token generated (masked)");
+        let token: String = {
+            #[cfg(debug_assertions)]
+            {
+                if let Ok(t) = std::env::var("CAIRNCC_DEV_TOKEN") {
+                    if !t.is_empty() {
+                        log::debug!("[app] using CAIRNCC_DEV_TOKEN from env (debug build)");
+                        if let Ok(home) = std::env::var("HOME") {
+                            let path = std::path::PathBuf::from(home)
+                                .join(".cairncc")
+                                .join("dev_token");
+                            if let Some(parent) = path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            let _ = std::fs::write(&path, &t);
+                        }
+                        t
+                    } else {
+                        random_live_token()
+                    }
+                } else {
+                    random_live_token()
+                }
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                random_live_token()
+            }
+        };
+        log::debug!("[app] live web token ready (masked, len={})", token.len());
         Arc::new(tokio::sync::RwLock::new(token))
     };
     let effective_web_port: EffectiveWebPort = Arc::new(AtomicU16::new(0));
@@ -158,6 +189,7 @@ pub fn run() {
             commands::runs::update_run_model,
             commands::runs::update_run_effort,
             commands::runs::rename_run,
+            commands::runs::rename_session,
             commands::runs::soft_delete_runs,
             commands::runs::search_prompts,
             commands::history::search_runs,
