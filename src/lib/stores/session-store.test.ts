@@ -4064,6 +4064,40 @@ describe("SessionStore reducer", () => {
         expect(ok).toBe(false);
         warnSpy.mockClear();
       });
+
+      it("truncates oversized tool output strings restored from a pre-cap snapshot", () => {
+        // Snapshots written before the -13 cap can hold MBs of uncapped tool
+        // output strings; rehydrating them froze the WebView. _tryApplySnapshot
+        // must apply the same head/tail cap on restore.
+        const huge = "x".repeat(200 * 1024); // 200 KB single field
+        const snap = {
+          timeline: [
+            {
+              kind: "tool",
+              id: "tool-1",
+              anchorId: "tool-1",
+              ts: "2026-05-05T00:00:00Z",
+              tool: {
+                tool_use_id: "tool-1",
+                tool_name: "Read",
+                status: "success",
+                output: { content: huge },
+                tool_use_result: { content: huge },
+              },
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+        };
+        const store1 = new SessionStore();
+        const ok = (
+          store1 as unknown as { _tryApplySnapshot(b: Record<string, unknown>): boolean }
+        )._tryApplySnapshot(snap as unknown as Record<string, unknown>);
+        expect(ok).toBe(true);
+        const t = store1.timeline[0] as { tool: { output: { content: string }; tool_use_result: { content: string } } };
+        expect(t.tool.output.content.length).toBeLessThan(40 * 1024);
+        expect(t.tool.output.content).toContain("bytes truncated");
+        expect(t.tool.tool_use_result.content.length).toBeLessThan(40 * 1024);
+      });
     });
 
     describe("loadRun snapshot paths", () => {

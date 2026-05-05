@@ -54,12 +54,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-13
-          releaseName: "CairnCC v__VERSION__-13"
+          tagName: v__VERSION__-14
+          releaseName: "CairnCC v__VERSION__-14"
           releaseBody: |
-            ## Draft v0.1.68-13
+            ## Draft v0.1.68-14
 
-            Memory fix for long sessions:
+            Snapshot-restore freeze fix (Rift CNC switch-in):
+
+            - **Snapshots now truncate on restore, not just on live ingest.** -13's 32 KB cap was applied in the reducer, but `_tryApplySnapshot` assigned `timeline`/`tools`/`hookEvents` straight from the IDB snapshot — so any session whose snapshot was written *before* -13 still rehydrated the full uncapped tool outputs (e.g. ~11 MB on the Rift CNC chat). Switching into one of those sessions blasted the whole blob into reactive state + DOM and pinned the main thread (scroll still worked since it's GPU-driven, but input and session switches were frozen). Restore path now walks `timeline` (incl. `subTimeline`), `tools[]`, and `hookEvents[]` and applies the same head/tail cap.
+
+            Carries v0.1.68-13:
 
             - **Tool output truncation in the timeline.** Long `Read`/`Bash`/`Grep` results were pinning the entire tool output (top entries 280–335 KB each) in the reactive timeline, the IDB snapshot, and the WebView DOM. In the Rift CNC chat that's 160 tool_end events / ~11 MB of result text held live, which was pushing the WebView toward OOM as the session grew. The reducer now caps each string field inside `tool_end.output` / `tool_end.tool_use_result` at 32 KB (16 KB head + 8 KB tail with a `[... N bytes truncated ...]` marker). Canonical full output is still on disk in `events.jsonl` — only the in-memory/UI copy is bounded.
 

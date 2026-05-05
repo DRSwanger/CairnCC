@@ -171,6 +171,44 @@ function truncateToolOutput(
   return truncateToolField(v) as Record<string, unknown>;
 }
 
+/** Apply the tool-output cap to a restored snapshot. Snapshots written before
+ *  the -13 cap landed still hold full uncapped tool output strings (~MBs),
+ *  which would freeze the WebView when the timeline is rehydrated and rendered.
+ *  Walk timeline tool entries (incl. subTimeline), tools[], and hookEvents[]. */
+function truncateRestoredTimeline(timeline: TimelineEntry[]): TimelineEntry[] {
+  return timeline.map((entry) => {
+    if (entry.kind !== "tool") return entry;
+    const t = entry as Extract<TimelineEntry, { kind: "tool" }>;
+    const tool = t.tool;
+    if (!tool) return entry;
+    const patchedTool = {
+      ...tool,
+      output: truncateToolOutput(tool.output as Record<string, unknown> | undefined),
+      tool_use_result: truncateToolOutput(
+        tool.tool_use_result as Record<string, unknown> | undefined,
+      ),
+    };
+    const patched = { ...t, tool: patchedTool } as Extract<TimelineEntry, { kind: "tool" }>;
+    if (patched.subTimeline) {
+      (patched as { subTimeline: TimelineEntry[] }).subTimeline = truncateRestoredTimeline(
+        patched.subTimeline,
+      );
+    }
+    return patched;
+  });
+}
+function truncateRestoredHookEvents(events: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  return events.map((e) => {
+    const out: Record<string, unknown> = { ...e };
+    if (out.output) out.output = truncateToolOutput(out.output as Record<string, unknown>);
+    if (out.tool_output)
+      out.tool_output = truncateToolOutput(out.tool_output as Record<string, unknown>);
+    if (out.tool_use_result)
+      out.tool_use_result = truncateToolOutput(out.tool_use_result as Record<string, unknown>);
+    return out;
+  });
+}
+
 /** Map frontend Attachment[] to backend AttachmentData format for IPC. */
 function mapAttachments(
   atts: Attachment[],
@@ -1486,10 +1524,18 @@ export class SessionStore {
       }
 
       // A group
-      // Backfill anchorId for old snapshots that predate the anchor system
-      this.timeline = (obj.timeline as TimelineEntry[]).map(backfillAnchorId);
-      this.tools = (obj.tools ?? []) as HookEvent[];
-      this.hookEvents = (obj.hookEvents ?? []) as typeof this.hookEvents;
+      // Backfill anchorId for old snapshots that predate the anchor system,
+      // and truncate tool outputs (snapshots written before the -13 cap can
+      // hold MBs of uncapped Read/Bash/Grep dumps that would freeze rehydration).
+      this.timeline = truncateRestoredTimeline(
+        (obj.timeline as TimelineEntry[]).map(backfillAnchorId),
+      );
+      this.tools = truncateRestoredHookEvents(
+        (obj.tools ?? []) as unknown as Array<Record<string, unknown>>,
+      ) as unknown as HookEvent[];
+      this.hookEvents = truncateRestoredHookEvents(
+        (obj.hookEvents ?? []) as unknown as Array<Record<string, unknown>>,
+      ) as unknown as typeof this.hookEvents;
       // Transient mid-turn buffers: never restore from snapshot. If the snapshot
       // was captured during active thinking/streaming, reviving the buffer would
       // render a ghost "Envisioning…" bubble on the next session load — and if
