@@ -137,6 +137,40 @@ function timelineAttachments(atts: Attachment[]): Attachment[] | undefined {
   );
 }
 
+/** Cap any individual string field inside a tool result at TOOL_OUTPUT_MAX_BYTES.
+ *  Long Read/Bash/Grep dumps would otherwise pin tens of MB per session in the
+ *  reactive timeline and the IDB snapshot — the canonical copy stays in
+ *  events.jsonl on disk. Recursive walk; arrays/objects preserved structurally. */
+const TOOL_OUTPUT_MAX_BYTES = 32 * 1024;
+const TOOL_OUTPUT_HEAD_BYTES = 16 * 1024;
+const TOOL_OUTPUT_TAIL_BYTES = 8 * 1024;
+function truncateToolField(v: unknown): unknown {
+  if (typeof v === "string") {
+    if (v.length <= TOOL_OUTPUT_MAX_BYTES) return v;
+    const omitted = v.length - TOOL_OUTPUT_HEAD_BYTES - TOOL_OUTPUT_TAIL_BYTES;
+    return (
+      v.slice(0, TOOL_OUTPUT_HEAD_BYTES) +
+      `\n\n[... ${omitted.toLocaleString()} bytes truncated for memory; full output in events.jsonl ...]\n\n` +
+      v.slice(v.length - TOOL_OUTPUT_TAIL_BYTES)
+    );
+  }
+  if (Array.isArray(v)) return v.map(truncateToolField);
+  if (v && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v as Record<string, unknown>)) {
+      out[k] = truncateToolField((v as Record<string, unknown>)[k]);
+    }
+    return out;
+  }
+  return v;
+}
+function truncateToolOutput(
+  v: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!v) return v;
+  return truncateToolField(v) as Record<string, unknown>;
+}
+
 /** Map frontend Attachment[] to backend AttachmentData format for IPC. */
 function mapAttachments(
   atts: Attachment[],
@@ -2984,6 +3018,11 @@ export class SessionStore {
               ? ("error" as const)
               : ("success" as const);
 
+        const truncatedOutput = truncateToolOutput(ev.output as Record<string, unknown>);
+        const truncatedToolUseResult = truncateToolOutput(
+          ev.tool_use_result as Record<string, unknown> | undefined,
+        );
+
         // Subagent routing: update child tool inside parent's subTimeline
         if (ev.parent_tool_use_id) {
           if (
@@ -2993,10 +3032,10 @@ export class SessionStore {
               (t) => ({
                 ...t,
                 status: resolvedStatus,
-                output: ev.output as Record<string, unknown>,
+                output: truncatedOutput as Record<string, unknown>,
                 duration_ms: ev.duration_ms,
                 tool_name: ev.tool_name || t.tool_name,
-                tool_use_result: ev.tool_use_result as Record<string, unknown> | undefined,
+                tool_use_result: truncatedToolUseResult,
               }),
               ctx,
             )
@@ -3020,10 +3059,10 @@ export class SessionStore {
             tool: {
               ...old.tool,
               status: resolvedStatus,
-              output: ev.output as Record<string, unknown>,
+              output: truncatedOutput as Record<string, unknown>,
               duration_ms: ev.duration_ms,
               tool_name: ev.tool_name || old.tool.tool_name,
-              tool_use_result: ev.tool_use_result as Record<string, unknown> | undefined,
+              tool_use_result: truncatedToolUseResult,
             },
           };
           if (ctx) {
@@ -3087,7 +3126,7 @@ export class SessionStore {
               status: "done",
               hook_type: "PostToolUse",
               tool_name: ev.tool_name || he[hIdx].tool_name,
-              tool_output: ev.output as Record<string, unknown>,
+              tool_output: truncatedOutput as Record<string, unknown>,
             };
             if (ctx) {
               ctx.he[hIdx] = updatedHe;

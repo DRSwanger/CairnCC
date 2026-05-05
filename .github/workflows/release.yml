@@ -54,10 +54,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-12
-          releaseName: "CairnCC v__VERSION__-12"
+          tagName: v__VERSION__-13
+          releaseName: "CairnCC v__VERSION__-13"
           releaseBody: |
-            ## Draft v0.1.68-12
+            ## Draft v0.1.68-13
+
+            Memory fix for long sessions:
+
+            - **Tool output truncation in the timeline.** Long `Read`/`Bash`/`Grep` results were pinning the entire tool output (top entries 280–335 KB each) in the reactive timeline, the IDB snapshot, and the WebView DOM. In the Rift CNC chat that's 160 tool_end events / ~11 MB of result text held live, which was pushing the WebView toward OOM as the session grew. The reducer now caps each string field inside `tool_end.output` / `tool_end.tool_use_result` at 32 KB (16 KB head + 8 KB tail with a `[... N bytes truncated ...]` marker). Canonical full output is still on disk in `events.jsonl` — only the in-memory/UI copy is bounded.
+
+            Carries v0.1.68-12:
 
             Four small quality-of-life fixes:
 

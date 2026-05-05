@@ -286,6 +286,70 @@ describe("SessionStore reducer", () => {
     });
   });
 
+  describe("tool_end output truncation", () => {
+    it("caps oversized string fields in tool output to bound timeline memory", () => {
+      store.run = makeRun("run-trunc");
+      const huge = "X".repeat(200_000);
+      store.applyEventBatch([
+        {
+          type: "tool_start",
+          run_id: "run-trunc",
+          tool_use_id: "t-1",
+          tool_name: "Read",
+          input: { file_path: "/big.txt" },
+        },
+        {
+          type: "tool_end",
+          run_id: "run-trunc",
+          tool_use_id: "t-1",
+          tool_name: "Read",
+          status: "success",
+          output: { content: huge },
+          tool_use_result: { stdout: huge, exitCode: 0 },
+          duration_ms: 10,
+        },
+      ] as BusEvent[]);
+      const entry = store.timeline.find(
+        (e) => e.kind === "tool" && (e as { kind: "tool"; tool: { tool_use_id: string } }).tool.tool_use_id === "t-1",
+      ) as { kind: "tool"; tool: { output: Record<string, unknown>; tool_use_result: Record<string, unknown> } } | undefined;
+      expect(entry).toBeDefined();
+      const stored = entry!.tool.output.content as string;
+      expect(stored.length).toBeLessThan(huge.length);
+      expect(stored.length).toBeLessThan(40_000);
+      expect(stored).toContain("truncated for memory");
+      const storedResult = entry!.tool.tool_use_result.stdout as string;
+      expect(storedResult.length).toBeLessThan(40_000);
+    });
+
+    it("leaves small tool output unchanged", () => {
+      store.run = makeRun("run-small");
+      const small = "hello world";
+      store.applyEventBatch([
+        {
+          type: "tool_start",
+          run_id: "run-small",
+          tool_use_id: "t-2",
+          tool_name: "Bash",
+          input: { command: "echo hi" },
+        },
+        {
+          type: "tool_end",
+          run_id: "run-small",
+          tool_use_id: "t-2",
+          tool_name: "Bash",
+          status: "success",
+          output: { stdout: small },
+          tool_use_result: undefined,
+          duration_ms: 5,
+        },
+      ] as BusEvent[]);
+      const entry = store.timeline.find(
+        (e) => e.kind === "tool" && (e as { kind: "tool"; tool: { tool_use_id: string } }).tool.tool_use_id === "t-2",
+      ) as { kind: "tool"; tool: { output: Record<string, unknown> } } | undefined;
+      expect(entry!.tool.output.stdout).toBe(small);
+    });
+  });
+
   // ── Resume replay (replayOnly=true) ──
 
   describe("resume replay (replayOnly)", () => {
