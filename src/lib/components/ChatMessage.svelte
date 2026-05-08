@@ -70,161 +70,194 @@
 </script>
 
 <div
-  class="w-full {isUser ? 'bg-muted/50' : ''}"
+  class="w-full"
   role="group"
   onmouseenter={() => (hovered = true)}
   onmouseleave={() => (hovered = false)}
 >
-  <div class="chat-content-width py-4">
-    <!-- Header: icon + name + copy button + timestamp -->
-    <div class="mb-1.5 flex items-center gap-2">
-      {#if isUser}
-        <div class="flex h-5 w-5 items-center justify-center rounded-sm bg-primary/10 text-primary">
-          <svg
-            class="h-3 w-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
-        </div>
-        <span class="text-sm font-semibold text-foreground">{t("chat_roleYou")}</span>
-      {:else}
-        <div
-          class="flex h-5 w-5 items-center justify-center rounded-sm bg-orange-500/10 text-orange-500"
-        >
-          <svg
-            class="h-3 w-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path
-              d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"
-            />
-          </svg>
-        </div>
-        <span class="text-sm font-semibold text-foreground">{t("chat_roleClaude")}</span>
-      {/if}
-      {#if onRewind}
-        <button
-          class="ml-auto p-1 rounded-md text-muted-foreground/50 hover:bg-muted hover:text-foreground transition-all duration-150 {hovered
-            ? 'opacity-100'
-            : 'opacity-0'}"
-          onclick={onRewind}
-          title={t("rewind_toHere")}
-        >
-          <svg
-            class="h-3.5 w-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-            <path d="M3 3v5h5" />
-          </svg>
-        </button>
-      {/if}
-      <button
-        class="{onRewind
-          ? ''
-          : 'ml-auto'} p-1 rounded-md text-muted-foreground/50 hover:bg-muted hover:text-foreground transition-all duration-150 {hovered ||
-        copied
-          ? 'opacity-100'
-          : 'opacity-0'}"
-        onclick={copyContent}
-        title={t("chat_copyMessage")}
-      >
-        {#if copied}
-          <svg
-            class="h-3.5 w-3.5 text-emerald-500"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg
-          >
-        {:else}
-          <svg
-            class="h-3.5 w-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            ><rect width="14" height="14" x="8" y="8" rx="2" /><path
-              d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-            /></svg
-          >
-        {/if}
-      </button>
-      <span class="text-[10px] text-muted-foreground" title={formatFullTime(message.timestamp)}>
-        {formatTime(message.timestamp)}
-      </span>
-    </div>
-    <!-- Content: indented to align with text after icon -->
-    <div class="pl-7 text-sm text-foreground leading-relaxed">
-      {#if isUser}
-        {#if attachments && attachments.length > 0}
-          <div class="flex flex-wrap gap-2 mb-2">
-            {#each attachments as att}
-              {#if isImage(att) && att.contentBase64}
-                <img
-                  src="data:{att.type};base64,{att.contentBase64}"
-                  alt={att.name}
-                  class="max-h-48 max-w-xs rounded-md border border-border object-contain"
+  <div class="chat-content-width py-3">
+    <div class="flex {isUser ? 'justify-end' : 'justify-start'}">
+      <div class="flex flex-col {isUser ? 'items-end' : 'items-start'} max-w-[85%] min-w-0">
+        <!-- Header: avatar + name + actions + timestamp -->
+        <div class="mb-1 flex items-center gap-2 px-1 {isUser ? 'flex-row-reverse' : ''}">
+          {#if isUser}
+            <div class="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-primary">
+              <svg
+                class="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            </div>
+            <span class="text-xs font-semibold text-foreground/80">{t("chat_roleYou")}</span>
+          {:else}
+            <div
+              class="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500/15 text-orange-500"
+            >
+              <svg
+                class="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"
                 />
-              {:else}
-                <FileAttachment name={att.name} size={att.size} mimeType={att.type} />
-              {/if}
-            {/each}
-          </div>
-        {/if}
-        {#if isLong}
-          <p
-            class="whitespace-pre-wrap {collapsed ? 'max-h-24 overflow-hidden' : ''}"
-            style={collapsed
-              ? "mask-image: linear-gradient(to bottom, black 70%, transparent);"
-              : ""}
-          >
-            {message.content}
-          </p>
+              </svg>
+            </div>
+            <span class="text-xs font-semibold text-foreground/80">{t("chat_roleClaude")}</span>
+          {/if}
+          <span class="text-[10px] text-muted-foreground/70" title={formatFullTime(message.timestamp)}>
+            {formatTime(message.timestamp)}
+          </span>
+          {#if onRewind}
+            <button
+              class="p-0.5 rounded-md text-muted-foreground/50 hover:bg-muted hover:text-foreground transition-all duration-150 {hovered
+                ? 'opacity-100'
+                : 'opacity-0'}"
+              onclick={onRewind}
+              title={t("rewind_toHere")}
+            >
+              <svg
+                class="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+            </button>
+          {/if}
           <button
-            class="mt-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            onclick={() => (collapsed = !collapsed)}
+            class="p-0.5 rounded-md text-muted-foreground/50 hover:bg-muted hover:text-foreground transition-all duration-150 {hovered ||
+            copied
+              ? 'opacity-100'
+              : 'opacity-0'}"
+            onclick={copyContent}
+            title={t("chat_copyMessage")}
           >
-            {collapsed
-              ? t("common_showAllLines", { count: String(lineCount) })
-              : t("common_collapse")}
+            {#if copied}
+              <svg
+                class="h-3 w-3 text-emerald-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg
+              >
+            {:else}
+              <svg
+                class="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                ><rect width="14" height="14" x="8" y="8" rx="2" /><path
+                  d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+                /></svg
+              >
+            {/if}
           </button>
-        {:else}
-          <p class="whitespace-pre-wrap">{message.content}</p>
-        {/if}
-      {:else}
-        <!-- Thinking text shown in the popup panel above the input during the run; not repeated here -->
-        <div class="prose-chat">
-          <MarkdownContent
-            text={streaming ? streamingText : message.content}
-            {streaming}
-            bind:draining
-            {rate}
-            {revealStyle}
-          />
         </div>
-      {/if}
+
+        <!-- Bubble -->
+        <div
+          class="chat-bubble px-4 py-2.5 text-sm leading-relaxed {isUser
+            ? 'chat-bubble-user rounded-2xl rounded-br-md bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/20 text-foreground'
+            : 'chat-bubble-assistant rounded-2xl rounded-bl-md bg-gradient-to-br from-card to-card/70 border border-border/60 text-foreground'}"
+        >
+          {#if isUser}
+            {#if attachments && attachments.length > 0}
+              <div class="flex flex-wrap gap-2 mb-2">
+                {#each attachments as att}
+                  {#if isImage(att) && att.contentBase64}
+                    <img
+                      src="data:{att.type};base64,{att.contentBase64}"
+                      alt={att.name}
+                      class="max-h-48 max-w-xs rounded-md border border-border object-contain"
+                    />
+                  {:else}
+                    <FileAttachment name={att.name} size={att.size} mimeType={att.type} />
+                  {/if}
+                {/each}
+              </div>
+            {/if}
+            {#if isLong}
+              <p
+                class="whitespace-pre-wrap {collapsed ? 'max-h-24 overflow-hidden' : ''}"
+                style={collapsed
+                  ? "mask-image: linear-gradient(to bottom, black 70%, transparent);"
+                  : ""}
+              >
+                {message.content}
+              </p>
+              <button
+                class="mt-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onclick={() => (collapsed = !collapsed)}
+              >
+                {collapsed
+                  ? t("common_showAllLines", { count: String(lineCount) })
+                  : t("common_collapse")}
+              </button>
+            {:else}
+              <p class="whitespace-pre-wrap">{message.content}</p>
+            {/if}
+          {:else}
+            <div class="prose-chat">
+              <MarkdownContent
+                text={streaming ? streamingText : message.content}
+                {streaming}
+                bind:draining
+                {rate}
+                {revealStyle}
+              />
+            </div>
+          {/if}
+        </div>
+      </div>
     </div>
   </div>
 </div>
+
+<style>
+  .chat-bubble {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 1px 2px rgba(0, 0, 0, 0.08),
+      0 8px 16px -10px rgba(0, 0, 0, 0.18);
+  }
+  :global(.dark) .chat-bubble {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 1px 2px rgba(0, 0, 0, 0.35),
+      0 10px 22px -12px rgba(0, 0, 0, 0.55);
+  }
+  .chat-bubble-user {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.08) inset,
+      0 1px 2px rgba(0, 0, 0, 0.08),
+      0 10px 18px -10px rgba(99, 102, 241, 0.28);
+  }
+  :global(.dark) .chat-bubble-user {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 14px 24px -12px rgba(99, 102, 241, 0.45);
+  }
+</style>

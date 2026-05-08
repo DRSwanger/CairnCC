@@ -1,13 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
   import type { TaskRun, McpServerInfo, CliModelInfo } from "$lib/types";
   import type { TurnUsage } from "$lib/stores/types";
   import { dbg } from "$lib/utils/debug";
   import { getCliModels } from "$lib/stores/cli-info.svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { fmtNumber } from "$lib/i18n/format";
-  import { truncate, formatTokenCount, formatDuration, formatCostDisplay } from "$lib/utils/format";
+  import { truncate } from "$lib/utils/format";
 
   let {
     run = null,
@@ -126,44 +125,6 @@
     }
   });
 
-  // ── Expansion state (persisted) ──
-  let expanded = $state(
-    typeof window !== "undefined"
-      ? localStorage.getItem("ocv:statusbar-expanded") !== "false"
-      : true,
-  );
-
-  $effect(() => {
-    localStorage.setItem("ocv:statusbar-expanded", String(expanded));
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("ocv:statusbar-toggle", { detail: { expanded } }));
-    }
-  });
-
-  let cwdShort = $derived.by(() => {
-    const val = cwd || run?.cwd || "";
-    if (!val || val === "/") return "";
-    const home = val
-      .replace(/^\/Users\/[^/]+/, "~")
-      .replace(/^\/home\/[^/]+/, "~")
-      .replace(/^[A-Za-z]:[/\\](?:Users|users)[/\\][^/\\]+/, "~");
-    return home.length > 30 ? "..." + home.slice(-27) : home;
-  });
-
-  let sessionIdShort = $derived(run?.session_id ? run.session_id.slice(0, 8) : "");
-  let sidCopied = $state(false);
-
-  async function copySessionId() {
-    if (!run?.session_id) return;
-    try {
-      await navigator.clipboard.writeText(run.session_id);
-      sidCopied = true;
-      setTimeout(() => (sidCopied = false), 1500);
-    } catch {
-      /* ignore */
-    }
-  }
-
   // ── Title inline editing ──
   let titleEditing = $state(false);
   let titleEditValue = $state("");
@@ -187,22 +148,6 @@
   function cancelTitleEdit() {
     titleEditing = false;
   }
-
-  const formatCost = formatCostDisplay;
-
-  let permissionBadge = $derived.by(() => {
-    if (!permissionMode || permissionMode === "default") return null;
-    const map: Record<string, { label: string; cls: string }> = {
-      acceptEdits: { label: "accept-edits", cls: "bg-blue-500/15 text-blue-400" },
-      bypassPermissions: { label: "bypass", cls: "bg-amber-500/15 text-amber-500" },
-      plan: { label: "plan", cls: "bg-purple-500/15 text-purple-400" },
-      auto: { label: "auto", cls: "bg-teal-500/15 text-teal-400" },
-      dontAsk: { label: "no-ask", cls: "bg-red-500/15 text-red-400" },
-    };
-    return (
-      map[permissionMode] ?? { label: permissionMode, cls: "bg-foreground/10 text-foreground/60" }
-    );
-  });
 
   // ── Model selector dropdown ──
   // Use platform-specific models when a third-party provider is active
@@ -319,27 +264,6 @@
     clearTimeout(confirmTimer);
     confirmingEnd = false;
   }
-
-  let mcpAggregateStatus = $derived.by(() => {
-    if (!mcpServers || mcpServers.length === 0) return "none";
-    const hasFailure = mcpServers.some((s) => s.status === "failed" || s.status === "needs-auth");
-    const hasPending = mcpServers.some((s) => s.status === "pending");
-    const allDisabled = mcpServers.every((s) => s.status === "disabled");
-    if (hasFailure) return "error";
-    if (hasPending) return "pending";
-    if (allDisabled) return "disabled";
-    return "ok";
-  });
-
-  let mcpDotClass = $derived(
-    mcpAggregateStatus === "error"
-      ? "bg-destructive"
-      : mcpAggregateStatus === "pending"
-        ? "bg-amber-500"
-        : mcpAggregateStatus === "disabled"
-          ? "bg-muted-foreground/30"
-          : "bg-emerald-500",
-  );
 
   let currentModelInfo = $derived(models.find((m) => m.value === model));
   let effortLevels = $derived(currentModelInfo?.supportedEffortLevels ?? []);
@@ -631,190 +555,9 @@
         </button>
       {/if}
 
-      <!-- Expand/collapse chevron -->
-      <button
-        class="rounded p-0.5 text-foreground/30 hover:text-foreground/60 hover:bg-accent transition-colors"
-        onclick={() => (expanded = !expanded)}
-        title={expanded ? t("statusbar_collapse") : t("statusbar_expand")}
-      >
-        <svg
-          class="h-3.5 w-3.5 transition-transform {expanded ? '' : 'rotate-180'}"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-      </button>
     </div>
   </div>
 
-  <!-- Tier 2: Collapsible details (h-7) -->
-  {#if expanded}
-    <div class="flex h-7 items-center justify-between px-3 border-t border-border/50">
-      <!-- Left: details -->
-      <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-        {#if cwdShort}
-          <span class="truncate" title={cwd || run?.cwd || ""}>{cwdShort}</span>
-        {/if}
-
-        {#if sessionIdShort}
-          <span class="text-foreground/30">&middot;</span>
-          <button
-            class="text-foreground/40 hover:text-foreground/70 transition-colors"
-            title="{t('statusbar_sessionLabel', {
-              id: run?.session_id ?? '',
-            })}\n{t('statusbar_clickToCopy')}"
-            onclick={copySessionId}
-          >
-            {sidCopied ? t("statusbar_copied") : sessionIdShort}
-          </button>
-        {/if}
-
-        {#if parentRunId && onNavigateParent}
-          <span class="text-foreground/30">&middot;</span>
-          <button
-            class="flex items-center gap-1 text-blue-400/70 hover:text-blue-400 transition-colors"
-            onclick={onNavigateParent}
-            title={t("statusbar_viewParent")}
-          >
-            <svg
-              class="h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <circle cx="12" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><circle
-                cx="18"
-                cy="6"
-                r="3"
-              />
-              <path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" /><path d="M12 12v3" />
-            </svg>
-            <span>{t("statusbar_forked")}</span>
-          </button>
-        {/if}
-
-        {#if cost > 0}
-          <span class="text-foreground/30 shrink-0">&middot;</span>
-          <span class="shrink-0">{formatCost(cost)}</span>
-        {/if}
-
-        {#if inputTokens > 0 || outputTokens > 0}
-          <span class="text-foreground/30 shrink-0">&middot;</span>
-          <span
-            class="shrink-0"
-            title={`${t("statusbar_inputLabel")}: ${fmtNumber(inputTokens)} / ${t("statusbar_outputLabel")}: ${fmtNumber(outputTokens)}${cacheReadTokens ? `\n${t("statusbar_cacheReadLabel")}: ${fmtNumber(cacheReadTokens)}` : ""}${cacheWriteTokens ? `\n${t("statusbar_cacheWriteLabel")}: ${fmtNumber(cacheWriteTokens)}` : ""}`}
-            >{formatTokenCount(inputTokens)} / {formatTokenCount(outputTokens)}
-            {t("statusbar_tok")}</span
-          >
-          {#if cacheReadTokens > 0 || cacheWriteTokens > 0}
-            <span class="text-foreground/60 text-[10px] shrink-0"
-              >{t("statusbar_cacheRW", {
-                read: formatTokenCount(cacheReadTokens),
-                write: formatTokenCount(cacheWriteTokens),
-              })}</span
-            >
-          {/if}
-        {/if}
-
-        {#if mcpServers && mcpServers.length > 0 && onMcpToggle}
-          <span class="text-foreground/30">&middot;</span>
-          <button
-            class="flex items-center gap-1 shrink-0 rounded border border-transparent px-1.5 py-0.5 -my-0.5 text-foreground/70 hover:text-foreground hover:bg-accent hover:border-border transition-colors"
-            onclick={onMcpToggle}
-            title={t("statusbar_mcpTitle", { count: String(mcpServers.length) })}
-          >
-            <span class="inline-block h-1.5 w-1.5 rounded-full {mcpDotClass}"></span>
-            <span>{t("statusbar_mcpLabel", { count: String(mcpServers.length) })}</span>
-          </button>
-        {/if}
-
-        {#if numTurns && numTurns > 0}
-          <span class="text-foreground/30 shrink-0">&middot;</span>
-          <span class="shrink-0" title={t("statusbar_turnsTitle")}
-            >{t("statusbar_turns", { count: String(numTurns) })}</span
-          >
-        {/if}
-
-        {#if durationMs && durationMs > 0}
-          {@const turnDetail = turnUsages
-            .filter((tu) => tu.durationMs && tu.durationMs > 0)
-            .map((tu) => `T${tu.turnIndex}: ${formatDuration(tu.durationMs!)}`)
-            .join(", ")}
-          <span class="text-foreground/30 shrink-0">&middot;</span>
-          <span
-            class="shrink-0"
-            title={t("statusbar_durationTitle") +
-              (turnDetail ? `\n${t("statusbar_durationPerTurn")}: ${turnDetail}` : "")}
-            >{formatDuration(durationMs)}</span
-          >
-        {/if}
-      </div>
-
-      <!-- Right: secondary controls -->
-      <div class="flex items-center gap-1.5 shrink-0">
-        {#if permissionBadge}
-          <span
-            class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium {permissionBadge.cls}"
-            title={t("statusbar_permissionMode", { mode: permissionMode ?? "" })}
-            >{permissionBadge.label}</span
-          >
-        {/if}
-
-        {#if fastModeState === "on"}
-          <span
-            class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/15 text-amber-500"
-            title={t("statusbar_fastModeTitle")}>{t("statusbar_fastMode")}</span
-          >
-        {/if}
-
-        {#if verbose}
-          <span
-            class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-sky-500/15 text-sky-400 hidden sm:inline"
-            title={t("statusbar_verboseTitle")}>{t("statusbar_verbose")}</span
-          >
-        {/if}
-
-        {#if authSourceLabel}
-          {@const authBadgeColor =
-            authSourceCategory === "login"
-              ? "bg-emerald-500/15 text-emerald-500"
-              : authSourceCategory === "env_key"
-                ? "bg-blue-500/15 text-blue-400"
-                : authSourceCategory === "none"
-                  ? "bg-amber-500/15 text-amber-500"
-                  : "bg-foreground/10 text-foreground/60"}
-          <span
-            class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium {authBadgeColor}"
-            title={t("statusbar_authTitle", { source: apiKeySource ?? "" })}>{authSourceLabel}</span
-          >
-        {/if}
-
-        {#if remoteHostName}
-          <span
-            class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/15 text-blue-500"
-            title={t("statusbar_sshTitle", { name: remoteHostName ?? "" })}
-            >{t("statusbar_sshLabel", { name: remoteHostName ?? "" })}</span
-          >
-        {/if}
-
-        {#if cliVersion}
-          <button
-            class="text-foreground/30 hover:text-foreground/60 transition-colors hidden sm:inline"
-            title={t("statusbar_cliVersionTitle", { version: cliVersion ?? "" })}
-            onclick={() => goto("/release-notes")}>CLI v{cliVersion}</button
-          >
-        {/if}
-      </div>
-    </div>
-  {/if}
 </div>
 
 {#if dropdownOpen}

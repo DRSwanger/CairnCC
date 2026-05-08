@@ -412,13 +412,6 @@
 
   // ── CLI session browser ──
 
-  // Track status bar expansion for MCP panel offset
-  let statusBarExpanded = $state(
-    typeof window !== "undefined"
-      ? localStorage.getItem("ocv:statusbar-expanded") !== "false"
-      : true,
-  );
-
   // ── Tool filtering ──
   let toolFilter = $state<string | null>(null);
 
@@ -1711,13 +1704,9 @@
     }
   });
 
-  // Auto-focus prompt input on mount + listen for status bar toggle + register chat keybindings
+  // Auto-focus prompt input on mount + register chat keybindings
   onMount(() => {
     requestAnimationFrame(() => promptRef?.focus());
-    function onStatusBarToggle(e: Event) {
-      statusBarExpanded = (e as CustomEvent).detail.expanded;
-    }
-    window.addEventListener("ocv:statusbar-toggle", onStatusBarToggle);
 
     // Register chat-context keybinding callbacks
     keybindingStore.registerCallback("chat:interrupt", () => {
@@ -1862,7 +1851,6 @@
     );
 
     return () => {
-      window.removeEventListener("ocv:statusbar-toggle", onStatusBarToggle);
       keybindingStore.unregisterCallback("chat:interrupt");
       keybindingStore.unregisterCallback("chat:sendGlobal");
       keybindingStore.unregisterCallback("app:shortcutHelp");
@@ -4206,7 +4194,7 @@
 
     <!-- MCP panel (floating below status bar) -->
     {#if mcpPanelOpen && store.mcpServers.length > 0}
-      <div class="absolute {statusBarExpanded ? 'top-16' : 'top-9'} right-3 z-30">
+      <div class="absolute top-9 right-3 z-30">
         <McpStatusPanel
           runId={store.run?.id ?? ""}
           mcpServers={store.mcpServers}
