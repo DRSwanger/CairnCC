@@ -178,9 +178,9 @@
 
         <!-- Bubble -->
         <div
-          class="chat-bubble px-4 py-2.5 text-sm leading-relaxed {isUser
-            ? 'chat-bubble-user rounded-2xl rounded-br-md bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/20 text-foreground'
-            : 'chat-bubble-assistant rounded-2xl rounded-bl-md bg-gradient-to-br from-card to-card/70 border border-border/60 text-foreground'}"
+          class="chat-bubble px-4 py-2.5 text-sm leading-relaxed text-foreground rounded-2xl {isUser
+            ? 'chat-bubble-user rounded-br-md'
+            : 'chat-bubble-assistant rounded-bl-md'}"
         >
           {#if isUser}
             {#if attachments && attachments.length > 0}
@@ -249,24 +249,48 @@
       0 10px 22px -12px rgba(0, 0, 0, 0.55);
   }
   .chat-bubble-user {
+    background-image: linear-gradient(
+      135deg,
+      rgba(var(--bubble-user-rgb, 99 102 241) / 0.22),
+      rgba(var(--bubble-user-rgb, 99 102 241) / 0.08)
+    );
+    border: 1px solid rgba(var(--bubble-user-rgb, 99 102 241) / 0.35);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.08) inset,
       0 1px 2px rgba(0, 0, 0, 0.08),
       0 10px 18px -10px rgba(var(--bubble-user-rgb, 99 102 241) / 0.28);
   }
   :global(.dark) .chat-bubble-user {
+    background-image: linear-gradient(
+      135deg,
+      rgba(var(--bubble-user-rgb, 99 102 241) / 0.32),
+      rgba(var(--bubble-user-rgb, 99 102 241) / 0.14)
+    );
+    border-color: rgba(var(--bubble-user-rgb, 99 102 241) / 0.45);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.06) inset,
       0 1px 2px rgba(0, 0, 0, 0.4),
       0 14px 24px -12px rgba(var(--bubble-user-rgb, 99 102 241) / 0.45);
   }
   .chat-bubble-assistant {
+    background-image: linear-gradient(
+      135deg,
+      rgba(var(--bubble-asst-rgb, 249 115 22) / 0.18),
+      rgba(var(--bubble-asst-rgb, 249 115 22) / 0.06)
+    );
+    border: 1px solid rgba(var(--bubble-asst-rgb, 249 115 22) / 0.3);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.06) inset,
       0 1px 2px rgba(0, 0, 0, 0.08),
       0 10px 18px -10px rgba(var(--bubble-asst-rgb, 249 115 22) / 0.22);
   }
   :global(.dark) .chat-bubble-assistant {
+    background-image: linear-gradient(
+      135deg,
+      rgba(var(--bubble-asst-rgb, 249 115 22) / 0.26),
+      rgba(var(--bubble-asst-rgb, 249 115 22) / 0.1)
+    );
+    border-color: rgba(var(--bubble-asst-rgb, 249 115 22) / 0.4);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.04) inset,
       0 1px 2px rgba(0, 0, 0, 0.4),

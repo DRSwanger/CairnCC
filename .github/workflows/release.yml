@@ -54,10 +54,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-16
-          releaseName: "CairnCC v__VERSION__-16"
+          tagName: v__VERSION__-17
+          releaseName: "CairnCC v__VERSION__-17"
           releaseBody: |
-            ## Draft v0.1.68-16
+            ## Draft v0.1.68-17
+
+            Bubble fill follows the palette:
+
+            - **Chat bubble backgrounds now recolor with the palette**, not just the glow. Previously the user bubble fill was hardcoded to Tailwind `primary` and the assistant fill to `card`, so palette swaps only moved the shadow — fill stayed indigo/neutral. Both bubbles now derive their gradient fill and border tint from `--bubble-user-rgb` / `--bubble-asst-rgb`. Dark-mode alphas bumped (user 0.32→0.14, assistant 0.26→0.10) so the tint actually reads against the dark background.
+
+            Carries v0.1.68-16:
 
             Chat bubble palette + assistant glow:
 
