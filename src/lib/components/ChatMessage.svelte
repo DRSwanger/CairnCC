@@ -252,12 +252,24 @@
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.08) inset,
       0 1px 2px rgba(0, 0, 0, 0.08),
-      0 10px 18px -10px rgba(99, 102, 241, 0.28);
+      0 10px 18px -10px rgba(var(--bubble-user-rgb, 99 102 241) / 0.28);
   }
   :global(.dark) .chat-bubble-user {
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.06) inset,
       0 1px 2px rgba(0, 0, 0, 0.4),
-      0 14px 24px -12px rgba(99, 102, 241, 0.45);
+      0 14px 24px -12px rgba(var(--bubble-user-rgb, 99 102 241) / 0.45);
+  }
+  .chat-bubble-assistant {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 1px 2px rgba(0, 0, 0, 0.08),
+      0 10px 18px -10px rgba(var(--bubble-asst-rgb, 249 115 22) / 0.22);
+  }
+  :global(.dark) .chat-bubble-assistant {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 14px 24px -12px rgba(var(--bubble-asst-rgb, 249 115 22) / 0.4);
   }
 </style>

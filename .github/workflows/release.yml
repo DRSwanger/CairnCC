@@ -54,10 +54,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-15
-          releaseName: "CairnCC v__VERSION__-15"
+          tagName: v__VERSION__-16
+          releaseName: "CairnCC v__VERSION__-16"
           releaseBody: |
-            ## Draft v0.1.68-15
+            ## Draft v0.1.68-16
+
+            Chat bubble palette + assistant glow:
+
+            - **Assistant bubbles now get a colored glow** that mirrors the user-bubble highlight (previously only user bubbles had a tinted shadow). Both glows are driven by CSS custom properties (`--bubble-user-rgb` / `--bubble-asst-rgb`), so they live-update with the new palette picker.
+            - **Bubble palette picker** added to **Settings → General → Display**. Ten presets: Indigo/Orange (default), Teal/Magenta, Ocean, Amethyst, Midnight, Ember, Mint, Forest, Sunset, Monochrome. Selection is persisted to `localStorage` (`cairncc:palette`) and re-applied on app start.
+
+            Carries v0.1.68-15:
 
             UI cleanup pass:
 

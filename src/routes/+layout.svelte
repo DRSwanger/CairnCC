@@ -45,6 +45,7 @@
   import { dbg, dbgWarn } from "$lib/utils/debug";
   import { PLATFORM_PRESETS } from "$lib/utils/platform-presets";
   import { loadAgentSettingsCache } from "$lib/stores/agent-settings-cache.svelte";
+  import { paletteStore } from "$lib/stores/palette.svelte";
   import type { PlatformCredential } from "$lib/types";
   import { TeamStore } from "$lib/stores/team-store.svelte";
   import { KeybindingStore } from "$lib/stores/keybindings.svelte";
@@ -1184,6 +1185,8 @@
     mq.addEventListener("change", onSystemChange);
     // Apply initial theme
     document.documentElement.classList.toggle("dark", effectiveDark);
+    // Apply persisted bubble palette
+    paletteStore.apply();
     return () => mq.removeEventListener("change", onSystemChange);
   });
 

@@ -17,6 +17,7 @@
   import KeybindingEditor from "$lib/components/KeybindingEditor.svelte";
   import { formatKeyDisplay } from "$lib/stores/keybindings.svelte";
   import { dripRateStore } from "$lib/stores/drip-rate.svelte";
+  import { paletteStore, PALETTE_PRESETS } from "$lib/stores/palette.svelte";
   import { revealAnimationStore, REVEAL_STYLES } from "$lib/stores/reveal-animation.svelte";
   import {
     PLATFORM_PRESETS,
@@ -1508,6 +1509,42 @@
                   >
                 {/each}
               </select>
+            </div>
+          </div>
+
+          <!-- Chat bubble palette -->
+          <div class="pt-2 border-t border-border/40">
+            <div class="flex items-center justify-between gap-4 py-1">
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium">Chat bubble palette</p>
+                <p class="text-xs text-muted-foreground mt-0.5">
+                  Glow color behind your prompts and Claude's responses.
+                </p>
+              </div>
+            </div>
+            <div class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {#each PALETTE_PRESETS as preset (preset.id)}
+                <button
+                  type="button"
+                  class="flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs transition-colors {paletteStore.id ===
+                  preset.id
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                    : 'border-border hover:bg-muted/40'}"
+                  onclick={() => (paletteStore.id = preset.id)}
+                >
+                  <span class="flex shrink-0 gap-1">
+                    <span
+                      class="h-4 w-4 rounded-full border border-border/50"
+                      style="background: rgb({preset.user})"
+                    ></span>
+                    <span
+                      class="h-4 w-4 rounded-full border border-border/50"
+                      style="background: rgb({preset.assistant})"
+                    ></span>
+                  </span>
+                  <span class="truncate">{preset.label}</span>
+                </button>
+              {/each}
             </div>
           </div>
         </Card>
