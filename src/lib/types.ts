@@ -1094,6 +1094,11 @@ export type TimelineEntry =
       ts: string;
       attachments?: Attachment[];
       cliUuid?: string;
+      /** Set when this optimistic user was pushed while a previous turn was still
+       *  streaming. The next message_complete should insert the new assistant
+       *  entry BEFORE this user instead of appending — otherwise the still-
+       *  finishing previous response lands below the new user message. */
+      precedingStreamPending?: boolean;
     }
   | {
       kind: "assistant";

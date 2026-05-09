@@ -774,8 +774,15 @@ export class SessionStore {
     }
   }
 
-  /** Push an optimistic user message to the timeline (deduped by content in _reduce). */
-  private _pushOptimisticUser(content: string, attachments?: Attachment[]): void {
+  /** Push an optimistic user message to the timeline (deduped by content in _reduce).
+   *  precedingStreamPending=true marks the entry so the next message_complete
+   *  inserts the new assistant entry BEFORE it instead of appending — handles
+   *  the case where the user typed while the previous turn was still finishing. */
+  private _pushOptimisticUser(
+    content: string,
+    attachments?: Attachment[],
+    precedingStreamPending = false,
+  ): void {
     const id = uuid();
     this._pushTimeline(null, {
       kind: "user",
@@ -786,6 +793,7 @@ export class SessionStore {
       ...(attachments && attachments.length > 0
         ? { attachments: timelineAttachments(attachments) }
         : {}),
+      ...(precedingStreamPending ? { precedingStreamPending: true } : {}),
     });
   }
 
@@ -2045,7 +2053,12 @@ export class SessionStore {
         // Optimistic user message — matches the pattern in startSession().
         // Content-based dedup in _reduce(user_message) prevents double display
         // when the backend's UserMessage bus event arrives.
-        this._pushOptimisticUser(text, attachments);
+        // If the previous turn is still streaming (streamingText not yet flushed
+        // to a timeline entry by message_complete), tag the optimistic user so
+        // the imminent message_complete splices in BEFORE it — keeps order:
+        // [..., prev_user, prev_asst, new_user] instead of inverted.
+        const precedingStreamPending = this.streamingText.length > 0;
+        this._pushOptimisticUser(text, attachments, precedingStreamPending);
         try {
           await api.sendSessionMessage(this.run.id, text, mapAttachments(attachments) ?? undefined);
         } catch (e) {
@@ -2905,6 +2918,31 @@ export class SessionStore {
             id: ev.message_id,
             len: savedThinking.length,
           });
+
+        // Out-of-order guard: if the user typed during this turn's streaming,
+        // their optimistic entry is sitting at the end of the timeline with
+        // precedingStreamPending=true. Splice the new assistant entry in
+        // BEFORE that user so the visible order matches conversation order.
+        const tl = getTl();
+        const pendingUserIdx = tl.findIndex(
+          (e) => e.kind === "user" && e.precedingStreamPending,
+        );
+        if (pendingUserIdx >= 0) {
+          const pending = tl[pendingUserIdx] as Extract<TimelineEntry, { kind: "user" }>;
+          const cleaned: TimelineEntry = { ...pending };
+          delete (cleaned as { precedingStreamPending?: boolean }).precedingStreamPending;
+          if (ctx) {
+            ctx.tl = [...tl.slice(0, pendingUserIdx), entry, cleaned, ...tl.slice(pendingUserIdx + 1)];
+          } else {
+            this.timeline = [
+              ...this.timeline.slice(0, pendingUserIdx),
+              entry,
+              cleaned,
+              ...this.timeline.slice(pendingUserIdx + 1),
+            ];
+          }
+          break;
+        }
 
         this._pushTimeline(ctx, entry);
         break;

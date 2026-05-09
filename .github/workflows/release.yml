@@ -54,10 +54,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-18
-          releaseName: "CairnCC v__VERSION__-18"
+          tagName: v__VERSION__-19
+          releaseName: "CairnCC v__VERSION__-19"
           releaseBody: |
-            ## Draft v0.1.68-18
+            ## Draft v0.1.68-19
+
+            Cross-session bleed + bubble + ordering fixes:
+
+            - **Switching out of a streaming chat no longer replays the response in the destination chat.** Three local reactive states in `chat/+page.svelte` — `runHasStreamed`, `streamingDraining`, `lastStreamingText` — were not session-scoped. `loadRun`'s `_clearContentState` cleared the store fields but not these locals, so leaving session A mid-stream left `streamingDraining=true` and `lastStreamingText="…A's text…"` latched. When session B then rendered, the fallback streaming container's condition `(streamingText || streamingDraining) && !streamingEntryId` still fired, drawing A's text inside B's view as a ghost reply. Now reset on every `store.run?.id` change.
+            - **The fallback streaming container actually looks like a chat bubble.** Previously it rendered as flat `pl-7 prose-chat` text — no `chat-bubble`/`chat-bubble-assistant` classes, no gradient fill, no glow — so any text rendered through it (including the leak above, but also the real ~100 ms gap between first `message_delta` and the `message_complete` that creates the timeline entry) appeared bare. Container now wraps its `MarkdownContent` in the same bubble structure `ChatMessage` uses for assistant messages, and the bubble styles in `ChatMessage.svelte` were promoted to `:global(...)` so they apply across components.
+            - **New user message no longer lands above the still-finishing previous response.** `_pushOptimisticUser` blindly appends to the timeline, but `message_complete` for the previous turn (if still in flight) also appends — putting the assistant entry *after* the new user, inverting conversation order. `sendMessage` now tags the optimistic user with `precedingStreamPending: true` when `streamingText` is non-empty at send time. The next `message_complete` (main session path) detects that flag and splices the new assistant entry in *before* the flagged user instead of appending. Order stays `[…, prev_user, prev_asst, new_user]`.
+
+            Carries v0.1.68-18:
 
             Drip smoothness pass + reverse colors:
 
@@ -65,10 +73,7 @@ jobs:
             - **Decode tail no longer re-runs the markdown pipeline every frame.** The scramble suffix used to be string-concatenated into `displayHtml`, so every random-glyph cycle (60×/sec) re-derived the html, and every effect that watched `displayHtml` (copy buttons, image lightbox, basePath image resolve) re-walked the bubble's DOM. Tail is now a sibling `<span>` mutated via `textContent` — the markdown HTML only re-derives when `dripText` actually advances.
             - **Enrichment effects gated on `!streaming`.** Copy-button wiring, image lightbox handlers, and relative-image-path resolution don't run during drip — those elements aren't fully formed yet, and re-querying the DOM 35×/sec for them was pure waste.
             - **Decode glyph buffer pre-allocated.** `randomGlyphs` used to build a fresh string via per-char concatenation each frame; rotated to a fixed-size `Array<string>` joined once per frame, eliminating the per-char string allocations.
-
-            Reverse colors:
-
-            - **Palette colors can be reversed.** Each preset now has a one-click "reverse" that swaps which color goes to user vs assistant bubbles. Toggle from **Settings → Display → Chat bubble palette → Reverse colors**, or click the palette icon in the bottom-left status bar (previously cycled the warm/neutral scheme — now toggles bubble reverse, the more visible knob). Choice persists in `localStorage` (`cairncc:palette-reversed`). Settings swatches re-render in the new order so the previews always match the live bubble colors.
+            - **Palette colors can be reversed.** Each preset now has a one-click "reverse" that swaps which color goes to user vs assistant bubbles. Toggle from **Settings → Display → Chat bubble palette → Reverse colors**, or click the palette icon in the bottom-left status bar. Choice persists in `localStorage` (`cairncc:palette-reversed`).
 
             Carries v0.1.68-17:
 

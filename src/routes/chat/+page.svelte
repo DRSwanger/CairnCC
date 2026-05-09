@@ -445,6 +445,17 @@
       runHasStreamed = false;
     }
   });
+  // Session-switch reset: these three locals are not store-backed, so loadRun's
+  // _clearContentState doesn't touch them. Without this, switching out of a
+  // streaming session leaks streamingDraining=true + lastStreamingText into the
+  // destination chat's fallback streaming container — visible as the previous
+  // session's last response replaying in the new chat.
+  $effect(() => {
+    void store.run?.id;
+    runHasStreamed = false;
+    streamingDraining = false;
+    lastStreamingText = "";
+  });
   /**
    * ID of the last assistant timeline entry that is actively streaming.
    * This entry's ChatMessage receives streaming props so MarkdownContent renders
@@ -4666,38 +4677,51 @@
               <!-- Thinking popup moved above PromptInput — see below -->
 
               <!-- Fallback streaming container: shown only when streaming text exists
-                   but the assistant timeline entry hasn't appeared yet -->
+                   but the assistant timeline entry hasn't appeared yet. Bubble
+                   structure mirrors ChatMessage's assistant variant so the live
+                   stream renders with the same chat-bubble-assistant styling
+                   (gradient fill + glow) as a finalized assistant message. -->
               {#if (store.streamingText || streamingDraining) && !streamingEntryId}
                 <div class="w-full">
-                  <div class="chat-content-width py-4">
-                    <div class="mb-1.5 flex items-center gap-2">
-                      <div
-                        class="flex h-5 w-5 items-center justify-center rounded-sm bg-orange-500/10 text-orange-500"
-                      >
-                        <svg
-                          class="h-3 w-3"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
+                  <div class="chat-content-width py-3">
+                    <div class="flex justify-start">
+                      <div class="flex flex-col items-start max-w-[85%] min-w-0">
+                        <div class="mb-1 flex items-center gap-2 px-1">
+                          <div
+                            class="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500/15 text-orange-500"
+                          >
+                            <svg
+                              class="h-3 w-3"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                            >
+                              <path
+                                d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"
+                              />
+                            </svg>
+                          </div>
+                          <span class="text-xs font-semibold text-foreground/80"
+                            >{t("chat_roleClaude")}</span
+                          >
+                        </div>
+                        <div
+                          class="chat-bubble chat-bubble-assistant px-4 py-2.5 text-sm leading-relaxed text-foreground rounded-2xl rounded-bl-md"
                         >
-                          <path
-                            d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"
-                          />
-                        </svg>
+                          <div class="prose-chat">
+                            <MarkdownContent
+                              text={store.streamingText || lastStreamingText}
+                              streaming={!!store.streamingText}
+                              bind:draining={streamingDraining}
+                              rate={dripRateStore.value}
+                              revealStyle={revealAnimationStore.value}
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <span class="text-sm font-semibold text-foreground">{t("chat_claude")}</span>
-                    </div>
-                    <div class="pl-7 prose-chat">
-                      <MarkdownContent
-                        text={store.streamingText || lastStreamingText}
-                        streaming={!!store.streamingText}
-                        bind:draining={streamingDraining}
-                        rate={dripRateStore.value}
-                        revealStyle={revealAnimationStore.value}
-                      />
                     </div>
                   </div>
                 </div>

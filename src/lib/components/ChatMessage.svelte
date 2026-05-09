@@ -236,19 +236,22 @@
 </div>
 
 <style>
-  .chat-bubble {
+  /* Globalized so the fallback streaming container in chat/+page.svelte
+     (rendered before a real assistant timeline entry exists) can reuse the
+     same bubble look. Otherwise live-streaming text shows up flat/unbubbled. */
+  :global(.chat-bubble) {
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.06) inset,
       0 1px 2px rgba(0, 0, 0, 0.08),
       0 8px 16px -10px rgba(0, 0, 0, 0.18);
   }
-  :global(.dark) .chat-bubble {
+  :global(.dark .chat-bubble) {
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.04) inset,
       0 1px 2px rgba(0, 0, 0, 0.35),
       0 10px 22px -12px rgba(0, 0, 0, 0.55);
   }
-  .chat-bubble-user {
+  :global(.chat-bubble-user) {
     background-image: linear-gradient(
       135deg,
       rgba(var(--bubble-user-rgb, 99 102 241) / 0.22),
@@ -260,7 +263,7 @@
       0 1px 2px rgba(0, 0, 0, 0.08),
       0 10px 18px -10px rgba(var(--bubble-user-rgb, 99 102 241) / 0.28);
   }
-  :global(.dark) .chat-bubble-user {
+  :global(.dark .chat-bubble-user) {
     background-image: linear-gradient(
       135deg,
       rgba(var(--bubble-user-rgb, 99 102 241) / 0.32),
@@ -272,7 +275,7 @@
       0 1px 2px rgba(0, 0, 0, 0.4),
       0 14px 24px -12px rgba(var(--bubble-user-rgb, 99 102 241) / 0.45);
   }
-  .chat-bubble-assistant {
+  :global(.chat-bubble-assistant) {
     background-image: linear-gradient(
       135deg,
       rgba(var(--bubble-asst-rgb, 249 115 22) / 0.18),
@@ -284,7 +287,7 @@
       0 1px 2px rgba(0, 0, 0, 0.08),
       0 10px 18px -10px rgba(var(--bubble-asst-rgb, 249 115 22) / 0.22);
   }
-  :global(.dark) .chat-bubble-assistant {
+  :global(.dark .chat-bubble-assistant) {
     background-image: linear-gradient(
       135deg,
       rgba(var(--bubble-asst-rgb, 249 115 22) / 0.26),
