@@ -37,6 +37,7 @@ export const PALETTE_PRESETS: PalettePreset[] = [
 ];
 
 const STORAGE_KEY = "cairncc:palette";
+const REVERSED_KEY = "cairncc:palette-reversed";
 const DEFAULT_ID: PaletteId = "indigo-orange";
 
 function getInitial(): PaletteId {
@@ -46,14 +47,22 @@ function getInitial(): PaletteId {
   return DEFAULT_ID;
 }
 
-let _id = $state<PaletteId>(getInitial());
+function getInitialReversed(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(REVERSED_KEY) === "1";
+}
 
-function applyToRoot(id: PaletteId) {
+let _id = $state<PaletteId>(getInitial());
+let _reversed = $state<boolean>(getInitialReversed());
+
+function applyToRoot(id: PaletteId, reversed: boolean) {
   if (typeof document === "undefined") return;
   const preset = PALETTE_PRESETS.find((p) => p.id === id) ?? PALETTE_PRESETS[0];
   const root = document.documentElement;
-  root.style.setProperty("--bubble-user-rgb", preset.user);
-  root.style.setProperty("--bubble-asst-rgb", preset.assistant);
+  const user = reversed ? preset.assistant : preset.user;
+  const asst = reversed ? preset.user : preset.assistant;
+  root.style.setProperty("--bubble-user-rgb", user);
+  root.style.setProperty("--bubble-asst-rgb", asst);
 }
 
 export const paletteStore = {
@@ -64,13 +73,26 @@ export const paletteStore = {
     _id = v;
     if (typeof window !== "undefined") {
       localStorage.setItem(STORAGE_KEY, v);
-      applyToRoot(v);
+      applyToRoot(v, _reversed);
     }
+  },
+  get reversed() {
+    return _reversed;
+  },
+  set reversed(v: boolean) {
+    _reversed = v;
+    if (typeof window !== "undefined") {
+      localStorage.setItem(REVERSED_KEY, v ? "1" : "0");
+      applyToRoot(_id, v);
+    }
+  },
+  toggleReversed() {
+    this.reversed = !_reversed;
   },
   get current(): PalettePreset {
     return PALETTE_PRESETS.find((p) => p.id === _id) ?? PALETTE_PRESETS[0];
   },
   apply() {
-    applyToRoot(_id);
+    applyToRoot(_id, _reversed);
   },
 };

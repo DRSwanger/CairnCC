@@ -1107,11 +1107,6 @@
     dbg("layout", "theme cycled", { themeMode, effectiveDark });
   }
 
-  function cycleScheme() {
-    colorScheme = colorScheme === "warm" ? "neutral" : "warm";
-    dbg("layout", "color scheme cycled", { colorScheme });
-  }
-
   // Persist theme + apply class
   $effect(() => {
     localStorage.setItem("ocv:theme", themeMode);
@@ -1467,11 +1462,13 @@
             {/if}
           </button>
           <button
-            class="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors duration-150"
-            onclick={cycleScheme}
-            title={colorScheme === "warm"
-              ? t("layout_schemeTitle_warm")
-              : t("layout_schemeTitle_neutral")}
+            class="flex h-9 w-9 items-center justify-center rounded-md transition-colors duration-150 {paletteStore.reversed
+              ? 'text-primary bg-sidebar-accent/40'
+              : 'text-sidebar-foreground hover:bg-sidebar-accent/50'}"
+            onclick={() => paletteStore.toggleReversed()}
+            title={paletteStore.reversed
+              ? "Chat bubble colors: reversed (click to restore)"
+              : "Reverse chat bubble colors"}
           >
             <!-- Palette icon -->
             <svg

@@ -1521,9 +1521,21 @@
                   Glow color behind your prompts and Claude's responses.
                 </p>
               </div>
+              <button
+                type="button"
+                class="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs transition-colors {paletteStore.reversed
+                  ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                  : 'hover:bg-muted/40'}"
+                title="Swap user/assistant colors"
+                onclick={() => paletteStore.toggleReversed()}
+              >
+                {paletteStore.reversed ? "Reversed" : "Reverse colors"}
+              </button>
             </div>
             <div class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
               {#each PALETTE_PRESETS as preset (preset.id)}
+                {@const userColor = paletteStore.reversed ? preset.assistant : preset.user}
+                {@const asstColor = paletteStore.reversed ? preset.user : preset.assistant}
                 <button
                   type="button"
                   class="flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs transition-colors {paletteStore.id ===
@@ -1535,11 +1547,11 @@
                   <span class="flex shrink-0 gap-1">
                     <span
                       class="h-4 w-4 rounded-full border border-border/50"
-                      style="background: rgb({preset.user})"
+                      style="background: rgb({userColor})"
                     ></span>
                     <span
                       class="h-4 w-4 rounded-full border border-border/50"
-                      style="background: rgb({preset.assistant})"
+                      style="background: rgb({asstColor})"
                     ></span>
                   </span>
                   <span class="truncate">{preset.label}</span>

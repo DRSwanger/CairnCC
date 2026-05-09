@@ -24,6 +24,7 @@
   } = $props();
 
   let container: HTMLDivElement | undefined = $state();
+  let scrambleEl: HTMLSpanElement | undefined = $state();
 
   // ── Style categories ──
   // "full-text" styles render all text immediately; reveal is controlled by JS/CSS, not dripText.
@@ -45,12 +46,24 @@
   // ── Decode glyphs ──
   const DECODE_GLYPHS = "░▒▓█▲◆◇○●■□△▽◁▷◈◎★☆⬡⬢⚡⟐⟡⧫";
   const DECODE_TAIL_LEN = 24;
-  let decodeTail = $state("");
-  function randomGlyphs(n: number): string {
-    let s = "";
-    for (let i = 0; i < n; i++)
-      s += DECODE_GLYPHS[Math.floor(Math.random() * DECODE_GLYPHS.length)];
-    return s;
+  // Pre-allocated buffer — avoid per-frame string concat allocations.
+  const _glyphChars = new Array<string>(DECODE_TAIL_LEN);
+  function writeScramble(n: number) {
+    if (!scrambleEl) return;
+    if (n <= 0) {
+      // eslint-disable-next-line svelte/no-dom-manipulating
+      if (scrambleEl.firstChild) scrambleEl.textContent = "";
+      return;
+    }
+    const cap = n < DECODE_TAIL_LEN ? n : DECODE_TAIL_LEN;
+    for (let i = 0; i < cap; i++) {
+      _glyphChars[i] = DECODE_GLYPHS[(Math.random() * DECODE_GLYPHS.length) | 0];
+    }
+    // join the slice once — single allocation per frame instead of N concatenations.
+    // Direct text mutation (vs reactive {@html}) is deliberate: it avoids
+    // re-deriving `html`, which would re-trigger every enrichment effect.
+    // eslint-disable-next-line svelte/no-dom-manipulating
+    scrambleEl.textContent = _glyphChars.slice(0, cap).join("");
   }
 
   // ── Full-text reveal position (0..1) for cascade/fly-in ──
@@ -63,72 +76,102 @@
     }
   });
 
-  onMount(() => {
-    let rafId: number;
+  // ── rAF lifecycle ──
+  // Run the loop only while there's work to do; cancel when caught up. A
+  // chat with N completed assistant messages otherwise keeps N rAF callbacks
+  // ticking every frame forever, which the browser scheduler is happy to
+  // ignore but the GC and tab-throttling heuristics are not.
+  let rafId: number | undefined;
+  let rafActive = false;
+  let unmounted = false;
+
+  function workRemaining(): boolean {
+    if (useFullText) return text.length > 0 && revealFrac < 1;
+    return dripText.length < text.length;
+  }
+
+  function startRaf() {
+    if (rafActive || unmounted) return;
+    if (!workRemaining()) return;
+    rafActive = true;
     let lastTime = performance.now();
     let remainder = 0;
 
-    function loop(now: number) {
+    const loop = (now: number) => {
       const elapsed = Math.min(now - lastTime, MAX_ELAPSED);
       const streamRate = streaming ? rate : rate * 2;
       const ideal = remainder + (elapsed / 1000) * streamRate;
       const chars = Math.floor(ideal);
       remainder = ideal - chars;
+      lastTime = now;
 
       if (useFullText) {
-        // Full-text styles: advance revealFrac instead of dripText
-        // dripText tracks text so html renders everything
-        dripText = text;
+        // Full-text styles: advance revealFrac instead of dripText.
+        // dripText tracks text so html renders everything.
+        if (dripText !== text) dripText = text;
         if (text.length > 0 && revealFrac < 1) {
-          draining = true;
+          if (!draining) draining = true;
           if (chars > 0) {
             revealFrac = Math.min(revealFrac + chars / Math.max(text.length, 1), 1);
           }
-        } else if (revealFrac >= 1) {
+        }
+        if (revealFrac >= 1) {
           if (draining) draining = false;
-          remainder = 0;
+          rafActive = false;
+          rafId = undefined;
+          return;
         }
       } else {
         // Drip-based styles: advance dripText character by character
         if (dripText.length < text.length) {
-          draining = true;
+          if (!draining) draining = true;
           if (chars > 0) {
             dripText = text.slice(0, Math.min(dripText.length + chars, text.length));
-
-            // Decode: cycle scramble tail
-            if (revealStyle === "decode") {
-              const remaining = text.length - dripText.length;
-              decodeTail = randomGlyphs(Math.min(DECODE_TAIL_LEN, remaining));
-            }
           }
-          // Decode tail cycles every frame even without char advance
-          if (revealStyle === "decode" && chars === 0) {
+          // Decode tail cycles every frame (separate DOM mutation, doesn't
+          // re-derive the markdown HTML).
+          if (revealStyle === "decode") {
             const remaining = text.length - dripText.length;
-            if (remaining > 0) decodeTail = randomGlyphs(Math.min(DECODE_TAIL_LEN, remaining));
+            writeScramble(Math.min(DECODE_TAIL_LEN, remaining));
           }
         } else {
           if (draining) draining = false;
           remainder = 0;
-          decodeTail = "";
+          if (revealStyle === "decode") writeScramble(0);
+          rafActive = false;
+          rafId = undefined;
+          return;
         }
       }
-      lastTime = now;
       rafId = requestAnimationFrame(loop);
-    }
+    };
     rafId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafId);
+  }
+
+  // Restart the rAF loop whenever an input that may create new work changes.
+  // The loop self-cancels when caught up; this effect re-arms it.
+  $effect(() => {
+    void text;
+    void streaming;
+    void revealStyle;
+    void useFullText;
+    if (workRemaining()) startRaf();
+  });
+
+  onMount(() => {
+    return () => {
+      unmounted = true;
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
+      rafId = undefined;
+      rafActive = false;
+    };
   });
 
   // ── HTML rendering ──
+  // html only re-derives when dripText changes (i.e. when chars > 0 advanced
+  // it). The decode scramble tail is rendered by direct DOM mutation in a
+  // separate sibling span, so it does NOT re-trigger this derivation.
   let html = $derived(dripText ? renderMarkdown(dripText) : "");
-
-  // Decode: append scramble tail
-  let displayHtml = $derived.by(() => {
-    if (revealStyle === "decode" && decodeTail) {
-      return html + `<span class="decode-scramble">${decodeTail}</span>`;
-    }
-    return html;
-  });
 
   // ── Container CSS class for edge effects ──
   let edgeClass = $derived.by(() => {
@@ -215,10 +258,13 @@
     }
   });
 
-  // Copy button handlers
+  // Copy button handlers — only meaningful once streaming completes (no
+  // rendered code blocks during drip). Skipping during streaming saves a DOM
+  // query + listener churn on every drip frame.
   $effect(() => {
-    if (!container || !displayHtml) return;
+    if (!container || !html || streaming) return;
     const buttons = container.querySelectorAll<HTMLButtonElement>("[data-code-copy]");
+    if (buttons.length === 0) return;
     const cleanups: Array<() => void> = [];
     buttons.forEach((btn) => {
       const handler = async () => {
@@ -244,16 +290,17 @@
 
   // Mermaid diagram rendering
   $effect(() => {
-    if (!container || !displayHtml) return;
+    if (!container || !html) return;
     if (streaming) return;
     renderMermaidBlocks(container).catch(() => {});
   });
 
-  // Image lightbox
+  // Image lightbox — gate on !streaming so we don't re-walk the DOM on every drip frame.
   let lightboxSrc = $state<string | null>(null);
   $effect(() => {
-    if (!container || !displayHtml) return;
+    if (!container || !html || streaming) return;
     const imgs = container.querySelectorAll<HTMLImageElement>("img");
+    if (imgs.length === 0) return;
     const cleanups: Array<() => void> = [];
     imgs.forEach((img) => {
       img.classList.add("md-img-clickable");
@@ -266,9 +313,10 @@
     return () => cleanups.forEach((fn) => fn());
   });
 
-  // Resolve relative image paths
+  // Resolve relative image paths — same gating; src resolution is irrelevant
+  // until the message is fully rendered.
   $effect(() => {
-    if (!container || !displayHtml || !basePath) return;
+    if (!container || !html || !basePath || streaming) return;
     const imgs = container.querySelectorAll<HTMLImageElement>("img");
     for (const img of imgs) {
       const src = img.getAttribute("src");
@@ -299,7 +347,10 @@
     {edgeClass} {className}"
   style={cascadeStyle}
 >
-  {@html displayHtml}
+  {@html html}
+  {#if revealStyle === "decode"}
+    <span bind:this={scrambleEl} class="decode-scramble"></span>
+  {/if}
 </div>
 
 <!-- Lightbox -->

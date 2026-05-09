@@ -54,10 +54,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-17
-          releaseName: "CairnCC v__VERSION__-17"
+          tagName: v__VERSION__-18
+          releaseName: "CairnCC v__VERSION__-18"
           releaseBody: |
-            ## Draft v0.1.68-17
+            ## Draft v0.1.68-18
+
+            Drip smoothness pass + reverse colors:
+
+            - **Drip rAF loops now self-cancel when caught up.** Previously every `MarkdownContent` (one per assistant message) kept a `requestAnimationFrame` loop ticking forever — so a 100-message chat had 100 idle rAF callbacks waking the renderer 60×/sec, doing nothing but consuming scheduler time and keeping the tab from throttling. Loop now exits the moment `dripText.length === text.length` (or `revealFrac >= 1`) and an `$effect` re-arms it when new text arrives, streaming flips, or the reveal style changes. Net effect on long sessions: the only message animating is the one that's actually streaming.
+            - **Decode tail no longer re-runs the markdown pipeline every frame.** The scramble suffix used to be string-concatenated into `displayHtml`, so every random-glyph cycle (60×/sec) re-derived the html, and every effect that watched `displayHtml` (copy buttons, image lightbox, basePath image resolve) re-walked the bubble's DOM. Tail is now a sibling `<span>` mutated via `textContent` — the markdown HTML only re-derives when `dripText` actually advances.
+            - **Enrichment effects gated on `!streaming`.** Copy-button wiring, image lightbox handlers, and relative-image-path resolution don't run during drip — those elements aren't fully formed yet, and re-querying the DOM 35×/sec for them was pure waste.
+            - **Decode glyph buffer pre-allocated.** `randomGlyphs` used to build a fresh string via per-char concatenation each frame; rotated to a fixed-size `Array<string>` joined once per frame, eliminating the per-char string allocations.
+
+            Reverse colors:
+
+            - **Palette colors can be reversed.** Each preset now has a one-click "reverse" that swaps which color goes to user vs assistant bubbles. Toggle from **Settings → Display → Chat bubble palette → Reverse colors**, or click the palette icon in the bottom-left status bar (previously cycled the warm/neutral scheme — now toggles bubble reverse, the more visible knob). Choice persists in `localStorage` (`cairncc:palette-reversed`). Settings swatches re-render in the new order so the previews always match the live bubble colors.
+
+            Carries v0.1.68-17:
 
             Bubble fill follows the palette:
 
