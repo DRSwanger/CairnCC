@@ -2,6 +2,15 @@ name: Draft Release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_mode:
+        description: 'draft = Windows-only fast iteration; ga = full Windows + macOS + Linux matrix'
+        required: true
+        default: 'draft'
+        type: choice
+        options:
+          - draft
+          - ga
 
 permissions:
   contents: write
@@ -16,9 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows-latest
-            args: ""
+        include: ${{ fromJSON(inputs.release_mode == 'ga' && '[{"platform":"windows-latest","args":""},{"platform":"macos-latest","args":"--target universal-apple-darwin"},{"platform":"ubuntu-22.04","args":""}]' || '[{"platform":"windows-latest","args":""}]') }}
 
     runs-on: ${{ matrix.platform }}
 
@@ -54,101 +61,51 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-19
-          releaseName: "CairnCC v__VERSION__-19"
+          tagName: v__VERSION__-1
+          releaseName: "CairnCC v__VERSION__-1"
           releaseBody: |
-            ## Draft v0.1.68-19
+            ## Draft v0.1.69-1
 
-            Cross-session bleed + bubble + ordering fixes:
+            First full-matrix build (Windows + macOS universal + Linux x64). Carries all v0.1.68 fixes.
 
-            - **Switching out of a streaming chat no longer replays the response in the destination chat.** Three local reactive states in `chat/+page.svelte` — `runHasStreamed`, `streamingDraining`, `lastStreamingText` — were not session-scoped. `loadRun`'s `_clearContentState` cleared the store fields but not these locals, so leaving session A mid-stream left `streamingDraining=true` and `lastStreamingText="…A's text…"` latched. When session B then rendered, the fallback streaming container's condition `(streamingText || streamingDraining) && !streamingEntryId` still fired, drawing A's text inside B's view as a ghost reply. Now reset on every `store.run?.id` change.
-            - **The fallback streaming container actually looks like a chat bubble.** Previously it rendered as flat `pl-7 prose-chat` text — no `chat-bubble`/`chat-bubble-assistant` classes, no gradient fill, no glow — so any text rendered through it (including the leak above, but also the real ~100 ms gap between first `message_delta` and the `message_complete` that creates the timeline entry) appeared bare. Container now wraps its `MarkdownContent` in the same bubble structure `ChatMessage` uses for assistant messages, and the bubble styles in `ChatMessage.svelte` were promoted to `:global(...)` so they apply across components.
-            - **New user message no longer lands above the still-finishing previous response.** `_pushOptimisticUser` blindly appends to the timeline, but `message_complete` for the previous turn (if still in flight) also appends — putting the assistant entry *after* the new user, inverting conversation order. `sendMessage` now tags the optimistic user with `precedingStreamPending: true` when `streamingText` is non-empty at send time. The next `message_complete` (main session path) detects that flag and splices the new assistant entry in *before* the flagged user instead of appending. Order stays `[…, prev_user, prev_asst, new_user]`.
+            Cross-session correctness:
 
-            Carries v0.1.68-18:
+            - Streaming locals (`runHasStreamed`, `streamingDraining`, `lastStreamingText`) now scoped to `store.run?.id` — no more ghost replies in the destination chat after switching mid-stream.
+            - Thinking-panel state resets on session change instead of latching.
+            - `applyEventBatch` skips already-processed `_seq` — no duplicate user bubbles when switching into a session whose events were still replaying.
 
-            Drip smoothness pass + reverse colors:
+            Chat UI:
 
-            - **Drip rAF loops now self-cancel when caught up.** Previously every `MarkdownContent` (one per assistant message) kept a `requestAnimationFrame` loop ticking forever — so a 100-message chat had 100 idle rAF callbacks waking the renderer 60×/sec, doing nothing but consuming scheduler time and keeping the tab from throttling. Loop now exits the moment `dripText.length === text.length` (or `revealFrac >= 1`) and an `$effect` re-arms it when new text arrives, streaming flips, or the reveal style changes. Net effect on long sessions: the only message animating is the one that's actually streaming.
-            - **Decode tail no longer re-runs the markdown pipeline every frame.** The scramble suffix used to be string-concatenated into `displayHtml`, so every random-glyph cycle (60×/sec) re-derived the html, and every effect that watched `displayHtml` (copy buttons, image lightbox, basePath image resolve) re-walked the bubble's DOM. Tail is now a sibling `<span>` mutated via `textContent` — the markdown HTML only re-derives when `dripText` actually advances.
-            - **Enrichment effects gated on `!streaming`.** Copy-button wiring, image lightbox handlers, and relative-image-path resolution don't run during drip — those elements aren't fully formed yet, and re-querying the DOM 35×/sec for them was pure waste.
-            - **Decode glyph buffer pre-allocated.** `randomGlyphs` used to build a fresh string via per-char concatenation each frame; rotated to a fixed-size `Array<string>` joined once per frame, eliminating the per-char string allocations.
-            - **Palette colors can be reversed.** Each preset now has a one-click "reverse" that swaps which color goes to user vs assistant bubbles. Toggle from **Settings → Display → Chat bubble palette → Reverse colors**, or click the palette icon in the bottom-left status bar. Choice persists in `localStorage` (`cairncc:palette-reversed`).
+            - Fallback streaming container renders as a real chat bubble (gradient, glow, tail); bubble styles promoted to `:global(...)`.
+            - Modern 3D chat bubbles with rounded tails, layered shadows, dark-mode glow.
+            - Status bar slimmed to a single 36px row.
+            - Bubble palette picker (10 presets) + reverse-colors toggle. Persisted to `localStorage`.
+            - Bubble fill follows the palette, not just the glow.
+            - Assistant bubbles get a colored glow mirroring the user bubble's.
 
-            Carries v0.1.68-17:
+            Ordering & drafts:
 
-            Bubble fill follows the palette:
+            - Optimistic user tagged `precedingStreamPending`; trailing `message_complete` splices in before it — no more new-user-above-still-finishing-response inversion.
+            - Drafts survive session switches via reactive `$effect` once `PromptInput` actually mounts.
+            - Sent text doesn't rehydrate on switch-back — draft dropped on send.
+            - Drafts survive reload / app restart via `localStorage` (`cairncc:drafts:v1`).
 
-            - **Chat bubble backgrounds now recolor with the palette**, not just the glow. Previously the user bubble fill was hardcoded to Tailwind `primary` and the assistant fill to `card`, so palette swaps only moved the shadow — fill stayed indigo/neutral. Both bubbles now derive their gradient fill and border tint from `--bubble-user-rgb` / `--bubble-asst-rgb`. Dark-mode alphas bumped (user 0.32→0.14, assistant 0.26→0.10) so the tint actually reads against the dark background.
+            Performance & memory:
 
-            Carries v0.1.68-16:
+            - Drip rAF loops self-cancel when caught up.
+            - Decode tail mutates a sibling span via `textContent` — markdown pipeline no longer re-runs every frame.
+            - Enrichment effects (copy buttons, image lightbox, basePath resolve) gated on `!streaming`.
+            - Decode glyph buffer pre-allocated.
+            - Tool output truncated in timeline + snapshot (32 KB cap, 16K head + 8K tail). Full output stays in `events.jsonl`.
+            - Snapshot restore truncates too, not just live ingest.
+            - Running sessions snapshot to IDB (throttled per 200 events).
 
-            Chat bubble palette + assistant glow:
+            Other:
 
-            - **Assistant bubbles now get a colored glow** that mirrors the user-bubble highlight (previously only user bubbles had a tinted shadow). Both glows are driven by CSS custom properties (`--bubble-user-rgb` / `--bubble-asst-rgb`), so they live-update with the new palette picker.
-            - **Bubble palette picker** added to **Settings → General → Display**. Ten presets: Indigo/Orange (default), Teal/Magenta, Ocean, Amethyst, Midnight, Ember, Mint, Forest, Sunset, Monochrome. Selection is persisted to `localStorage` (`cairncc:palette`) and re-applied on app start.
-
-            Carries v0.1.68-15:
-
-            UI cleanup pass:
-
-            - **Status bar slimmed.** Dropped the secondary stats row (cwd, session hash, cost, token totals, MCP count, turns, duration, bypass/auth/SSH/CLI badges) and the expand/collapse chevron. Status bar is now a single 36px row: agent · model · context bar · actions. The expand state, its localStorage key (`ocv:statusbar-expanded`), and the `ocv:statusbar-toggle` window event are removed; MCP panel is pinned at `top-9` since the bar no longer changes height.
-            - **Modern 3D chat bubbles.** `ChatMessage` swapped its full-width banded layout for right-aligned user / left-aligned assistant bubbles. Each bubble is `rounded-2xl` with a chat-tail corner (br for user, bl for assistant), gradient fill (`from-primary/15 to-primary/5` on user; `from-card to-card/70` on assistant), and a layered `box-shadow` (inset top highlight + ambient + softer drop-shadow) that gets heavier in dark mode. User bubbles also pick up a faint indigo glow.
-
-            Carries v0.1.68-14:
-
-            Snapshot-restore freeze fix (Rift CNC switch-in):
-
-            - **Snapshots now truncate on restore, not just on live ingest.** -13's 32 KB cap was applied in the reducer, but `_tryApplySnapshot` assigned `timeline`/`tools`/`hookEvents` straight from the IDB snapshot — so any session whose snapshot was written *before* -13 still rehydrated the full uncapped tool outputs (e.g. ~11 MB on the Rift CNC chat). Switching into one of those sessions blasted the whole blob into reactive state + DOM and pinned the main thread (scroll still worked since it's GPU-driven, but input and session switches were frozen). Restore path now walks `timeline` (incl. `subTimeline`), `tools[]`, and `hookEvents[]` and applies the same head/tail cap.
-
-            Carries v0.1.68-13:
-
-            - **Tool output truncation in the timeline.** Long `Read`/`Bash`/`Grep` results were pinning the entire tool output (top entries 280–335 KB each) in the reactive timeline, the IDB snapshot, and the WebView DOM. In the Rift CNC chat that's 160 tool_end events / ~11 MB of result text held live, which was pushing the WebView toward OOM as the session grew. The reducer now caps each string field inside `tool_end.output` / `tool_end.tool_use_result` at 32 KB (16 KB head + 8 KB tail with a `[... N bytes truncated ...]` marker). Canonical full output is still on disk in `events.jsonl` — only the in-memory/UI copy is bounded.
-
-            Carries v0.1.68-12:
-
-            Four small quality-of-life fixes:
-
-            - **Session-wide rename.** Renaming a conversation that lives across multiple runs (a `s:`-grouped session) now renames every run sharing that `session_id` in one shot, and any new run that later attaches to the session inherits the name automatically (`inherit_session_name_on_attach`). Old per-run rename still applies for ungrouped runs.
-            - **Mobile sidebar auto-close.** On viewports `≤767px`, picking a conversation or resume action closes the sidebar so the chat actually has room to breathe. Initial load on a narrow viewport starts collapsed.
-            - **Debug-only dev token override.** Setting `CAIRNCC_DEV_TOKEN` in a debug build now seeds the live web-server token and writes it to `~/.cairncc/dev_token` for curl/Playwright smoke tests. Release builds keep the random 32-char token — no behavior change for users.
-            - **Thinking-panel cross-session bleed fixed.** `displayThinkingText` and `thinkingExpanded` were latched (only cleared when a *new user message* landed on the active session), so switching into a Haiku session — or any session whose own thinking hadn't yet started — would re-display the previous Opus/Sonnet session's thinking trace under the spinner. Now both reset whenever `store.run?.id` changes.
-
-            Carries v0.1.68-11:
-
-            Running-session snapshot cache — cold-start load for big live chats (e.g. Rift CNC):
-
-            - **Previously:** only terminal + idle sessions wrote IDB snapshots. A session in `running` status always re-read every event from disk + ran the full reducer on each app-lifetime first-load — seconds of blocking work for large chats.
-            - **Now:** snapshots are written for running sessions too, throttled to once per 200 events (`_maybePersistRunningSnapshot`), called from both `applyEvent` and `applyEventBatch`. Idle↔running transitions no longer invalidate the snapshot: `readSnapshot` accepts a `[idle, running]` crossover and catchup-from-`_lastProcessedSeq` resolves any drift. `sendMessage` also stopped deleting the snapshot — the periodic save overwrites it as the turn streams.
-            - Net effect: second-ever open of a large running session hits the snapshot + a tiny catchup instead of replaying thousands of events.
-
-            Carries v0.1.68-10:
-
-            Draft persistence — actually fixed this time:
-
-            - **Drafts now survive session switches.** Root cause: `PromptInput` is conditionally rendered (`{#if sessionAlive || phase === ready || ...}`), so during the switch window when `phase === "loading"` the component unmounts. The rAF-scheduled `promptRef?.restoreSnapshot(incomingDraft)` fired while `promptRef` was `undefined` and silently no-op'd — the draft stayed in `draftsByRunId` + `localStorage` but never made it back into the UI. Replaced the rAF-based apply with a reactive `$effect` that watches `promptRef` and `store.run?.id` and re-applies the pending draft the moment the composer remounts.
-            - **Sent text no longer rehydrates on switch-back.** `sendMessage` now eagerly deletes the draft entry for the current run (+ persists), so typing → send → switch-away → switch-back cannot restore the just-sent message into the composer.
-
-            Carries v0.1.68-9:
-
-            - Draft persistence across reload / app restart via `localStorage` (`cairncc:drafts:v1`), attachments stripped for quota.
-            - Race closed on New Chat click (`saveDraftFor` before `loadRun("")`).
-            - Blank during session switch — `isLoadingReplay` getter.
-            - Welcome flash on startup auto-resume — `autoResumeResolving`.
-
-            Carries v0.1.68-8:
-            - Duplicate user bubble on switch-into-thinking-session — `applyEventBatch` now skips already-processed `_seq`.
-            - "Envisioning…" thinking bubble showing another session's text — `_tryApplySnapshot` treats `thinkingText`/`streamingText` as non-persistent.
-
-            Carries v0.1.68-6:
-            - Tiered render on chat switch (60 entries first, full history after paint).
-            - New-chat draft preserved across session clicks via sentinel key.
-
-            Carries v0.1.68-5:
-            - Effort persisted per-run (restored on switch, seeded on new runs).
+            - Session-wide rename for `s:`-grouped sessions.
+            - Mobile sidebar auto-closes on ≤767px viewports.
+            - Effort persisted per-run.
             - Model selector falls back to CLI's current model when run has no pinned model.
-            - Switch+submit ordering race fixed — new turns always land below the prior response.
-            - Chunked event replay with event-loop yields during initial load.
             - Opus label reads "Opus 4.7" consistently.
           releaseDraft: true
           prerelease: false
