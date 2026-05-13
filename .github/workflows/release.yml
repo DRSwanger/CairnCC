@@ -64,17 +64,15 @@ jobs:
           tagName: v__VERSION__
           releaseName: "CairnCC v__VERSION__"
           releaseBody: |
-            ## v0.1.70
+            ## v0.1.71 — diag draft
 
-            - **Stale "Process exited with code …" red banner on long-idle remote sessions.** When a remote (SSH) session sat idle and the SSH client died from a Windows session event (logoff, sleep, fast user switch — exit code `DBG_TERMINATE_PROCESS` / `0x40010004`), CairnCC's EOF handler synthesized a `failed` run_state with an obnoxious error banner. Fix: `session_actor::handle_eof` now treats EOF arriving while `self.state == "idle"` as a graceful `stopped` rather than a `failed`. The session ended cleanly — losing the transport later isn't a failure. Meta gets `RunStatus::Stopped`; no red banner on revisit.
+            **DevTools enabled in this build.** Press **F12** in any CairnCC window to open Chromium DevTools (Console + Network). Use this to capture the actual error for the two open bugs:
 
-            Carries all v0.1.69 fixes:
+            - **Auto-resumed session scroll-through on open** — when CairnCC opens and lands on the most recent existing chat, prior turns visibly scroll past instead of starting at the bottom.
+            - **Black window switching into the Rift CNC session** — clicking that specific chat from the sidebar renders a blank page. Likely an unhandled throw during event replay; DevTools console will show the stack.
 
-            - **Out-of-order replay on session switch** — switching into a chat while another session was thinking caused the destination's recent messages to render out of order with holes. `applyEvent` now buffers into `_replayBuffer` while loadRun/resumeSession is in flight; `_settleLoad` drains it after the historical batch.
-            - **Memory boot-prompt switched to lazy-load.** Read MEMORY.md only and pull linked files on-demand instead of eager-reading every memory file. One-time migration in `storage::settings::load()` rewrites old settings.
-
-            And the v0.1.68 fixes through -19: cross-session streaming bleed scoped to `run.id`, thinking-panel reset on session change, fallback streaming container as a real chat bubble, 3D bubble palette + reverse toggle, optimistic-user ordering via `precedingStreamPending`, draft persistence across switches + reloads (`cairncc:drafts:v1`), drip rAF self-cancellation, decode-tail textContent mutation, 32 KB tool-output truncation in timeline + snapshot, session-wide rename for `s:`-grouped sessions, mobile sidebar auto-close, per-run effort persistence, model selector CLI fallback, "Opus 4.7" label.
-          releaseDraft: false
-          prerelease: false
+            No behavior changes vs v0.1.70 — this is purely a diagnostic build with the `devtools` Tauri feature compiled in so the installed Windows build can be inspected.
+          releaseDraft: true
+          prerelease: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}

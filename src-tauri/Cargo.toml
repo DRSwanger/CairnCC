@@ -1,6 +1,6 @@
 [package]
 name = "CairnCC"
-version = "0.1.70"
+version = "0.1.71"
 edition = "2021"
 description = "Local-first desktop app for AI-assisted coding with Claude Code"
 license = "Apache-2.0"
@@ -16,7 +16,7 @@ name = "CairnCC"
 path = "src/main.rs"
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri = { version = "2", features = ["tray-icon", "image-png", "devtools"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
