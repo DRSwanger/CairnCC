@@ -61,8 +61,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__
-          releaseName: "CairnCC v__VERSION__"
+          tagName: v__VERSION__-1
+          releaseName: "CairnCC v__VERSION__-1"
           releaseBody: |
             ## v0.1.71 — diag draft
 
