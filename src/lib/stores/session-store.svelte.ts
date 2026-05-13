@@ -405,9 +405,25 @@ export class SessionStore {
   /** Resolvers awaiting replay completion — used by sendMessage to avoid sandwiching an
    *  optimistic user message between historical events during a concurrent switch-load. */
   private _loadResolvers: Array<() => void> = [];
+  /** Non-null while loadRun is fetching/replaying historical events. Live applyEvent calls
+   *  push into this buffer instead of mutating timeline directly — otherwise the live event
+   *  advances `_lastProcessedSeq` past not-yet-applied historical events between chunked-
+   *  replay yields, and the subsequent chunks dedup-skip everything ≤ that seq. Result was
+   *  visible holes + out-of-order rendering when switching into a session while another was
+   *  thinking. After replay settles, the buffer is drained back through applyEvent (which
+   *  handles run_id guard + seq dedup). */
+  private _replayBuffer: BusEvent[] | null = null;
 
   private _settleLoad(): void {
     this._isLoadingReplay = false;
+    if (this._replayBuffer) {
+      const buffered = this._replayBuffer;
+      this._replayBuffer = null;
+      if (buffered.length > 0) {
+        dbg("store", "drain replay buffer", { count: buffered.length });
+        for (const ev of buffered) this.applyEvent(ev);
+      }
+    }
     if (this._loadResolvers.length > 0) {
       const resolvers = this._loadResolvers;
       this._loadResolvers = [];
@@ -1099,6 +1115,12 @@ export class SessionStore {
       dbg("store", "drop stale event", ev.type, "run_id=", ev.run_id, "current=", this.run?.id);
       return;
     }
+    // Hold live events while loadRun's chunked replay is in flight — see
+    // `_replayBuffer` declaration for the race this fixes.
+    if (this._replayBuffer !== null) {
+      this._replayBuffer.push(ev);
+      return;
+    }
     // Track WS sequence checkpoint — skip already-processed events (dedup)
     const evSeq = ((ev as Record<string, unknown>)._seq as number) ?? 0;
     if (evSeq > 0) {
@@ -1655,6 +1677,9 @@ export class SessionStore {
     // Reset state for new load
     this._setPhase("loading");
     this._clearContentState();
+    // Buffer live events for the duration of this load — drained in _settleLoad.
+    // Discards any stale buffer carried over from a prior aborted load.
+    this._replayBuffer = [];
 
     if (xtermRef) {
       xtermRef.clear();
@@ -2226,6 +2251,9 @@ export class SessionStore {
 
       // Invalidate any concurrent loadRun
       this._loadGen++;
+      // Discard any stale buffer carried over from an aborted loadRun and start
+      // a fresh one for this resume — drained below before the IPC start.
+      this._replayBuffer = [];
       const resumeT0 = performance.now();
 
       // ★ Phase 1: async data fetch BEFORE clearing state (avoids flash)
@@ -2319,6 +2347,10 @@ export class SessionStore {
         }
       }
 
+      // Drain any live events that arrived during history replay so they apply
+      // BEFORE the optimistic user message goes onto the timeline.
+      this._settleLoad();
+
       // Optimistic user message: add AFTER replay so it appears at the end of timeline.
       // Must be before startSession IPC so the user sees their message immediately.
       // Backend's UserMessage bus event will be deduped by content match in _reduce.
@@ -2374,6 +2406,9 @@ export class SessionStore {
       return targetRunId;
     } catch (e) {
       if (!this._resumeGuard.isMounted) return null;
+      // Discard any events buffered for the failed resume — they won't apply cleanly
+      // to a session that never spawned.
+      this._replayBuffer = null;
       this.error = String(e);
       this._setPhase("failed");
       dbgWarn("store", "resumeSession failed:", e);

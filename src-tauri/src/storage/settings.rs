@@ -1,4 +1,4 @@
-use crate::models::{AgentSettings, AllSettings, UserSettings};
+use crate::models::{AgentSettings, AllSettings, UserSettings, CLAUDE_MEMORY_LAZY_LOAD_PROMPT};
 use std::fs;
 use std::path::PathBuf;
 
@@ -13,9 +13,16 @@ pub fn load() -> AllSettings {
             Ok(content) => match serde_json::from_str(&content) {
                 Ok(mut settings) => {
                     log::debug!("[storage/settings] loaded settings from {}", path.display());
-                    // Run one-time migrations on platform credentials
+                    let mut dirty = false;
                     if migrate_platform_credentials(&mut settings) {
-                        log::info!("[storage/settings] migrated platform credentials, saving");
+                        log::info!("[storage/settings] migrated platform credentials");
+                        dirty = true;
+                    }
+                    if migrate_eager_memory_prompt(&mut settings) {
+                        log::info!("[storage/settings] migrated eager memory prompt to lazy-load");
+                        dirty = true;
+                    }
+                    if dirty {
                         let _ = save(&settings);
                     }
                     return settings;
@@ -217,6 +224,26 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
         }),
         _ => None,
     }
+}
+
+/// Rewrite any stored `append_system_prompt` that still uses the original
+/// "read each memory file listed in it" eager-load instruction with the
+/// lazy-load version. Returns true if any agent's prompt changed.
+fn migrate_eager_memory_prompt(settings: &mut AllSettings) -> bool {
+    let mut changed = false;
+    for agent in settings.agents.values_mut() {
+        let needs_migrate = agent
+            .append_system_prompt
+            .as_deref()
+            .map(|s| s.contains("read each memory file listed in it"))
+            .unwrap_or(false);
+        if needs_migrate {
+            agent.append_system_prompt = Some(CLAUDE_MEMORY_LAZY_LOAD_PROMPT.to_string());
+            agent.updated_at = crate::models::now_iso();
+            changed = true;
+        }
+    }
+    changed
 }
 
 /// Migrate stale platform credential data. Returns true if any changes were made.

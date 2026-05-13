@@ -61,12 +61,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-1
-          releaseName: "CairnCC v__VERSION__-1"
+          tagName: v__VERSION__-2
+          releaseName: "CairnCC v__VERSION__-2"
           releaseBody: |
-            ## Draft v0.1.69-1
+            ## Draft v0.1.69-2
 
-            First full-matrix build (Windows + macOS universal + Linux x64). Carries all v0.1.68 fixes.
+            - **Out-of-order replay on session switch** — switching into a chat while another session was thinking caused the destination's recent messages to render visibly and out of order, sometimes with holes in the timeline. Root cause: `applyEventBatchChunked` yields between 400-event chunks; a live event arriving during the yield fired `applyEvent` inline, advancing `_lastProcessedSeq` past the not-yet-applied historical events. Subsequent chunks then dedup-skipped everything ≤ that seq. Fix: `applyEvent` now buffers into `_replayBuffer` while loadRun/resumeSession is in flight; `_settleLoad` drains the buffer back through `applyEvent` after the historical batch — at which point seq dedup correctly skips already-applied events and applies anything genuinely new.
+            - **Memory boot-prompt switched to lazy-load.** The `claude` agent's append-system-prompt previously told Claude to eager-read every memory file in MEMORY.md at session start, burning 20–30k tokens before the user spoke and forcing frequent mid-session compaction. New prompt reads MEMORY.md only and pulls linked files on-demand when the conversation surfaces a matching topic. One-time migration in `storage::settings::load()` rewrites existing settings.json entries that still carry the old eager text. Constant lives in `models.rs::CLAUDE_MEMORY_LAZY_LOAD_PROMPT`.
+
+            Carries all v0.1.68 fixes through -19 (cross-session bleed, bubble palette, snapshot truncation, draft persistence, etc).
 
             Cross-session correctness:
 

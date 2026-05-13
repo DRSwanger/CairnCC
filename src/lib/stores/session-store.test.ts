@@ -286,6 +286,60 @@ describe("SessionStore reducer", () => {
     });
   });
 
+  describe("live-event buffering during loadRun replay", () => {
+    // Repro for the "switch into a session while another is thinking → recent
+    // chats render out of order with holes" bug. Root cause: chunked replay
+    // yields between chunks; a live event fires applyEvent during the yield and
+    // advances _lastProcessedSeq past the not-yet-applied historical events.
+    // Fix: applyEvent buffers while _replayBuffer is non-null; _settleLoad drains.
+    it("buffers live applyEvent calls while replay is in flight and replays them after", () => {
+      store.run = makeRun("run-buf");
+      // Simulate loadRun's "begin buffering" step.
+      // @ts-expect-error — private field access for white-box test of the race fix
+      store._replayBuffer = [];
+
+      // Historical replay applies events seq=1..3.
+      store.applyEventBatch([
+        { type: "user_message", run_id: "run-buf", _seq: 1, text: "hist-1" },
+        { type: "user_message", run_id: "run-buf", _seq: 2, text: "hist-2" },
+        { type: "user_message", run_id: "run-buf", _seq: 3, text: "hist-3" },
+      ] as unknown as BusEvent[]);
+      expect(store.timeline.filter((e: TimelineEntry) => e.kind === "user").length).toBe(3);
+
+      // A live event arrives mid-load — should be BUFFERED, not applied directly.
+      // (If it were applied, _lastProcessedSeq would jump to 10 and any catchup
+      // events with 4..9 would be skipped as "duplicates".)
+      const seqBefore = (store as unknown as { _lastProcessedSeq: number })._lastProcessedSeq;
+      store.applyEvent({
+        type: "user_message",
+        run_id: "run-buf",
+        _seq: 10,
+        text: "live-10",
+      } as unknown as BusEvent);
+      const seqAfter = (store as unknown as { _lastProcessedSeq: number })._lastProcessedSeq;
+      expect(seqAfter).toBe(seqBefore); // live event did NOT advance the seq
+      expect(store.timeline.filter((e: TimelineEntry) => e.kind === "user").length).toBe(3);
+
+      // A catchup batch for events 4..9 must still apply — they would have been
+      // dropped as "≤ _lastProcessedSeq" if the live event had run inline.
+      store.applyEventBatch([
+        { type: "user_message", run_id: "run-buf", _seq: 4, text: "catch-4" },
+        { type: "user_message", run_id: "run-buf", _seq: 9, text: "catch-9" },
+      ] as unknown as BusEvent[]);
+      expect(store.timeline.filter((e: TimelineEntry) => e.kind === "user").length).toBe(5);
+
+      // Settle: drain the buffer. The buffered live event applies now, in order.
+      (store as unknown as { _settleLoad(): void })._settleLoad();
+      expect(store.timeline.filter((e: TimelineEntry) => e.kind === "user").length).toBe(6);
+      // Final timeline order is chronological by application order:
+      // hist-1, hist-2, hist-3, catch-4, catch-9, live-10
+      const userTexts = store.timeline
+        .filter((e: TimelineEntry) => e.kind === "user")
+        .map((e: TimelineEntry) => (e as { kind: "user"; content: string }).content);
+      expect(userTexts).toEqual(["hist-1", "hist-2", "hist-3", "catch-4", "catch-9", "live-10"]);
+    });
+  });
+
   describe("tool_end output truncation", () => {
     it("caps oversized string fields in tool output to bound timeline memory", () => {
       store.run = makeRun("run-trunc");

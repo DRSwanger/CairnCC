@@ -425,16 +425,22 @@ pub struct AgentSettings {
     pub updated_at: String,
 }
 
+/// Append-system-prompt for the `claude` agent. Tells Claude to read the
+/// memory index at startup and lazy-load linked files only when their topic
+/// surfaces — eager-loading every file burned 20–30k tokens before the user
+/// even spoke, causing frequent mid-session context compaction.
+pub const CLAUDE_MEMORY_LAZY_LOAD_PROMPT: &str =
+    "At the start of every new conversation, immediately read your memory index at \
+    ~/.claude/projects/-home-dallas/memory/MEMORY.md. Do NOT eager-read each linked file — \
+    each index entry has a one-line description tuned to cue relevance, so pull specific \
+    memory files on-demand when the conversation surfaces a matching topic. After reading \
+    the index, tell the user what context you loaded and confirm whether memory recall is \
+    working. Keep it brief.";
+
 impl AgentSettings {
     pub fn default_for(agent: &str) -> Self {
         let append_system_prompt = if agent == "claude" {
-            Some(
-                "At the start of every new conversation, immediately read your memory index at \
-                ~/.claude/projects/-home-dallas/memory/MEMORY.md, then read each memory file \
-                listed in it. After reading, tell the user what context you loaded and confirm \
-                whether memory recall is working. Keep it brief."
-                    .to_string(),
-            )
+            Some(CLAUDE_MEMORY_LAZY_LOAD_PROMPT.to_string())
         } else {
             None
         };
