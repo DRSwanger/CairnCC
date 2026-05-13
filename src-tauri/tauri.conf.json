@@ -23,7 +23,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com https://*.anthropic.com; font-src 'self' data:"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost https://api.anthropic.com https://*.anthropic.com; font-src 'self' data: https://fonts.gstatic.com",
+      "dangerousDisableAssetCspModification": ["style-src"]
     }
   },
   "bundle": {

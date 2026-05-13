@@ -61,17 +61,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-1
-          releaseName: "CairnCC v__VERSION__-1"
+          tagName: v__VERSION__-2
+          releaseName: "CairnCC v__VERSION__-2"
           releaseBody: |
-            ## v0.1.71 — diag draft
+            ## v0.1.71-2 — CSP fix
 
-            **DevTools enabled in this build.** Press **F12** in any CairnCC window to open Chromium DevTools (Console + Network). Use this to capture the actual error for the two open bugs:
+            DevTools (F12) from v0.1.71-1 surfaced the actual cause of the black-window bug: CSP misconfiguration.
 
-            - **Auto-resumed session scroll-through on open** — when CairnCC opens and lands on the most recent existing chat, prior turns visibly scroll past instead of starting at the bottom.
-            - **Black window switching into the Rift CNC session** — clicking that specific chat from the sidebar renders a blank page. Likely an unhandled throw during event replay; DevTools console will show the stack.
+            - **Inline styles blocked.** Tauri auto-injects a `nonce` into `style-src`, which (per spec) overrides `'unsafe-inline'` — so every dynamic Svelte style was rejected, leaving the Rift CNC page unstyled and visually black. Fixed via `dangerousDisableAssetCspModification: ["style-src"]` so the nonce is no longer injected.
+            - **IPC blocked.** `connect-src` was missing `ipc:` / `http://ipc.localhost` (Windows fetch-IPC scheme). Tauri was silently falling back to the slower `postMessage` path, which is likely why the `[ocv:store] response timeout: no content after 60s` warnings appeared. Now allow-listed.
+            - **Fonts.** Google Fonts allow-listed in `style-src` / `font-src` (cosmetic).
 
-            No behavior changes vs v0.1.70 — this is purely a diagnostic build with the `devtools` Tauri feature compiled in so the installed Windows build can be inspected.
+            Still a diagnostic draft — `devtools` feature is still compiled in. If the Rift CNC session opens cleanly and responses don't time out, we'll cut a clean v0.1.72 GA without devtools.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true
