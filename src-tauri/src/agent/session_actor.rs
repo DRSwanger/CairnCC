@@ -2075,7 +2075,13 @@ impl SessionActor {
         self.quarantine_until_result = false;
 
         if !self.protocol.got_result_event {
+            // Transport closed while session was already idle (e.g. SSH client killed by
+            // Windows logoff/sleep, or remote sshd dropped a long-idle connection). The
+            // last turn ended cleanly — treat as a graceful end, not a failure.
+            let was_idle = self.state == "idle";
             let state_str = if self.cancel.is_cancelled() {
+                "stopped"
+            } else if was_idle {
                 "stopped"
             } else {
                 match exit_code {

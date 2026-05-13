@@ -61,56 +61,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-2
-          releaseName: "CairnCC v__VERSION__-2"
+          tagName: v__VERSION__
+          releaseName: "CairnCC v__VERSION__"
           releaseBody: |
-            ## Draft v0.1.69-2
+            ## v0.1.70
 
-            - **Out-of-order replay on session switch** — switching into a chat while another session was thinking caused the destination's recent messages to render visibly and out of order, sometimes with holes in the timeline. Root cause: `applyEventBatchChunked` yields between 400-event chunks; a live event arriving during the yield fired `applyEvent` inline, advancing `_lastProcessedSeq` past the not-yet-applied historical events. Subsequent chunks then dedup-skipped everything ≤ that seq. Fix: `applyEvent` now buffers into `_replayBuffer` while loadRun/resumeSession is in flight; `_settleLoad` drains the buffer back through `applyEvent` after the historical batch — at which point seq dedup correctly skips already-applied events and applies anything genuinely new.
-            - **Memory boot-prompt switched to lazy-load.** The `claude` agent's append-system-prompt previously told Claude to eager-read every memory file in MEMORY.md at session start, burning 20–30k tokens before the user spoke and forcing frequent mid-session compaction. New prompt reads MEMORY.md only and pulls linked files on-demand when the conversation surfaces a matching topic. One-time migration in `storage::settings::load()` rewrites existing settings.json entries that still carry the old eager text. Constant lives in `models.rs::CLAUDE_MEMORY_LAZY_LOAD_PROMPT`.
+            - **Stale "Process exited with code …" red banner on long-idle remote sessions.** When a remote (SSH) session sat idle and the SSH client died from a Windows session event (logoff, sleep, fast user switch — exit code `DBG_TERMINATE_PROCESS` / `0x40010004`), CairnCC's EOF handler synthesized a `failed` run_state with an obnoxious error banner. Fix: `session_actor::handle_eof` now treats EOF arriving while `self.state == "idle"` as a graceful `stopped` rather than a `failed`. The session ended cleanly — losing the transport later isn't a failure. Meta gets `RunStatus::Stopped`; no red banner on revisit.
 
-            Carries all v0.1.68 fixes through -19 (cross-session bleed, bubble palette, snapshot truncation, draft persistence, etc).
+            Carries all v0.1.69 fixes:
 
-            Cross-session correctness:
+            - **Out-of-order replay on session switch** — switching into a chat while another session was thinking caused the destination's recent messages to render out of order with holes. `applyEvent` now buffers into `_replayBuffer` while loadRun/resumeSession is in flight; `_settleLoad` drains it after the historical batch.
+            - **Memory boot-prompt switched to lazy-load.** Read MEMORY.md only and pull linked files on-demand instead of eager-reading every memory file. One-time migration in `storage::settings::load()` rewrites old settings.
 
-            - Streaming locals (`runHasStreamed`, `streamingDraining`, `lastStreamingText`) now scoped to `store.run?.id` — no more ghost replies in the destination chat after switching mid-stream.
-            - Thinking-panel state resets on session change instead of latching.
-            - `applyEventBatch` skips already-processed `_seq` — no duplicate user bubbles when switching into a session whose events were still replaying.
-
-            Chat UI:
-
-            - Fallback streaming container renders as a real chat bubble (gradient, glow, tail); bubble styles promoted to `:global(...)`.
-            - Modern 3D chat bubbles with rounded tails, layered shadows, dark-mode glow.
-            - Status bar slimmed to a single 36px row.
-            - Bubble palette picker (10 presets) + reverse-colors toggle. Persisted to `localStorage`.
-            - Bubble fill follows the palette, not just the glow.
-            - Assistant bubbles get a colored glow mirroring the user bubble's.
-
-            Ordering & drafts:
-
-            - Optimistic user tagged `precedingStreamPending`; trailing `message_complete` splices in before it — no more new-user-above-still-finishing-response inversion.
-            - Drafts survive session switches via reactive `$effect` once `PromptInput` actually mounts.
-            - Sent text doesn't rehydrate on switch-back — draft dropped on send.
-            - Drafts survive reload / app restart via `localStorage` (`cairncc:drafts:v1`).
-
-            Performance & memory:
-
-            - Drip rAF loops self-cancel when caught up.
-            - Decode tail mutates a sibling span via `textContent` — markdown pipeline no longer re-runs every frame.
-            - Enrichment effects (copy buttons, image lightbox, basePath resolve) gated on `!streaming`.
-            - Decode glyph buffer pre-allocated.
-            - Tool output truncated in timeline + snapshot (32 KB cap, 16K head + 8K tail). Full output stays in `events.jsonl`.
-            - Snapshot restore truncates too, not just live ingest.
-            - Running sessions snapshot to IDB (throttled per 200 events).
-
-            Other:
-
-            - Session-wide rename for `s:`-grouped sessions.
-            - Mobile sidebar auto-closes on ≤767px viewports.
-            - Effort persisted per-run.
-            - Model selector falls back to CLI's current model when run has no pinned model.
-            - Opus label reads "Opus 4.7" consistently.
-          releaseDraft: true
+            And the v0.1.68 fixes through -19: cross-session streaming bleed scoped to `run.id`, thinking-panel reset on session change, fallback streaming container as a real chat bubble, 3D bubble palette + reverse toggle, optimistic-user ordering via `precedingStreamPending`, draft persistence across switches + reloads (`cairncc:drafts:v1`), drip rAF self-cancellation, decode-tail textContent mutation, 32 KB tool-output truncation in timeline + snapshot, session-wide rename for `s:`-grouped sessions, mobile sidebar auto-close, per-run effort persistence, model selector CLI fallback, "Opus 4.7" label.
+          releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
