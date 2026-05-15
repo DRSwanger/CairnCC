@@ -14,6 +14,7 @@ pub fn new_actor_session_map() -> ActorSessionMap {
 
 // ── Adapter settings ──
 
+#[derive(Clone)]
 pub struct AdapterSettings {
     pub model: Option<String>,
     pub allowed_tools: Vec<String>,
@@ -186,6 +187,41 @@ pub fn build_adapter_settings(
         betas,
         agents_json,
     }
+}
+
+/// Splice a one-line note into `settings.append_system_prompt` when this run's
+/// events.jsonl contains trimmed tool outputs. The note tells Claude that the
+/// CairnCC UI is displaying head+tail summaries for some earlier tool results
+/// — the full content still lives in Claude's own session log under
+/// `~/.claude/projects/.../{session_id}.jsonl`, which is what `--resume` reads.
+///
+/// No-op when the count is zero, so untouched runs pay only a quick file scan.
+/// Safe to call on settings that already have a user-supplied append prompt:
+/// we append our note rather than replace.
+pub fn augment_for_run(settings: &mut AdapterSettings, run_id: &str) {
+    let count = crate::storage::repair::count_trimmed_events(run_id);
+    if count == 0 {
+        return;
+    }
+    let note = format!(
+        "\n\n[CairnCC storage note] {} earlier tool output(s) in this session \
+        are displayed in the CairnCC UI as head+tail summaries (32 KB cap) for \
+        storage. Your own session log (~/.claude/projects/.../<session>.jsonl) \
+        still has the full content, so on --resume you retain accurate context. \
+        If the user references content from a trimmed result that doesn't \
+        appear in your context, ask them to use the \"Restore inline\" action \
+        in the CairnCC UI or re-run the relevant tool.",
+        count
+    );
+    settings.append_system_prompt = Some(match &settings.append_system_prompt {
+        Some(existing) if !existing.is_empty() => format!("{}{}", existing, note),
+        _ => note.trim_start().to_string(),
+    });
+    log::debug!(
+        "[adapter] augment_for_run({}): appended trim notice for {} trimmed event(s)",
+        run_id,
+        count
+    );
 }
 
 /// Build CLI args for settings flags (shared between stream and pipe modes).

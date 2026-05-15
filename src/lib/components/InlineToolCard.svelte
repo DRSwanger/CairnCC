@@ -124,6 +124,43 @@
   function retryLazyLoad() {
     lazyFailed = false; // reset — effect will re-trigger
   }
+
+  // ── Trimmed-output restore (storage repair) ──
+  let restoreLoading = $state(false);
+  let restoreError = $state<string | null>(null);
+  let restoredOutput = $state<unknown>(null);
+  let restoredText = $derived.by(() => {
+    if (restoredOutput == null) return null;
+    if (typeof restoredOutput === "string") return restoredOutput;
+    try {
+      return JSON.stringify(restoredOutput, null, 2);
+    } catch {
+      return String(restoredOutput);
+    }
+  });
+  function fmtBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  async function restoreTrimmed() {
+    if (!runId || !tool.trim_info?.archive_path) return;
+    restoreLoading = true;
+    restoreError = null;
+    try {
+      const api = await import("$lib/api");
+      restoredOutput = await api.restoreTrimmedToolOutput(
+        runId,
+        tool.trim_info.archive_path,
+        tool.tool_use_id,
+        tool.trim_info.original_sha256,
+      );
+    } catch (e) {
+      restoreError = String(e);
+    } finally {
+      restoreLoading = false;
+    }
+  }
   let multiChecked: Record<string, boolean> = $state({});
   // Per-question answers for multi-question AskUserQuestion
   let questionAnswers: Record<string, string> = $state({});
@@ -1590,6 +1627,14 @@
 
       <!-- Duration + output size -->
       <div class="flex items-center gap-1.5 shrink-0">
+        {#if tool.trim_info}
+          <span
+            class="text-[10px] text-amber-500/80"
+            title="Output trimmed to summary ({fmtBytes(tool.trim_info.original_bytes)} original). Expand to restore."
+          >
+            📜 trimmed
+          </span>
+        {/if}
         {#if outputSizeLabel}
           <span class="text-[10px] text-muted-foreground">{outputSizeLabel}</span>
         {/if}
@@ -1681,6 +1726,36 @@
     <!-- Expanded content area with accent left border -->
     {#if expanded}
       <div class="ml-2.5 pl-2 border-l-2 {renderLevel === 2 ? style.border : 'border-border/20'}">
+        {#if tool.trim_info && tool.trim_info.archive_path}
+          <div class="mt-1 mb-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">
+            <div class="flex items-center gap-2 text-[11px] text-amber-600/90">
+              <span>📜</span>
+              <span>
+                Output trimmed to head+tail summary
+                ({fmtBytes(tool.trim_info.original_bytes)} original).
+              </span>
+              {#if !restoredOutput}
+                <button
+                  class="ml-auto rounded px-2 py-0.5 text-[10px] font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 disabled:opacity-50"
+                  disabled={restoreLoading}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    restoreTrimmed();
+                  }}
+                >
+                  {restoreLoading ? "Restoring…" : "Restore inline"}
+                </button>
+              {/if}
+            </div>
+            {#if restoreError}
+              <div class="mt-1 text-[10px] text-destructive">{restoreError}</div>
+            {/if}
+            {#if restoredText != null}
+              <pre
+                class="mt-1.5 max-h-[400px] overflow-auto rounded bg-background/60 p-2 text-[11px] font-mono whitespace-pre-wrap break-words">{restoredText}</pre>
+            {/if}
+          </div>
+        {/if}
         {#if isTruncated && !lazyResult}
           {#if lazyLoading}
             <div class="px-4 py-3 text-center text-xs text-muted-foreground animate-pulse">

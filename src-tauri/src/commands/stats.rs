@@ -478,9 +478,9 @@ mod tests {
         assert!(result[0].model_breakdown.is_none());
     }
 
-    #[test]
-    fn test_heatmap_daily_invalid_scope() {
-        let result = get_heatmap_daily("foo".to_string());
+    #[tokio::test]
+    async fn test_heatmap_daily_invalid_scope() {
+        let result = get_heatmap_daily("foo".to_string(), None).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid scope"));
     }

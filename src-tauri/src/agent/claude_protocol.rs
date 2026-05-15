@@ -933,7 +933,7 @@ impl ProtocolState {
                                 .get(&tool_use_id)
                                 .cloned()
                                 .unwrap_or_default();
-                            let output = block.get("content").cloned().unwrap_or(Value::Null);
+                            let raw_output = block.get("content").cloned().unwrap_or(Value::Null);
                             let is_error = block
                                 .get("is_error")
                                 .and_then(|v| v.as_bool())
@@ -944,6 +944,32 @@ impl ProtocolState {
                                 "success".to_string()
                             };
 
+                            // Write-time cap: if Claude emitted a multi-MB tool
+                            // result, head+tail trim *before* persistence. The
+                            // canonical full output still lives in Claude's own
+                            // session JSONL under ~/.claude/projects/..., which
+                            // Claude reads on --resume — so this is purely a
+                            // CairnCC-storage concern, not a context loss.
+                            let (output, trim_info) =
+                                crate::storage::repair::trim_tool_value(
+                                    &raw_output,
+                                    "write_time_cap",
+                                    None,
+                                );
+                            let (tool_use_result, trim_info) = if let Some(ref tur) = tool_use_result {
+                                let (capped, tur_info) =
+                                    crate::storage::repair::trim_tool_value(
+                                        tur,
+                                        "write_time_cap",
+                                        None,
+                                    );
+                                // Prefer output's trim_info if present; otherwise use tur's.
+                                let final_info = trim_info.or(tur_info);
+                                (Some(capped), final_info)
+                            } else {
+                                (tool_use_result.clone(), trim_info)
+                            };
+
                             events.push(BusEvent::ToolEnd {
                                 run_id: run_id.to_string(),
                                 tool_use_id,
@@ -952,7 +978,8 @@ impl ProtocolState {
                                 status,
                                 duration_ms: None,
                                 parent_tool_use_id: parent_tool_use_id.clone(),
-                                tool_use_result: tool_use_result.clone(),
+                                tool_use_result,
+                                trim_info,
                             });
                         }
                     }
@@ -2584,6 +2611,7 @@ mod tests {
             duration_ms: None,
             parent_tool_use_id: None,
             tool_use_result: None,
+            trim_info: None,
         };
         assert!(
             validate_bus_event(&ev).is_some(),

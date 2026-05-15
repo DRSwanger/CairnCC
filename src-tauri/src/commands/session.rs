@@ -943,7 +943,47 @@ pub fn get_bus_events(
     since_seq: Option<u64>,
 ) -> Result<Vec<serde_json::Value>, String> {
     storage::runs::get_run(&id).ok_or_else(|| format!("Run {} not found", id))?;
+
+    // Opportunistic repair: if the events.jsonl has crossed the bloat trigger
+    // (only happens for sessions built before write-time cap landed), run a
+    // synchronous repair before replaying. One-time hit per session — afterwards
+    // the file is below threshold and `assess` returns instantly.
+    //
+    // Skip for follow-up replay calls (`since_seq` set) so we only check once
+    // at full-load time. Live append happens via `EventWriter`, not this path.
+    if since_seq.is_none() {
+        let assessment = storage::repair::assess(&id);
+        if assessment.needs_repair {
+            log::info!(
+                "[session] get_bus_events: triggering synchronous repair for {} ({} MB, {} oversize)",
+                id,
+                assessment.total_bytes / 1024 / 1024,
+                assessment.oversize_events
+            );
+            match storage::repair::repair(&id) {
+                Ok(outcome) => log::info!(
+                    "[session] repair done for {}: trimmed {} events, saved {} MB",
+                    id,
+                    outcome.trimmed_events,
+                    outcome.bytes_saved / 1024 / 1024
+                ),
+                Err(e) => log::warn!("[session] repair failed for {}: {} (loading as-is)", id, e),
+            }
+        }
+    }
+
     Ok(storage::events::list_bus_events(&id, since_seq))
+}
+
+#[tauri::command]
+pub fn restore_trimmed_tool_output(
+    run_id: String,
+    archive_filename: String,
+    tool_use_id: String,
+    expected_sha256: String,
+) -> Result<serde_json::Value, String> {
+    storage::runs::get_run(&run_id).ok_or_else(|| format!("Run {} not found", run_id))?;
+    storage::repair::restore_from_archive(&run_id, &archive_filename, &tool_use_id, &expected_sha256)
 }
 
 pub(crate) async fn fork_session_impl(
@@ -1684,10 +1724,14 @@ async fn spawn_cli_process(
         SessionMode::New => {}
     }
 
-    // Settings flags
-    let flag_args = adapter::build_settings_args(settings, false);
+    // Settings flags — augment append_system_prompt with a trim notice if any
+    // earlier tool outputs in this run's events.jsonl were head+tail capped, so
+    // Claude understands what the UI is rendering.
+    let mut settings_for_args = settings.clone();
+    adapter::augment_for_run(&mut settings_for_args, _run_id);
+    let flag_args = adapter::build_settings_args(&settings_for_args, false);
     claude_args.extend(flag_args.iter().cloned());
-    if settings.include_partial_messages {
+    if settings_for_args.include_partial_messages {
         claude_args.push("--include-partial-messages".into());
     }
 

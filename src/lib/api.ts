@@ -549,6 +549,21 @@ export async function getToolResult(
   return invoke<Record<string, unknown> | null>("get_tool_result", { runId, toolUseId });
 }
 
+export async function restoreTrimmedToolOutput(
+  runId: string,
+  archiveFilename: string,
+  toolUseId: string,
+  expectedSha256: string,
+): Promise<unknown> {
+  dbg("api", "restoreTrimmedToolOutput", { runId, toolUseId });
+  return invoke<unknown>("restore_trimmed_tool_output", {
+    runId,
+    archiveFilename,
+    toolUseId,
+    expectedSha256,
+  });
+}
+
 export async function forkSession(runId: string): Promise<string> {
   dbg("api", "forkSession", { runId });
   return invoke<string>("fork_session", { runId });

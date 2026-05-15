@@ -1016,6 +1016,26 @@ pub enum RalphCompleteReason {
 
 // ── Event Bus types ──
 
+/// Trim metadata attached to a `ToolEnd` event when its `output` (and optionally
+/// `tool_use_result`) was reduced to head+tail to keep events.jsonl small.
+///
+/// Two production sources:
+/// 1. Write-time cap (`claude_protocol::trim_value_if_oversize`): `archive_path = None`.
+///    Full output was never persisted to CairnCC; it lives only in Claude Code's own
+///    `~/.claude/projects/.../<session>.jsonl`, which Claude reads on `--resume`.
+/// 2. Repair (`storage::repair`): `archive_path = Some(file)` pointing at the
+///    gzipped pre-trim `events.jsonl` snapshot saved next to the trimmed file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrimInfo {
+    pub original_bytes: u64,
+    pub original_sha256: String,
+    pub trimmed_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive_path: Option<String>,
+    /// Source of the trim: "write_time_cap" or "repair".
+    pub source: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BusEvent {
@@ -1096,6 +1116,11 @@ pub enum BusEvent {
         /// Structured tool result metadata from CLI verbose mode (e.g. file info for Read)
         #[serde(skip_serializing_if = "Option::is_none")]
         tool_use_result: Option<Value>,
+        /// Set when tool output was trimmed (either at write time or by storage::repair).
+        /// `archive_path` is None for write-time caps (no archive — original lives only
+        /// in Claude Code's own session log) and Some for repair (gzipped events.jsonl).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trim_info: Option<TrimInfo>,
     },
     UserMessage {
         run_id: String,

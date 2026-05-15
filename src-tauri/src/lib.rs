@@ -241,6 +241,7 @@ pub fn run() {
             commands::session::send_session_control,
             commands::session::broadcast_mcp_toggle,
             commands::session::get_bus_events,
+            commands::session::restore_trimmed_tool_output,
             commands::session::fork_session,
             commands::session::side_question,
             commands::session::start_ralph_loop,
@@ -344,6 +345,25 @@ pub fn run() {
             // Start team file watcher for ~/.claude/teams/ and ~/.claude/tasks/
             let cancel = app.state::<CancellationToken>().inner().clone();
             hooks::team_watcher::start_team_watcher(app.handle().clone(), cancel);
+
+            // Backfill repair: silently trim any sessions whose events.jsonl
+            // grew past the bloat threshold before write-time capping landed.
+            // Runs in background, skips active runs, paces with sleeps so it
+            // doesn't compete with the UI for IO. Idempotent — once a session
+            // is trimmed, it falls below threshold and is skipped next pass.
+            let actor_sessions = app
+                .state::<crate::agent::adapter::ActorSessionMap>()
+                .inner()
+                .clone();
+            tauri::async_runtime::spawn(async move {
+                // Brief startup grace so we don't fight the initial window paint
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let active_ids: Vec<String> = {
+                    let map = actor_sessions.lock().await;
+                    map.keys().cloned().collect()
+                };
+                crate::storage::repair::backfill_all_oversized(active_ids).await;
+            });
 
             // System tray — hide-to-tray on close, left-click to show
             // Non-fatal: if tray library is unavailable (e.g. some Linux desktops),

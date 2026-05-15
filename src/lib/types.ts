@@ -890,6 +890,14 @@ export type BusEvent =
       parent_tool_use_id?: string;
       /** Structured tool result metadata from CLI verbose mode */
       tool_use_result?: Record<string, unknown>;
+      /** Present when output was capped to 32KB (head+tail). Original bytes preserved in archive. */
+      trim_info?: {
+        original_bytes: number;
+        original_sha256: string;
+        trimmed_at: string;
+        archive_path?: string;
+        source: string;
+      };
     }
   | { type: "user_message"; run_id: string; text: string; uuid?: string }
   | { type: "run_state"; run_id: string; state: string; exit_code?: number; error?: string }
@@ -1082,6 +1090,15 @@ export interface BusToolItem {
   suggestions?: PermissionSuggestion[];
   /** Structured tool result metadata from CLI verbose mode (e.g. file info for Read). */
   tool_use_result?: Record<string, unknown>;
+  /** Present when the tool output was capped to a head+tail summary; full content
+   *  is in the gzip archive referenced by archive_path. */
+  trim_info?: {
+    original_bytes: number;
+    original_sha256: string;
+    trimmed_at: string;
+    archive_path?: string;
+    source: string;
+  };
 }
 
 export type TimelineEntry =

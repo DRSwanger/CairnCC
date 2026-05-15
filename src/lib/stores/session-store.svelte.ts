@@ -3155,6 +3155,7 @@ export class SessionStore {
                 duration_ms: ev.duration_ms,
                 tool_name: ev.tool_name || t.tool_name,
                 tool_use_result: truncatedToolUseResult,
+                trim_info: ev.trim_info,
               }),
               ctx,
             )
@@ -3182,6 +3183,7 @@ export class SessionStore {
               duration_ms: ev.duration_ms,
               tool_name: ev.tool_name || old.tool.tool_name,
               tool_use_result: truncatedToolUseResult,
+              trim_info: ev.trim_info,
             },
           };
           if (ctx) {

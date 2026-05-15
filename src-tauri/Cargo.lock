@@ -4,12 +4,13 @@ version = 4
 
 [[package]]
 name = "CairnCC"
-version = "0.1.71"
+version = "0.1.72"
 dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
  "env_logger",
+ "flate2",
  "futures-util",
  "if-addrs",
  "include_dir",
