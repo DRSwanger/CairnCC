@@ -338,6 +338,137 @@ describe("SessionStore reducer", () => {
         .map((e: TimelineEntry) => (e as { kind: "user"; content: string }).content);
       expect(userTexts).toEqual(["hist-1", "hist-2", "hist-3", "catch-4", "catch-9", "live-10"]);
     });
+
+    // Repro for the loadRun(B) await-window race: live B events fire applyEvent
+    // BEFORE `this.run` has been updated from A→B. Pre-fix, the run_id guard ran
+    // before the buffer check, so those events were dropped instead of buffered.
+    it("buffers an incoming event whose run_id doesn't match this.run during a load", () => {
+      store.run = makeRun("run-old"); // outgoing run, still attached
+      // @ts-expect-error — private buffer setup
+      store._replayBuffer = [];
+
+      // Simulate a live event for the INCOMING run arriving before this.run flips.
+      store.applyEvent({
+        type: "user_message",
+        run_id: "run-new",
+        _seq: 5,
+        text: "early-incoming",
+      } as unknown as BusEvent);
+
+      // Should be buffered, not dropped silently.
+      // @ts-expect-error — private buffer inspect
+      expect(store._replayBuffer.length).toBe(1);
+      // Timeline untouched (event didn't reach _reduce).
+      expect(store.timeline.length).toBe(0);
+
+      // After this.run flips and we settle, drain re-runs applyEvent which will
+      // drop the stale run-new event since this.run.id is now "run-new"? No —
+      // here we model the realistic case where this.run gets set to the new id.
+      store.run = makeRun("run-new");
+      (store as unknown as { _settleLoad(): void })._settleLoad();
+      expect(store.timeline.filter((e: TimelineEntry) => e.kind === "user").length).toBe(1);
+    });
+
+    // Bug B: middleware flushes 2+ events for B during the loadRun await window.
+    // Pre-fix, applyEventBatch had no buffer check and reduced incoming events
+    // into the live ctx (i.e. A's timeline), causing visible flicker before the
+    // snapshot apply overwrote them. applyLiveEvents routes through the buffer.
+    it("routes batched live events into the replay buffer instead of applying inline", () => {
+      store.run = makeRun("run-buf2");
+      // @ts-expect-error — private buffer setup
+      store._replayBuffer = [];
+
+      store.applyLiveEvents([
+        { type: "user_message", run_id: "run-buf2", _seq: 11, text: "live-a" },
+        { type: "user_message", run_id: "run-buf2", _seq: 12, text: "live-b" },
+        { type: "user_message", run_id: "run-buf2", _seq: 13, text: "live-c" },
+      ] as unknown as BusEvent[]);
+
+      // None applied yet — all 3 in buffer.
+      expect(store.timeline.length).toBe(0);
+      // @ts-expect-error — private buffer inspect
+      expect(store._replayBuffer.length).toBe(3);
+
+      (store as unknown as { _settleLoad(): void })._settleLoad();
+      const userTexts = store.timeline
+        .filter((e: TimelineEntry) => e.kind === "user")
+        .map((e: TimelineEntry) => (e as { kind: "user"; content: string }).content);
+      expect(userTexts).toEqual(["live-a", "live-b", "live-c"]);
+    });
+  });
+
+  describe("user_message dedup in catchup (replayOnly)", () => {
+    // Bug C: switch away from A while it's running → A goes terminal → switch
+    // back. Memcache restores the optimistic user entry (no cliUuid). Catchup
+    // applies the backend's user_message event with replayOnly=isTerminal=true.
+    // Pre-fix, dedup was gated on !replayOnly, so the catchup appended a
+    // DUPLICATE user bubble. Dedup is now always-on, safe because the filter
+    // targets only entries WITHOUT cliUuid.
+    it("merges cliUuid into the optimistic entry even when replayOnly is true", () => {
+      store.run = makeRun("run-dedup", { status: "completed" });
+      // Optimistic entry as it would be left by sendMessage right before switch.
+      store.timeline = [
+        {
+          kind: "user",
+          id: "opt-1",
+          anchorId: "opt-1",
+          content: "hello world",
+          ts: new Date().toISOString(),
+        },
+      ] as TimelineEntry[];
+
+      // Catchup batch — same event the backend wrote to disk, now replayed
+      // through applyEventBatch with replayOnly=true (matches loadRun's
+      // `replayOnly: isTerminal` for terminal runs).
+      store.applyEventBatch(
+        [
+          {
+            type: "user_message",
+            run_id: "run-dedup",
+            _seq: 42,
+            text: "hello world",
+            uuid: "cli-uuid-xyz",
+          },
+        ] as unknown as BusEvent[],
+        { replayOnly: true },
+      );
+
+      const users = store.timeline.filter((e: TimelineEntry) => e.kind === "user");
+      expect(users.length).toBe(1); // no duplicate
+      expect((users[0] as { kind: "user"; cliUuid?: string }).cliUuid).toBe("cli-uuid-xyz");
+    });
+
+    // Safety: legitimate same-text repeats during full replay must still produce
+    // two entries — guaranteed because every replayed user_message carries a uuid
+    // and writes cliUuid on its entry, so dedup's `!cliUuid` filter won't match
+    // the prior turn's confirmed entry.
+    it("preserves two distinct entries when the same text appears in two replayed turns", () => {
+      store.run = makeRun("run-repeat", { status: "completed" });
+      store.applyEventBatch(
+        [
+          {
+            type: "user_message",
+            run_id: "run-repeat",
+            _seq: 1,
+            text: "ping",
+            uuid: "uuid-1",
+          },
+          {
+            type: "user_message",
+            run_id: "run-repeat",
+            _seq: 2,
+            text: "ping",
+            uuid: "uuid-2",
+          },
+        ] as unknown as BusEvent[],
+        { replayOnly: true },
+      );
+
+      const users = store.timeline.filter((e: TimelineEntry) => e.kind === "user");
+      expect(users.length).toBe(2);
+      expect((users[0] as { cliUuid?: string }).cliUuid).toBe("uuid-1");
+      expect((users[1] as { cliUuid?: string }).cliUuid).toBe("uuid-2");
+    });
   });
 
   describe("tool_end output truncation", () => {

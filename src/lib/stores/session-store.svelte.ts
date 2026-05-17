@@ -1110,15 +1110,22 @@ export class SessionStore {
 
   /** Apply a single live bus event (mutates $state directly). */
   applyEvent(ev: BusEvent): void {
+    // Hold live events while loadRun's chunked replay is in flight — see
+    // `_replayBuffer` declaration for the race this fixes.
+    //
+    // This must run BEFORE the run_id guard: during loadRun(B), `this.run` is
+    // still the outgoing run A until `await api.getRun(B)` resolves. Events for
+    // B that arrive in that window would otherwise be dropped by the run_id
+    // mismatch check and never reach the buffer. On drain via `_settleLoad`,
+    // `applyEvent` re-runs with `this.run` set to B and the guard correctly
+    // drops any stale A events that snuck through.
+    if (this._replayBuffer !== null) {
+      this._replayBuffer.push(ev);
+      return;
+    }
     // Guard: drop events for a run we're no longer viewing
     if (!this.run || ev.run_id !== this.run.id) {
       dbg("store", "drop stale event", ev.type, "run_id=", ev.run_id, "current=", this.run?.id);
-      return;
-    }
-    // Hold live events while loadRun's chunked replay is in flight — see
-    // `_replayBuffer` declaration for the race this fixes.
-    if (this._replayBuffer !== null) {
-      this._replayBuffer.push(ev);
       return;
     }
     // Track WS sequence checkpoint — skip already-processed events (dedup)
@@ -1151,6 +1158,26 @@ export class SessionStore {
     if (this._lastProcessedSeq - this._lastSnapshotSeq >= RUNNING_SNAPSHOT_SEQ_DELTA) {
       this._saveSnapshotToIdb(this.run.id);
       this._lastSnapshotSeq = this._lastProcessedSeq;
+    }
+  }
+
+  /** Entry point for live events arriving from the middleware (single or batched).
+   *  Routes through `_replayBuffer` while a loadRun/resumeSession replay is in
+   *  flight so the buffer-drain order matches what `applyEvent` would have done
+   *  per-event. Without this, a batched flush during the loadRun await window
+   *  reduces incoming events into the OUTGOING run's live timeline (then gets
+   *  overwritten by the snapshot apply), causing visible flicker + stale-state
+   *  churn that sometimes leaves entries out of order. */
+  applyLiveEvents(events: BusEvent[]): void {
+    if (events.length === 0) return;
+    if (this._replayBuffer !== null) {
+      for (const ev of events) this._replayBuffer.push(ev);
+      return;
+    }
+    if (events.length === 1) {
+      this.applyEvent(events[0]);
+    } else {
+      this.applyEventBatch(events);
     }
   }
 
@@ -2985,33 +3012,35 @@ export class SessionStore {
 
       case "user_message": {
         const tl = getTl();
-        // Content-based dedup: only in live mode (replayOnly=false) where an optimistic
-        // user entry was already added by startSession/sendMessage.  During replay
-        // (replayOnly=true), every event from events.jsonl is authoritative —
-        // the user may legitimately send the same text twice in different turns.
-        if (!replayOnly) {
-          // Find the most recent user entry with matching text that hasn't been UUID-confirmed yet.
-          // Using backward search (findLast) avoids matching old replayed entries from before
-          // Phase 1 (which also lack cliUuid). For rapid-fire identical messages, UUID assignment
-          // order is reversed (LIFO), but this is functionally correct — each entry still gets a
-          // unique UUID for checkpoint identification.
-          const match = tl.findLast(
-            (e) => e.kind === "user" && e.content === ev.text && !e.cliUuid,
-          );
-          if (match && match.kind === "user") {
-            // Merge cliUuid + anchorId from the confirmed backend event into the optimistic entry
-            if (ev.uuid) {
-              const idx = tl.indexOf(match);
-              const updated = { ...match, cliUuid: ev.uuid, anchorId: ev.uuid };
-              if (ctx) ctx.tl[idx] = updated;
-              else {
-                const u = [...this.timeline];
-                u[idx] = updated;
-                this.timeline = u;
-              }
+        // Content-based dedup against unconfirmed optimistic entries (no cliUuid).
+        //
+        // Runs in BOTH live and replay modes: the dedup target is restricted to
+        // entries WITHOUT cliUuid, so legitimate same-text repeats during a full
+        // event replay (every replay event sets cliUuid) won't false-match. The
+        // case that matters: catchup after a session-switch-then-terminal replays
+        // the backend's user_message while an optimistic entry from sendMessage
+        // is still parked in the restored snapshot. Previously this was gated on
+        // !replayOnly, so the catchup path (replayOnly=isTerminal) appended a
+        // duplicate user bubble whenever the run had gone terminal mid-switch.
+        //
+        // findLast (backward) prefers the most recent optimistic entry — avoids
+        // matching ancient pre-cliUuid entries from very old snapshots.
+        const match = tl.findLast(
+          (e) => e.kind === "user" && e.content === ev.text && !e.cliUuid,
+        );
+        if (match && match.kind === "user") {
+          // Merge cliUuid + anchorId from the confirmed backend event into the optimistic entry
+          if (ev.uuid) {
+            const idx = tl.indexOf(match);
+            const updated = { ...match, cliUuid: ev.uuid, anchorId: ev.uuid };
+            if (ctx) ctx.tl[idx] = updated;
+            else {
+              const u = [...this.timeline];
+              u[idx] = updated;
+              this.timeline = u;
             }
-            break;
           }
+          break;
         }
         const newId = uuid();
         const entry: TimelineEntry = {

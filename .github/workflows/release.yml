@@ -61,18 +61,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-2
-          releaseName: "CairnCC v__VERSION__-2"
+          tagName: v__VERSION__-3
+          releaseName: "CairnCC v__VERSION__-3"
           releaseBody: |
-            ## v0.1.71-2 — CSP fix
+            ## v0.1.72-3 — Session-switch race fix
 
-            DevTools (F12) from v0.1.71-1 surfaced the actual cause of the black-window bug: CSP misconfiguration.
+            Three related bugs in the session-switch flow that caused freezes, duplicated prompts, and missing assistant responses when clicking between chats while one was mid-stream:
 
-            - **Inline styles blocked.** Tauri auto-injects a `nonce` into `style-src`, which (per spec) overrides `'unsafe-inline'` — so every dynamic Svelte style was rejected, leaving the Rift CNC page unstyled and visually black. Fixed via `dangerousDisableAssetCspModification: ["style-src"]` so the nonce is no longer injected.
-            - **IPC blocked.** `connect-src` was missing `ipc:` / `http://ipc.localhost` (Windows fetch-IPC scheme). Tauri was silently falling back to the slower `postMessage` path, which is likely why the `[ocv:store] response timeout: no content after 60s` warnings appeared. Now allow-listed.
-            - **Fonts.** Google Fonts allow-listed in `style-src` / `font-src` (cosmetic).
+            - **Live events dropped during the loadRun await window.** `applyEvent`'s run_id guard ran before the `_replayBuffer` push, so incoming events for the run being switched into were dropped (instead of buffered) until `this.run` flipped to the new id. Reordered so the buffer wins.
+            - **Batched live events bypassed the buffer entirely.** `applyEventBatch` had no buffer check; a microbatch flushed during the await reduced incoming events into the outgoing run's live ctx and was visible as flicker / out-of-order entries before the snapshot apply overwrote them. New `applyLiveEvents` entry point routes both single and batched events through the buffer.
+            - **Catchup duplicated user prompts on terminal-on-return.** `loadRun` passes `replayOnly: isTerminal` to its catchup batch; `user_message` content-dedup was gated on `!replayOnly`, so the backend's confirmed message appended a NEW bubble instead of merging into the optimistic entry preserved in the memcache snapshot. Dedup now always runs — the `!cliUuid` filter already makes it safe under full replay.
 
-            Still a diagnostic draft — `devtools` feature is still compiled in. If the Rift CNC session opens cleanly and responses don't time out, we'll cut a clean v0.1.72 GA without devtools.
+            Three regression tests in `session-store.test.ts` cover each path. Bundles all carry the v0.1.72 session-log repair feature from -1/-2 unchanged.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true

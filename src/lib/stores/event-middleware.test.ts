@@ -61,15 +61,33 @@ function fireBusEvent(ev: BusEvent): void {
   handler(ev);
 }
 
-/** Minimal mock of SessionStore with the methods EventMiddleware calls */
+/** Minimal mock of SessionStore with the methods EventMiddleware calls.
+ *
+ *  applyLiveEvents mirrors the real dispatch in session-store.svelte.ts so
+ *  existing tests that assert on applyEvent / applyEventBatch keep working —
+ *  the buffer-during-load branch is exercised separately in session-store.test.ts. */
 function mockStore() {
-  return {
+  type MockStore = {
+    applyEvent: ReturnType<typeof vi.fn>;
+    applyEventBatch: ReturnType<typeof vi.fn>;
+    applyLiveEvents: ReturnType<typeof vi.fn>;
+    applyHookEvent: ReturnType<typeof vi.fn>;
+    applyHookUsage: ReturnType<typeof vi.fn>;
+    loadRun: ReturnType<typeof vi.fn>;
+  };
+  const m: MockStore = {
     applyEvent: vi.fn(),
     applyEventBatch: vi.fn(),
+    applyLiveEvents: vi.fn(),
     applyHookEvent: vi.fn(),
     applyHookUsage: vi.fn(),
     loadRun: vi.fn().mockResolvedValue(undefined),
   };
+  m.applyLiveEvents.mockImplementation((events: BusEvent[]) => {
+    if (events.length === 1) m.applyEvent(events[0]);
+    else if (events.length > 1) m.applyEventBatch(events);
+  });
+  return m;
 }
 
 /** Fire a _full_reload event through the mocked transport listener */

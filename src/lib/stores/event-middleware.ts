@@ -319,11 +319,7 @@ export class EventMiddleware {
       const store = this._subscriptions.get(runId);
       if (!store) continue;
       try {
-        if (events.length === 1) {
-          store.applyEvent(events[0]);
-        } else if (events.length > 1) {
-          store.applyEventBatch(events);
-        }
+        store.applyLiveEvents(events);
       } catch (e) {
         dbgWarn("middleware", `flush error for run ${runId}:`, e);
       }
