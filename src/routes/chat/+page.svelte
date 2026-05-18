@@ -119,6 +119,11 @@
   /** Non-reactive flag: suppresses auto-scroll reset during search scroll-to navigation. */
   let _scrollToInFlight = false;
   let showChatScrollHint = $state(false);
+  /** Timestamp of the last user-initiated scroll input (wheel/touch). Programmatic
+   *  scrolls (scrollTop=scrollHeight from auto-scroll rAFs) don't update this, so
+   *  handleChatScroll can distinguish "user reached bottom" from "rAF reset us to bottom"
+   *  and avoid clobbering the user's decision to read above. */
+  let _lastUserScrollTs = 0;
   let agentSettings = $state<AgentSettings | null>(null);
   let resuming = $state(false);
   /** Suppress "Session ended" flash during tool approval restart cycle. */
@@ -782,6 +787,13 @@
     const total = filteredTimeline.length;
     if (renderLimit >= total) {
       renderLimit = Infinity;
+      // Growth done — flip historyLoaded so future live entries can animate in.
+      // Holding it false during progressive growth prevents bulk-prepended older
+      // messages from flying in (which Dallas saw as "scrolling through hours of history").
+      historyLoaded = true;
+      // Keep pinned to bottom on initial load — the just-mounted older entries
+      // grew scrollHeight above us; without this we'd be left mid-history.
+      if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
       return;
     }
     renderLimit = Math.min(renderLimit + RENDER_GROW_CHUNK, total);
@@ -871,8 +883,12 @@
       // current context and can interact. Then grow the limit in chunks across
       // animation frames so a massive chat (e.g. Rift CNC, thousands of entries)
       // doesn't mount every ChatMessage in a single frame and stall the UI.
+      //
+      // historyLoaded stays FALSE through the entire growth window — older entries
+      // prepended by growRenderLimitChunked get duration:0 mount instead of in:fly,
+      // so the user doesn't see them animate past the viewport. The flag flips
+      // to true inside growRenderLimitChunked once renderLimit reaches Infinity.
       await tick();
-      historyLoaded = true;
       requestAnimationFrame(() => {
         if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
         requestAnimationFrame(() => {
@@ -2074,8 +2090,22 @@
   function handleChatScroll() {
     if (!chatAreaRef) return;
     const dist = chatAreaRef.scrollHeight - chatAreaRef.scrollTop - chatAreaRef.clientHeight;
-    isChatAutoScroll = dist < SCROLL_BOTTOM_THRESHOLD;
-    if (isChatAutoScroll) showChatScrollHint = false;
+    // Only update isChatAutoScroll based on position when the scroll was user-initiated.
+    // Programmatic scrolls (rAF scrollTop=scrollHeight) also fire onscroll, and the old
+    // logic would clobber isChatAutoScroll back to true based on the post-programmatic
+    // position — overriding the user's intent to read above. Now: position only drives
+    // the flag when a wheel/touch happened within the last 200ms.
+    const isUserScroll = performance.now() - _lastUserScrollTs < 200;
+    if (isUserScroll) {
+      isChatAutoScroll = dist < SCROLL_BOTTOM_THRESHOLD;
+    }
+    // showChatScrollHint can hide unconditionally when we're at the bottom — that's just
+    // visibility of the floating "scroll to bottom" pill, not auto-scroll behavior.
+    if (dist < SCROLL_BOTTOM_THRESHOLD) showChatScrollHint = false;
+  }
+
+  function markUserScroll() {
+    _lastUserScrollTs = performance.now();
   }
 
   function scrollChatToBottom() {
@@ -4291,6 +4321,9 @@
           style="overflow-anchor:auto"
           bind:this={chatAreaRef}
           onscroll={handleChatScroll}
+          onwheel={markUserScroll}
+          ontouchmove={markUserScroll}
+          onkeydown={markUserScroll}
         >
           {#if welcomeVisible}
             <!-- Welcome state -->

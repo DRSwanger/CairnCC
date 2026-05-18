@@ -61,18 +61,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-3
-          releaseName: "CairnCC v__VERSION__-3"
+          tagName: v__VERSION__-4
+          releaseName: "CairnCC v__VERSION__-4"
           releaseBody: |
-            ## v0.1.72-3 — Session-switch race fix
+            ## v0.1.72-4 — Scroll behavior fixes
 
-            Three related bugs in the session-switch flow that caused freezes, duplicated prompts, and missing assistant responses when clicking between chats while one was mid-stream:
+            Two related scroll bugs on existing chats with long history:
 
-            - **Live events dropped during the loadRun await window.** `applyEvent`'s run_id guard ran before the `_replayBuffer` push, so incoming events for the run being switched into were dropped (instead of buffered) until `this.run` flipped to the new id. Reordered so the buffer wins.
-            - **Batched live events bypassed the buffer entirely.** `applyEventBatch` had no buffer check; a microbatch flushed during the await reduced incoming events into the outgoing run's live ctx and was visible as flicker / out-of-order entries before the snapshot apply overwrote them. New `applyLiveEvents` entry point routes both single and batched events through the buffer.
-            - **Catchup duplicated user prompts on terminal-on-return.** `loadRun` passes `replayOnly: isTerminal` to its catchup batch; `user_message` content-dedup was gated on `!replayOnly`, so the backend's confirmed message appended a NEW bubble instead of merging into the optimistic entry preserved in the memcache snapshot. Dedup now always runs — the `!cliUuid` filter already makes it safe under full replay.
+            - **Auto-resume visibly scrolled through hours of chat history on load.** `historyLoaded` was flipped to `true` before `growRenderLimitChunked` finished prepending older entries, so each chunk of 200 bulk-mounted older messages played the `in:fly` (y:10, 600ms) entry animation as it appeared. Now `historyLoaded` stays `false` for the entire progressive growth window — older entries get `duration:0` mount instead — and flips to `true` only after `renderLimit` reaches Infinity, with a final `scrollTop=scrollHeight` so we land pinned at the bottom rather than mid-history.
+            - **Drip animation force-scrolled to bottom when the user had scrolled up to read above.** `handleChatScroll` recomputed `isChatAutoScroll` from raw position on every `onscroll` event — including programmatic scrolls fired by the drip/auto-scroll rAFs themselves — clobbering the user's "I'm reading above" intent back to `true` on each programmatic snap. Now position-based updates only apply when a `wheel` / `touchmove` / `keydown` happened within the last 200ms. Programmatic scroll events still fire onscroll but no longer override user intent.
 
-            Three regression tests in `session-store.test.ts` cover each path. Bundles all carry the v0.1.72 session-log repair feature from -1/-2 unchanged.
+            Carries v0.1.72-3 session-switch race fixes and v0.1.72 session-log repair feature unchanged.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true
