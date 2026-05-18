@@ -797,7 +797,11 @@
       return;
     }
     renderLimit = Math.min(renderLimit + RENDER_GROW_CHUNK, total);
-    requestAnimationFrame(() => growRenderLimitChunked(gen));
+    requestAnimationFrame(() => {
+      if (gen !== progressiveGen) return;
+      if (chatAreaRef && isChatAutoScroll) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
+      requestAnimationFrame(() => growRenderLimitChunked(gen));
+    });
   }
 
   /**

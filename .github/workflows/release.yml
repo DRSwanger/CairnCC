@@ -61,17 +61,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-4
-          releaseName: "CairnCC v__VERSION__-4"
+          tagName: v__VERSION__-5
+          releaseName: "CairnCC v__VERSION__-5"
           releaseBody: |
-            ## v0.1.72-4 — Scroll behavior fixes
+            ## v0.1.72-5 — Scroll drift + duplicate user bubble
 
-            Two related scroll bugs on existing chats with long history:
+            - **Bulk history load no longer drifts the viewport upward through history.** Even with the entry animation suppressed in -4, each progressive growth chunk prepended ~200 older entries above the viewport while `scrollTop` stayed constant, so the visible window drifted up as `scrollHeight` grew (Dallas: "text flying by"). Now `growRenderLimitChunked` re-pins `scrollTop = scrollHeight` on every chunk's paint when `isChatAutoScroll` is true, not just at the final step.
+            - **Duplicate user bubble after switch-during-thinking.** Desktop Tauri's `bus-event` emit doesn't include `_seq` (only WS broadcasts do — see `broadcaster.rs::persist_and_emit`), so live events never advance `_lastProcessedSeq`. When the user switched away from an actively-thinking session and came back, the memCache snapshot retained a stale seq and catchup re-fetched the same `user_message` that was already merged into the optimistic entry. Content-dedup missed it (existing entry now had `cliUuid`) and appended a second bubble. Added uuid-based idempotency: skip the reducer entirely when `ev.uuid` already exists as `cliUuid` on the timeline.
 
-            - **Auto-resume visibly scrolled through hours of chat history on load.** `historyLoaded` was flipped to `true` before `growRenderLimitChunked` finished prepending older entries, so each chunk of 200 bulk-mounted older messages played the `in:fly` (y:10, 600ms) entry animation as it appeared. Now `historyLoaded` stays `false` for the entire progressive growth window — older entries get `duration:0` mount instead — and flips to `true` only after `renderLimit` reaches Infinity, with a final `scrollTop=scrollHeight` so we land pinned at the bottom rather than mid-history.
-            - **Drip animation force-scrolled to bottom when the user had scrolled up to read above.** `handleChatScroll` recomputed `isChatAutoScroll` from raw position on every `onscroll` event — including programmatic scrolls fired by the drip/auto-scroll rAFs themselves — clobbering the user's "I'm reading above" intent back to `true` on each programmatic snap. Now position-based updates only apply when a `wheel` / `touchmove` / `keydown` happened within the last 200ms. Programmatic scroll events still fire onscroll but no longer override user intent.
-
-            Carries v0.1.72-3 session-switch race fixes and v0.1.72 session-log repair feature unchanged.
+            Carries -4 scroll-animation fix, -3 session-switch race fixes, and v0.1.72 session-log repair unchanged.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true

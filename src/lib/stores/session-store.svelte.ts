@@ -3012,6 +3012,16 @@ export class SessionStore {
 
       case "user_message": {
         const tl = getTl();
+        // Idempotency: if this cliUuid already exists on the timeline, skip entirely.
+        // Desktop Tauri emits don't carry _seq (only WS broadcasts do), so live events
+        // never advance _lastProcessedSeq. On switch-away → switch-back, the memCache
+        // snapshot has a stale seq and catchup re-fetches the same user_message that
+        // was already merged into the optimistic entry. Without this guard, the
+        // content-dedup below would miss (the existing entry now has cliUuid) and a
+        // duplicate user bubble would be appended.
+        if (ev.uuid && tl.some((e) => e.kind === "user" && e.cliUuid === ev.uuid)) {
+          break;
+        }
         // Content-based dedup against unconfirmed optimistic entries (no cliUuid).
         //
         // Runs in BOTH live and replay modes: the dedup target is restricted to

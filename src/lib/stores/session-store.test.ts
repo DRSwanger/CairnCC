@@ -739,6 +739,46 @@ describe("SessionStore reducer", () => {
       const users = store.timeline.filter((e) => e.kind === "user");
       expect(users).toHaveLength(1);
     });
+
+    it("does not duplicate user_message when desktop live event applies then catchup re-fetches", () => {
+      // Regression: desktop Tauri's `bus-event` emit does NOT include `_seq`
+      // (only WS broadcast does — see broadcaster.rs persist_and_emit).
+      // Live events therefore never advance _lastProcessedSeq. When the user
+      // switches away mid-thinking, the memCache snapshot retains a stale seq;
+      // on switch-back, catchup via getBusEvents re-fetches the user_message
+      // and the prior content-dedup (gated on !cliUuid) missed because the
+      // optimistic entry was already merged with cliUuid by the live event.
+      // Fix: skip user_message reduction entirely when ev.uuid is already
+      // present as cliUuid on the timeline.
+      store.run = makeRun("run-desktop");
+      store.phase = "running";
+      // Step 1: optimistic user push (from sendMessage).
+      // @ts-expect-error private
+      store._pushOptimisticUser("hello world", []);
+      // Step 2: live event (no _seq — desktop Tauri emit) — merges cliUuid.
+      const liveEv = {
+        type: "user_message",
+        run_id: "run-desktop",
+        text: "hello world",
+        uuid: "cli-desktop-uuid",
+      } as unknown as BusEvent;
+      store.applyEvent(liveEv);
+      // Sanity: one entry with cliUuid merged in.
+      let users = store.timeline.filter((e) => e.kind === "user");
+      expect(users).toHaveLength(1);
+      expect((users[0] as { cliUuid?: string }).cliUuid).toBe("cli-desktop-uuid");
+      // Step 3: switch-back catchup re-fetches the same event WITH _seq from disk.
+      const catchupEv = {
+        type: "user_message",
+        run_id: "run-desktop",
+        text: "hello world",
+        uuid: "cli-desktop-uuid",
+        _seq: 7,
+      } as unknown as BusEvent;
+      store.applyEventBatch([catchupEv]);
+      users = store.timeline.filter((e) => e.kind === "user");
+      expect(users).toHaveLength(1);
+    });
   });
 
   // ── applyEvent (single live event) ──
