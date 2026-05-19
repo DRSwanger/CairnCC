@@ -61,15 +61,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-5
-          releaseName: "CairnCC v__VERSION__-5"
+          tagName: v__VERSION__-6
+          releaseName: "CairnCC v__VERSION__-6"
           releaseBody: |
-            ## v0.1.72-5 — Scroll drift + duplicate user bubble
+            ## v0.1.72-6 — Bulk-load scroll drift (intermittent)
 
-            - **Bulk history load no longer drifts the viewport upward through history.** Even with the entry animation suppressed in -4, each progressive growth chunk prepended ~200 older entries above the viewport while `scrollTop` stayed constant, so the visible window drifted up as `scrollHeight` grew (Dallas: "text flying by"). Now `growRenderLimitChunked` re-pins `scrollTop = scrollHeight` on every chunk's paint when `isChatAutoScroll` is true, not just at the final step.
-            - **Duplicate user bubble after switch-during-thinking.** Desktop Tauri's `bus-event` emit doesn't include `_seq` (only WS broadcasts do — see `broadcaster.rs::persist_and_emit`), so live events never advance `_lastProcessedSeq`. When the user switched away from an actively-thinking session and came back, the memCache snapshot retained a stale seq and catchup re-fetched the same `user_message` that was already merged into the optimistic entry. Content-dedup missed it (existing entry now had `cliUuid`) and appended a second bubble. Added uuid-based idempotency: skip the reducer entirely when `ev.uuid` already exists as `cliUuid` on the timeline.
+            - **Intermittent scroll drift on bulk history load.** -5 added a per-chunk `scrollTop = scrollHeight` re-pin, but pinned from inside a `requestAnimationFrame` callback. Svelte 5 doesn't guarantee the `$state` flush has run by then, so on some loads we read the pre-grow `scrollHeight` and pinned to the OLD bottom — then the new entries painted and the viewport ended up mid-history. `growRenderLimitChunked` now `await tick()`s before reading `scrollHeight`, so the flush is guaranteed before the pin.
 
-            Carries -4 scroll-animation fix, -3 session-switch race fixes, and v0.1.72 session-log repair unchanged.
+            Carries -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true

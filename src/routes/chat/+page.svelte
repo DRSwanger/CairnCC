@@ -782,26 +782,25 @@
    *  of entries) doesn't mount every ChatMessage in one frame and stall the main
    *  thread. Final step bumps to Infinity so existing `renderLimit === Infinity`
    *  checks (scrollToTool, scrollToMessage) still recognize "fully rendered". */
-  function growRenderLimitChunked(gen: number) {
+  async function growRenderLimitChunked(gen: number) {
     if (gen !== progressiveGen) return;
     const total = filteredTimeline.length;
     if (renderLimit >= total) {
       renderLimit = Infinity;
-      // Growth done — flip historyLoaded so future live entries can animate in.
-      // Holding it false during progressive growth prevents bulk-prepended older
-      // messages from flying in (which Dallas saw as "scrolling through hours of history").
       historyLoaded = true;
-      // Keep pinned to bottom on initial load — the just-mounted older entries
-      // grew scrollHeight above us; without this we'd be left mid-history.
+      // tick() before pinning: Svelte 5 $state flush isn't guaranteed inside an
+      // rAF callback, so reading scrollHeight too early can return the pre-grow
+      // value — we'd then pin to the OLD bottom and the new entries paint with
+      // the viewport mid-history.
+      await tick();
       if (chatAreaRef) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
       return;
     }
     renderLimit = Math.min(renderLimit + RENDER_GROW_CHUNK, total);
-    requestAnimationFrame(() => {
-      if (gen !== progressiveGen) return;
-      if (chatAreaRef && isChatAutoScroll) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
-      requestAnimationFrame(() => growRenderLimitChunked(gen));
-    });
+    await tick();
+    if (gen !== progressiveGen) return;
+    if (chatAreaRef && isChatAutoScroll) chatAreaRef.scrollTop = chatAreaRef.scrollHeight;
+    requestAnimationFrame(() => growRenderLimitChunked(gen));
   }
 
   /**
