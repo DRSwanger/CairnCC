@@ -843,6 +843,62 @@ describe("SessionStore reducer", () => {
       });
       expect(store.streamingText).toBe("");
     });
+
+    describe("streamingTargetId (drip-target routing)", () => {
+      it("sets streamingTargetId to the new entry on message_complete", () => {
+        store.run = makeRun("run-1");
+        store.phase = "running";
+        store.applyEventBatch([
+          { type: "message_delta", run_id: "run-1", text: "hello" },
+          { type: "message_complete", run_id: "run-1", message_id: "m1", text: "hello" },
+        ] as BusEvent[]);
+        expect(store.streamingTargetId).toBe("m1");
+      });
+
+      it("clears streamingTargetId on next message_delta so a continuation stream is not routed into the prior completed bubble", () => {
+        // Repro: assistant_part1 completes → tool runs → assistant_part2 begins
+        // streaming. Without the clear, chat/+page.svelte's streamingEntryId
+        // would still point at m1 and dump part2's deltas into m1's bubble.
+        store.run = makeRun("run-1");
+        store.phase = "running";
+        store.applyEventBatch([
+          { type: "user_message", run_id: "run-1", text: "go" },
+          { type: "message_delta", run_id: "run-1", text: "part1" },
+          { type: "message_complete", run_id: "run-1", message_id: "m1", text: "part1" },
+        ] as BusEvent[]);
+        expect(store.streamingTargetId).toBe("m1");
+
+        // Continuation: next assistant turn begins streaming. The first delta
+        // of the new turn must release the prior target.
+        store.applyEvent({
+          type: "message_delta",
+          run_id: "run-1",
+          text: "part2-chunk",
+        });
+        expect(store.streamingTargetId).toBeNull();
+        expect(store.streamingText).toBe("part2-chunk");
+      });
+
+      it("subagent message_delta does not clear main streamingTargetId", () => {
+        // Subagent deltas route to the parent tool's subTimeline and must not
+        // disturb the main session's drip target.
+        store.run = makeRun("run-1");
+        store.phase = "running";
+        store.applyEventBatch([
+          { type: "message_delta", run_id: "run-1", text: "main" },
+          { type: "message_complete", run_id: "run-1", message_id: "m1", text: "main" },
+        ] as BusEvent[]);
+        expect(store.streamingTargetId).toBe("m1");
+
+        store.applyEvent({
+          type: "message_delta",
+          run_id: "run-1",
+          parent_tool_use_id: "tool-x",
+          text: "subagent text",
+        });
+        expect(store.streamingTargetId).toBe("m1");
+      });
+    });
   });
 
   // ── Raw event ──

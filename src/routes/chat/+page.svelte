@@ -462,28 +462,14 @@
     lastStreamingText = "";
   });
   /**
-   * ID of the last assistant timeline entry that is actively streaming.
-   * This entry's ChatMessage receives streaming props so MarkdownContent renders
-   * with the drip animation — no separate streaming container, no handoff flash.
+   * ID of the assistant timeline entry whose drip is currently draining.
+   * Set by the store on message_complete (the just-pushed entry) and cleared
+   * on the next message_delta (a new turn beginning). Sourcing this from the
+   * store — instead of "last assistant after last user" — prevents a
+   * continuation stream (after a tool_use, no user message between) from
+   * being routed into the previous segment's bubble.
    */
-  let streamingEntryId = $derived.by(() => {
-    const activelyStreaming = store.isRunning && runHasStreamed;
-    if (!store.streamingText && !streamingDraining && !activelyStreaming) return null;
-    const tl = filteredTimeline;
-    // Find the last user entry, then look for an assistant entry after it.
-    // This prevents injecting streaming text into a previous turn's assistant message.
-    let lastUserIdx = -1;
-    for (let i = tl.length - 1; i >= 0; i--) {
-      if (tl[i].kind === "user") {
-        lastUserIdx = i;
-        break;
-      }
-    }
-    for (let i = tl.length - 1; i > lastUserIdx; i--) {
-      if (tl[i].kind === "assistant") return tl[i].id;
-    }
-    return null;
-  });
+  let streamingEntryId = $derived(store.streamingTargetId);
 
   let filteredTimeline = $derived.by(() => {
     let tl = store.timeline;

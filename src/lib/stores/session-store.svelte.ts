@@ -253,6 +253,11 @@ export class SessionStore {
   run: TaskRun | null = $state(null);
   timeline: TimelineEntry[] = $state([]);
   streamingText: string = $state("");
+  /** id of the just-completed assistant entry whose drip is still draining.
+   *  Set on message_complete (main session, fresh entry); cleared on the next
+   *  message_delta so a continuation stream isn't routed into the prior bubble.
+   *  Consumed by chat/+page.svelte's streamingEntryId derived. */
+  streamingTargetId: string | null = $state(null);
   /** Accumulated thinking/reasoning text (extended thinking). Cleared on new turn. */
   thinkingText: string = $state("");
   /** Timestamp (ms) of the first thinking_delta event in the current turn. 0 = no thinking yet. */
@@ -1401,6 +1406,7 @@ export class SessionStore {
   private _clearContentState(): void {
     this.timeline = [];
     this.streamingText = "";
+    this.streamingTargetId = null;
     this.thinkingText = "";
     this.thinkingStartMs = 0;
     this.thinkingEndMs = 0;
@@ -1502,6 +1508,7 @@ export class SessionStore {
       tools: this.tools,
       hookEvents: this.hookEvents,
       streamingText: this.streamingText,
+      streamingTargetId: this.streamingTargetId,
       thinkingText: this.thinkingText,
       model: this.model,
       usage: this.usage,
@@ -1600,6 +1607,7 @@ export class SessionStore {
       // another session's text. Live catchup events will repopulate if the run
       // is still actively thinking.
       this.streamingText = "";
+      this.streamingTargetId = null;
       this.thinkingText = "";
       this.model = (obj.model as string) ?? "";
       this.usage = obj.usage as UsageState;
@@ -1782,6 +1790,7 @@ export class SessionStore {
           // repopulate them; for non-running, they should be empty anyway.
           this.thinkingText = "";
           this.streamingText = "";
+          this.streamingTargetId = null;
 
           // Phase may need correction for idle — _tryApplySnapshot restores
           // timeline but not phase; phase above was set from run.status.
@@ -2324,6 +2333,7 @@ export class SessionStore {
           // Clear transient mid-turn buffers to avoid ghost thinking bubble from stale cache.
           this.thinkingText = "";
           this.streamingText = "";
+          this.streamingTargetId = null;
           // Catchup any events appended since cached seq (usually zero for terminal
           // sessions being resumed, but covers idle→event races).
           const catchupEvents = await api.getBusEvents(runId, this._lastProcessedSeq);
@@ -2853,6 +2863,11 @@ export class SessionStore {
         if (this.thinkingStartMs && !this.thinkingEndMs) {
           this.thinkingEndMs = eventTsMs(ev);
         }
+        // A new turn is starting — the prior message_complete's drip target
+        // is no longer the current stream. Clearing here keeps the in-flight
+        // text rendered in the fallback container instead of overwriting the
+        // previous (completed) assistant bubble.
+        if (this.streamingTargetId !== null) this.streamingTargetId = null;
         if (ctx) ctx.streamText += ev.text;
         else this.streamingText += ev.text;
         break;
@@ -2965,6 +2980,12 @@ export class SessionStore {
         }
         this.thinkingStartMs = 0;
         this.thinkingEndMs = 0;
+        // Mark this entry as the drip-drain target. chat/+page.svelte's
+        // streamingEntryId points here so the just-finished drip continues in
+        // *this* bubble. A subsequent message_delta clears this back to null
+        // so the next turn streams into the fallback container instead of
+        // overwriting this completed bubble.
+        this.streamingTargetId = ev.message_id;
 
         const entry: TimelineEntry = {
           kind: "assistant",

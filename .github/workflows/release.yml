@@ -61,14 +61,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-6
-          releaseName: "CairnCC v__VERSION__-6"
+          tagName: v__VERSION__-7
+          releaseName: "CairnCC v__VERSION__-7"
           releaseBody: |
-            ## v0.1.72-6 — Bulk-load scroll drift (intermittent)
+            ## v0.1.72-7 — Continuation-stream wrong-bubble fix
 
-            - **Intermittent scroll drift on bulk history load.** -5 added a per-chunk `scrollTop = scrollHeight` re-pin, but pinned from inside a `requestAnimationFrame` callback. Svelte 5 doesn't guarantee the `$state` flush has run by then, so on some loads we read the pre-grow `scrollHeight` and pinned to the OLD bottom — then the new entries painted and the viewport ended up mid-history. `growRenderLimitChunked` now `await tick()`s before reading `scrollHeight`, so the flush is guaranteed before the pin.
+            - **Wrong-bubble drip on multi-part turns.** When Claude resumed after a tool_use (no user message between), the next assistant segment's streaming deltas were rendered *inside the previous (completed) assistant's bubble*. Most visible on session switch-back: the catchup applied the whole part-2 backlog in one batch, so you'd see the prior turn's final text replaced by part-2 dripping in.
 
-            Carries -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
+              Root cause: `chat/+page.svelte`'s `streamingEntryId` blindly picked "last assistant after last user," and there is no `message_start` event to distinguish "drip-drain the just-completed entry" from "stream a fresh message." The store now publishes `streamingTargetId`, set on `message_complete` and cleared on the next non-subagent `message_delta`. The page derives `streamingEntryId` directly from that flag, so continuation streams render in the fallback container until their own `message_complete` lands.
+
+            Carries -6 (await tick before scrollHeight pin), -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true
