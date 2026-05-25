@@ -12,6 +12,11 @@ import { assertTransition, canResumeRun, getResumeWarning, classifyError } from 
 vi.mock("$lib/api", () => ({
   getRun: vi.fn(),
   getBusEvents: vi.fn(),
+  // Tail loader delegates to getBusEvents in the test harness so existing
+  // snapshot-path tests (which stub getBusEvents) keep working unchanged.
+  // The "tail-vs-full" split is exercised by Rust-side tail_tests and the
+  // dedicated tail tests below.
+  getBusEventsTail: vi.fn(),
   getRunEvents: vi.fn(),
   startRun: vi.fn(),
   startSession: vi.fn(),
@@ -4243,6 +4248,7 @@ describe("SessionStore reducer", () => {
     const mockDeleteSnapshot = snapshotCache.deleteSnapshot as ReturnType<typeof vi.fn>;
     const mockGetRun = api.getRun as ReturnType<typeof vi.fn>;
     const mockGetBusEvents = api.getBusEvents as ReturnType<typeof vi.fn>;
+    const mockGetBusEventsTail = api.getBusEventsTail as ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
       mockReadSnapshot.mockReset().mockResolvedValue(null);
@@ -4250,6 +4256,14 @@ describe("SessionStore reducer", () => {
       mockDeleteSnapshot.mockReset().mockResolvedValue(undefined);
       mockGetRun.mockReset();
       mockGetBusEvents.mockReset().mockResolvedValue([]);
+      // Cold path now calls getBusEventsTail. Defer to getBusEvents so these
+      // tests keep treating mocked event arrays as the full load — Phase 1's
+      // tail vs full distinction is exercised separately (Rust + dedicated tests below).
+      // has_older=false keeps snapshot writes enabled along the existing assertions.
+      mockGetBusEventsTail.mockReset().mockImplementation(async (id: string) => {
+        const events = await mockGetBusEvents(id);
+        return { events, has_older: false, oldest_loaded_seq: 0 };
+      });
     });
 
     describe("snapshot hit vs miss deep comparison", () => {
@@ -4440,6 +4454,36 @@ describe("SessionStore reducer", () => {
         expect(mockReadSnapshot).toHaveBeenCalled();
         expect(mockGetBusEvents).toHaveBeenCalledWith("run-snap-3");
         expect(testStore.timeline.length).toBeGreaterThan(0);
+        warnSpy.mockClear();
+      });
+
+      it("partial tail load: stores has_older + skips snapshot write", async () => {
+        // Cold load returning has_older=true → frontend must record the watermark
+        // AND must not persist a snapshot (truncated state would mask the missing
+        // older events on the next cold load).
+        vi.useFakeTimers();
+        const termRun = makeRun("run-tail-1", { status: "stopped", agent: "claude" });
+        mockGetRun.mockResolvedValue(termRun);
+        mockReadSnapshot.mockResolvedValue(null);
+
+        mockGetBusEventsTail.mockReset().mockResolvedValue({
+          events: simpleChatEvents,
+          has_older: true,
+          oldest_loaded_seq: 42,
+        });
+
+        const testStore = new SessionStore();
+        await testStore.loadRun("run-tail-1");
+
+        expect(mockGetBusEventsTail).toHaveBeenCalledWith("run-tail-1");
+        expect(testStore.hasOlder).toBe(true);
+        expect(testStore.oldestLoadedSeq).toBe(42);
+        expect(testStore.timeline.length).toBeGreaterThan(0);
+        // Flush deferred _saveSnapshotToIdb (setTimeout(0))
+        vi.advanceTimersByTime(1);
+        // Partial → snapshot write MUST be skipped.
+        expect(mockWriteSnapshot).not.toHaveBeenCalled();
+        vi.useRealTimers();
         warnSpy.mockClear();
       });
     });

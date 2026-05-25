@@ -609,6 +609,163 @@ pub fn count_user_messages(run_id: &str) -> (u32, u32) {
     (total, normal)
 }
 
+/// Result of a turn-bounded tail load: only the last K turns of conversation,
+/// plus the leading `session_init` and the last pre-window `usage_update` so the
+/// reducer has cumulative totals to anchor against.
+#[derive(serde::Serialize)]
+pub struct BusEventsTail {
+    pub events: Vec<serde_json::Value>,
+    /// True if at least one event was dropped before the window — frontend uses
+    /// this to gate the "load older" affordance (Phase 2 — not yet wired up).
+    pub has_older: bool,
+    /// Lowest seq in the returned `events` slice. 0 if `events` is empty.
+    /// Used by the frontend as the upper bound for a future range query.
+    pub oldest_loaded_seq: u64,
+}
+
+/// Read the last `turns` user-message-bounded turns from a run's events.jsonl.
+///
+/// "Turn" here = events between two consecutive `user_message` events. Slicing at
+/// the user_message boundary guarantees we never split a turn mid-tool, so the
+/// reducer's tool_start ↔ tool_end correlation is preserved within the window.
+///
+/// To keep store metadata correct on a truncated load we always inject:
+///   - the first `session_init` event (carries cwd, agent, mcp, skills, model)
+///   - the last `usage_update` event strictly before the window (cumulative totals)
+///
+/// Returns `events` ordered by ascending seq so the frontend reducer can apply
+/// them in one batch without violating `_lastProcessedSeq` monotonicity.
+pub fn list_bus_events_tail(run_id: &str, turns: usize) -> BusEventsTail {
+    log::debug!(
+        "[storage/events] list_bus_events_tail: run_id={}, turns={}",
+        run_id,
+        turns
+    );
+    let path = events_path(run_id);
+    if !path.exists() {
+        return BusEventsTail {
+            events: vec![],
+            has_older: false,
+            oldest_loaded_seq: 0,
+        };
+    }
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => {
+            return BusEventsTail {
+                events: vec![],
+                has_older: false,
+                oldest_loaded_seq: 0,
+            }
+        }
+    };
+
+    // First pass: cheap substring pre-filter to locate user_message line indices.
+    // 99%+ of lines don't contain "user_message" so we avoid JSON parsing them.
+    let lines: Vec<&str> = content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    let user_msg_indices: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.contains("\"user_message\""))
+        .map(|(i, _)| i)
+        .collect();
+
+    let start_idx = if turns == 0 || user_msg_indices.len() <= turns {
+        0
+    } else {
+        user_msg_indices[user_msg_indices.len() - turns]
+    };
+
+    // Helper: shape a raw envelope line into the same event shape `list_bus_events`
+    // emits (filtered to REPLAY_TYPES, with `ts` and `_seq` injected).
+    let shape_envelope = |line: &str| -> Option<(u64, serde_json::Value)> {
+        let v: serde_json::Value = serde_json::from_str(line).ok()?;
+        if !v.get("_bus")?.as_bool()? {
+            return None;
+        }
+        let seq = v.get("seq")?.as_u64()?;
+        let event = v.get("event")?;
+        let etype = event.get("type")?.as_str()?;
+        if !REPLAY_TYPES.contains(&etype) {
+            return None;
+        }
+        let mut event = event.clone();
+        if let Some(obj) = event.as_object_mut() {
+            if let Some(ts) = v.get("ts") {
+                obj.insert("ts".to_string(), ts.clone());
+            }
+            obj.insert("_seq".to_string(), serde_json::Value::Number(seq.into()));
+        }
+        Some((seq, event))
+    };
+
+    // Second pass: scan the dropped prefix for the must-keep events.
+    let mut session_init: Option<(u64, serde_json::Value)> = None;
+    let mut last_usage: Option<(u64, serde_json::Value)> = None;
+    for line in &lines[..start_idx] {
+        // Cheap pre-filter — neither tag appears in most lines.
+        let has_init = line.contains("\"session_init\"");
+        let has_usage = line.contains("\"usage_update\"");
+        if !has_init && !has_usage {
+            continue;
+        }
+        let Some((seq, event)) = shape_envelope(line) else {
+            continue;
+        };
+        let etype = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        if etype == "session_init" && session_init.is_none() {
+            session_init = Some((seq, event));
+        } else if etype == "usage_update" {
+            last_usage = Some((seq, event));
+        }
+    }
+
+    // Build output: prepended must-keeps (in seq order), then the window.
+    let mut out: Vec<serde_json::Value> = Vec::with_capacity(lines.len() - start_idx + 2);
+    let mut oldest_loaded_seq: u64 = u64::MAX;
+    let record = |out: &mut Vec<serde_json::Value>,
+                  oldest: &mut u64,
+                  pair: (u64, serde_json::Value)| {
+        if pair.0 < *oldest {
+            *oldest = pair.0;
+        }
+        out.push(pair.1);
+    };
+
+    // session_init (lowest seq) must come first so the store's metadata fields
+    // are populated before any window event references them.
+    let mut prefix_pairs: Vec<(u64, serde_json::Value)> = Vec::new();
+    if let Some(p) = session_init {
+        prefix_pairs.push(p);
+    }
+    if let Some(p) = last_usage {
+        prefix_pairs.push(p);
+    }
+    prefix_pairs.sort_by_key(|(seq, _)| *seq);
+    for p in prefix_pairs {
+        record(&mut out, &mut oldest_loaded_seq, p);
+    }
+
+    for line in &lines[start_idx..] {
+        if let Some(p) = shape_envelope(line) {
+            record(&mut out, &mut oldest_loaded_seq, p);
+        }
+    }
+
+    if out.is_empty() {
+        oldest_loaded_seq = 0;
+    }
+
+    BusEventsTail {
+        events: out,
+        has_older: start_idx > 0,
+        oldest_loaded_seq,
+    }
+}
+
 pub fn list_bus_events(run_id: &str, since_seq: Option<u64>) -> Vec<serde_json::Value> {
     log::debug!(
         "[storage/events] list_bus_events: run_id={}, since_seq={:?}",
@@ -656,4 +813,199 @@ pub fn list_bus_events(run_id: &str, since_seq: Option<u64>) -> Vec<serde_json::
             None
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tail_tests {
+    use super::*;
+
+    /// Write a synthetic events.jsonl into a unique sentinel run dir and return run_id.
+    /// Uses the real on-disk runs_dir like `repair::restore_round_trip` — confined to
+    /// a uuid-namespaced id so it can't collide with another run.
+    fn write_synthetic(lines: &[serde_json::Value]) -> String {
+        let run_id = format!("test-tail-{}", uuid::Uuid::new_v4());
+        let dir = super::super::run_dir(&run_id);
+        super::super::ensure_dir(&dir).expect("mkdir test run dir");
+        let path = events_path(&run_id);
+        let mut f = std::fs::File::create(&path).expect("create events.jsonl");
+        for v in lines {
+            writeln!(f, "{}", serde_json::to_string(v).unwrap()).unwrap();
+        }
+        run_id
+    }
+
+    fn envelope(seq: u64, event: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "_bus": true,
+            "seq": seq,
+            "ts": format!("2026-05-15T00:00:{:02}Z", seq.min(59)),
+            "event": event,
+        })
+    }
+
+    fn user_msg(run_id: &str, text: &str) -> serde_json::Value {
+        serde_json::json!({ "type": "user_message", "run_id": run_id, "text": text })
+    }
+
+    fn msg_complete(run_id: &str, mid: &str) -> serde_json::Value {
+        serde_json::json!({ "type": "message_complete", "run_id": run_id, "message_id": mid })
+    }
+
+    fn tool_pair(
+        run_id: &str,
+        tu_id: &str,
+    ) -> (serde_json::Value, serde_json::Value) {
+        let start = serde_json::json!({
+            "type": "tool_start", "run_id": run_id, "tool_use_id": tu_id, "tool_name": "Bash",
+        });
+        let end = serde_json::json!({
+            "type": "tool_end", "run_id": run_id, "tool_use_id": tu_id, "tool_name": "Bash",
+            "output": "", "status": "success",
+        });
+        (start, end)
+    }
+
+    fn session_init(run_id: &str) -> serde_json::Value {
+        serde_json::json!({ "type": "session_init", "run_id": run_id, "cwd": "/tmp", "model": "" })
+    }
+
+    fn usage_update(run_id: &str, cost: f64) -> serde_json::Value {
+        serde_json::json!({
+            "type": "usage_update", "run_id": run_id,
+            "input_tokens": 0u64, "output_tokens": 0u64,
+            "total_cost_usd": cost,
+        })
+    }
+
+    #[test]
+    fn empty_file_returns_empty_tail() {
+        let run_id = format!("test-tail-{}", uuid::Uuid::new_v4());
+        let tail = list_bus_events_tail(&run_id, 5);
+        assert!(tail.events.is_empty());
+        assert!(!tail.has_older);
+        assert_eq!(tail.oldest_loaded_seq, 0);
+    }
+
+    #[test]
+    fn short_session_returns_everything_no_older() {
+        let rid = "rid-short";
+        let lines = vec![
+            envelope(1, session_init(rid)),
+            envelope(2, user_msg(rid, "hi")),
+            envelope(3, msg_complete(rid, "m1")),
+        ];
+        let run_id = write_synthetic(&lines);
+        let tail = list_bus_events_tail(&run_id, 5);
+        assert_eq!(tail.events.len(), 3);
+        assert!(!tail.has_older);
+        assert_eq!(tail.oldest_loaded_seq, 1);
+    }
+
+    #[test]
+    fn turn_bounded_slice_drops_old_turns_and_flags_has_older() {
+        let rid = "rid-many";
+        let mut seq = 1u64;
+        let mut next = |v: serde_json::Value| {
+            let e = envelope(seq, v);
+            seq += 1;
+            e
+        };
+        let mut lines = vec![next(session_init(rid))];
+        // 5 turns; each is [user, tool_start, tool_end, message_complete].
+        // After turns=2 we expect the slice to start at user_msg#4 and to keep
+        // the start/end pair of turn 4 + turn 5 intact (no orphaned tool_end).
+        for i in 0..5 {
+            let tu = format!("tu-{}", i);
+            let (ts, te) = tool_pair(rid, &tu);
+            lines.push(next(user_msg(rid, &format!("turn {}", i))));
+            lines.push(next(ts));
+            lines.push(next(te));
+            lines.push(next(msg_complete(rid, &format!("m{}", i))));
+        }
+        // A late usage_update before the window starts (will be kept as must-keep).
+        // Note: tweak ordering so an earlier usage_update is dropped — only the
+        // most recent pre-window one should appear.
+        let usage_seq = lines.last().unwrap()["seq"].as_u64().unwrap();
+        // Re-emit: insert a usage_update at seq=2 and another at seq=10; we want
+        // seq=10 to win as the kept one.
+        // For simplicity here, just check the chosen one comes from before window.
+        let _ = usage_seq;
+
+        let run_id = write_synthetic(&lines);
+        let tail = list_bus_events_tail(&run_id, 2);
+
+        assert!(tail.has_older, "older turns should be flagged");
+        // 2 turns × 4 events + session_init prefix = 9 events.
+        assert_eq!(tail.events.len(), 9);
+
+        // session_init must be present (must-keep prefix) and come first.
+        let first_type = tail.events[0]["type"].as_str().unwrap();
+        assert_eq!(first_type, "session_init");
+
+        // The window's first user_message should be turn 3 (zero-indexed),
+        // since turns=2 picks the last two of [0,1,2,3,4] = turns 3 and 4.
+        let first_user = tail
+            .events
+            .iter()
+            .find(|e| e["type"] == "user_message")
+            .expect("at least one user_message in window");
+        assert_eq!(first_user["text"].as_str().unwrap(), "turn 3");
+
+        // No orphaned tool_end: every tool_end's tu_id must have a matching
+        // tool_start in the same slice. Guards the "never split a turn mid-tool"
+        // invariant that the reducer's tool index relies on.
+        let starts: std::collections::HashSet<&str> = tail
+            .events
+            .iter()
+            .filter(|e| e["type"] == "tool_start")
+            .map(|e| e["tool_use_id"].as_str().unwrap())
+            .collect();
+        for e in &tail.events {
+            if e["type"] == "tool_end" {
+                let tu = e["tool_use_id"].as_str().unwrap();
+                assert!(starts.contains(tu), "orphaned tool_end for {}", tu);
+            }
+        }
+    }
+
+    #[test]
+    fn last_pre_window_usage_update_is_kept() {
+        let rid = "rid-usage";
+        // Pattern: session_init, user1, usage_update (cost=0.10),
+        //          user2, usage_update (cost=0.50),
+        //          user3, user4, user5 (window with turns=2 = user4 + user5)
+        let lines = vec![
+            envelope(1, session_init(rid)),
+            envelope(2, user_msg(rid, "u1")),
+            envelope(3, usage_update(rid, 0.10)),
+            envelope(4, user_msg(rid, "u2")),
+            envelope(5, usage_update(rid, 0.50)),
+            envelope(6, user_msg(rid, "u3")),
+            envelope(7, user_msg(rid, "u4")),
+            envelope(8, user_msg(rid, "u5")),
+        ];
+        let run_id = write_synthetic(&lines);
+        let tail = list_bus_events_tail(&run_id, 2);
+
+        assert!(tail.has_older);
+        let usages: Vec<f64> = tail
+            .events
+            .iter()
+            .filter(|e| e["type"] == "usage_update")
+            .filter_map(|e| e["total_cost_usd"].as_f64())
+            .collect();
+        // Only the LAST pre-window usage_update (cost=0.50) should be retained;
+        // the earlier one (0.10) is superseded so dropping it is safe and we
+        // don't want to bloat the must-keep prefix.
+        assert_eq!(usages, vec![0.50]);
+
+        // Window itself: turns=2 from [u1,u2,u3,u4,u5] → last 2 user messages = u4, u5.
+        let user_texts: Vec<&str> = tail
+            .events
+            .iter()
+            .filter(|e| e["type"] == "user_message")
+            .map(|e| e["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(user_texts, vec!["u4", "u5"]);
+    }
 }

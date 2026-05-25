@@ -398,6 +398,16 @@ export class SessionStore {
   /** _lastProcessedSeq at last snapshot write — throttles idle snapshot rewrites. */
   private _lastSnapshotSeq = 0;
 
+  /** Tail-load watermarks. `hasOlder` = events exist before `oldestLoadedSeq`
+   *  that weren't fetched; Phase 2 "load older" will use these to query a range.
+   *  Reactive so the UI can show/hide the load-older affordance. */
+  hasOlder: boolean = $state(false);
+  oldestLoadedSeq: number = $state(0);
+  /** When true, the current load is partial (tail-only); skip IDB snapshot writes
+   *  so we don't cache a truncated state. Snapshot writes only happen for full
+   *  loads — short sessions where the whole thing fit in the tail window. */
+  private _partialLoad = false;
+
   /** In-memory session cache: runId → serialized snapshot object. Skips disk read
    *  on session switch. Capped LRU (insertion-order Map) to bound memory. */
   private _memCache = new Map<string, Record<string, unknown>>();
@@ -1478,6 +1488,9 @@ export class SessionStore {
     this._toolTlIndex.clear();
     this._toolHeIndex.clear();
     this._lastSnapshotSeq = 0;
+    this.hasOlder = false;
+    this.oldestLoadedSeq = 0;
+    this._partialLoad = false;
   }
 
   /** Optimistically remove an elicitation after responding.
@@ -1668,6 +1681,14 @@ export class SessionStore {
    *  Caller must check write guard before calling. */
   private _saveSnapshotToIdb(runId: string): void {
     if (!this.run) return;
+    // Never cache a partial (tail-loaded) state. The snapshot path is an
+    // optimization for "next time, skip the disk replay" — if we serialized a
+    // truncated timeline, the next cold load would hit IDB, apply it, and
+    // believe it has full history, masking the events that are still on disk.
+    if (this._partialLoad) {
+      dbg("snapshot", "save:skipped (partial load)", { runId });
+      return;
+    }
     const runStatus = this.run.status;
     const gen = this._loadGen;
     setTimeout(() => {
@@ -1895,13 +1916,19 @@ export class SessionStore {
         }
 
         if (!snapshotHit) {
-          // Miss or snapshot corrupted → normal path
-          const busEvents = await api.getBusEvents(id);
+          // Miss or snapshot corrupted → tail-load path. Backend returns only
+          // the last K turns + must-keep prefix (session_init, last usage_update),
+          // so reducer/IPC cost is O(K turns) instead of O(N events). For long
+          // sessions (thousands of events) this is the dominant load-time win.
+          const tail = await api.getBusEventsTail(id);
           if (gen !== this._loadGen) {
-            dbg("store", "stale after getBusEvents, gen=", gen);
+            dbg("store", "stale after getBusEventsTail, gen=", gen);
             return;
           }
-          reducerMs = await this.applyEventBatchChunked(busEvents, {
+          this.hasOlder = tail.has_older;
+          this.oldestLoadedSeq = tail.oldest_loaded_seq;
+          this._partialLoad = tail.has_older;
+          reducerMs = await this.applyEventBatchChunked(tail.events, {
             replayOnly: isTerminal,
             gen,
           });
@@ -1909,11 +1936,24 @@ export class SessionStore {
             dbg("store", "stale after chunked replay, gen=", gen);
             return;
           }
-          this._wsSubscribeAfterLoad(id, busEvents);
-          // Write guard: distinguish "legit empty session" from "reducer anomaly"
-          if (snapshotEligible && (this.timeline.length > 0 || busEvents.length === 0)) {
+          this._wsSubscribeAfterLoad(id, tail.events);
+          // Snapshot write is only safe for full loads — a partial tail would
+          // cache truncated state and fool the next cold load into thinking it
+          // has the whole history.
+          if (
+            !this._partialLoad &&
+            snapshotEligible &&
+            (this.timeline.length > 0 || tail.events.length === 0)
+          ) {
             this._saveSnapshotToIdb(id);
           }
+          dbg("store", "loadRun tail", {
+            events: tail.events.length,
+            hasOlder: tail.has_older,
+            oldestSeq: tail.oldest_loaded_seq,
+            reducer: Math.round(reducerMs),
+            entries: this.timeline.length,
+          });
         }
 
         this._settleLoad();

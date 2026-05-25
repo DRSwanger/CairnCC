@@ -541,6 +541,17 @@ export async function getBusEvents(id: string, sinceSeq?: number): Promise<BusEv
   return invoke<BusEvent[]>("get_bus_events", { id, sinceSeq });
 }
 
+export interface BusEventsTail {
+  events: BusEvent[];
+  has_older: boolean;
+  oldest_loaded_seq: number;
+}
+
+export async function getBusEventsTail(id: string, turns?: number): Promise<BusEventsTail> {
+  dbg("api", "getBusEventsTail", { id, turns });
+  return invoke<BusEventsTail>("get_bus_events_tail", { id, turns });
+}
+
 export async function getToolResult(
   runId: string,
   toolUseId: string,

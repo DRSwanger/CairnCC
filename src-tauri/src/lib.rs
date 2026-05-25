@@ -241,6 +241,7 @@ pub fn run() {
             commands::session::send_session_control,
             commands::session::broadcast_mcp_toggle,
             commands::session::get_bus_events,
+            commands::session::get_bus_events_tail,
             commands::session::restore_trimmed_tool_output,
             commands::session::fork_session,
             commands::session::side_question,

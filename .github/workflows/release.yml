@@ -61,16 +61,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-7
-          releaseName: "CairnCC v__VERSION__-7"
+          tagName: v__VERSION__-8
+          releaseName: "CairnCC v__VERSION__-8"
           releaseBody: |
-            ## v0.1.72-7 — Continuation-stream wrong-bubble fix
+            ## v0.1.72-8 — Tail-load: long sessions open in O(last 15 turns)
 
-            - **Wrong-bubble drip on multi-part turns.** When Claude resumed after a tool_use (no user message between), the next assistant segment's streaming deltas were rendered *inside the previous (completed) assistant's bubble*. Most visible on session switch-back: the catchup applied the whole part-2 backlog in one batch, so you'd see the prior turn's final text replaced by part-2 dripping in.
+            - **Cold-open of long sessions is now turn-bounded.** Previously, opening a stopped chat with thousands of events did a full disk-replay: backend deserialized every line, IPC shipped the whole array, and the frontend reducer chewed through it before the UI could paint. For sessions like the Rift CNC dialog or the CairnCC dev chat itself, that was multi-second latency every time the IDB snapshot wasn't already warm.
 
-              Root cause: `chat/+page.svelte`'s `streamingEntryId` blindly picked "last assistant after last user," and there is no `message_start` event to distinguish "drip-drain the just-completed entry" from "stream a fresh message." The store now publishes `streamingTargetId`, set on `message_complete` and cleared on the next non-subagent `message_delta`. The page derives `streamingEntryId` directly from that flag, so continuation streams render in the fallback container until their own `message_complete` lands.
+              New backend command `get_bus_events_tail(turns=15)` walks back from EOF to the 15th-most-recent `user_message` and ships only that slice, plus a must-keep prefix (`session_init` for store metadata, last pre-window `usage_update` for cumulative totals). Slicing on user-message boundaries means tool_start/tool_end pairs are never split, so the reducer's tool index stays intact. The store tracks `hasOlder` / `oldestLoadedSeq` watermarks so a future "load older" affordance (Phase 2) can fetch back a range on scroll-up.
 
-            Carries -6 (await tick before scrollHeight pin), -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
+              Partial loads do NOT write IDB snapshots — caching a truncated state would mask the missing older events on the next cold load. Short sessions (≤15 turns) still take the full-replay + snapshot-write path and behave identically to before. Snapshot-hit, in-memory cache, and live catchup paths are all unchanged.
+
+            Carries -7 (continuation-stream wrong-bubble fix), -6 (await tick before scrollHeight pin), -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true

@@ -975,6 +975,42 @@ pub fn get_bus_events(
     Ok(storage::events::list_bus_events(&id, since_seq))
 }
 
+/// Turn-bounded tail load for cold-open of long sessions.
+/// Returns only the last `turns` user-message-bounded turns (default 15),
+/// plus the must-keep prefix (`session_init` + last pre-window `usage_update`).
+/// `has_older` tells the frontend whether older events exist beyond the window —
+/// future "load older" UX will use `oldest_loaded_seq` as the upper bound.
+#[tauri::command]
+pub fn get_bus_events_tail(
+    id: String,
+    turns: Option<usize>,
+) -> Result<storage::events::BusEventsTail, String> {
+    storage::runs::get_run(&id).ok_or_else(|| format!("Run {} not found", id))?;
+    let turns = turns.unwrap_or(15);
+
+    // Same opportunistic repair as `get_bus_events` — full-load entry path.
+    let assessment = storage::repair::assess(&id);
+    if assessment.needs_repair {
+        log::info!(
+            "[session] get_bus_events_tail: triggering synchronous repair for {} ({} MB, {} oversize)",
+            id,
+            assessment.total_bytes / 1024 / 1024,
+            assessment.oversize_events
+        );
+        match storage::repair::repair(&id) {
+            Ok(outcome) => log::info!(
+                "[session] repair done for {}: trimmed {} events, saved {} MB",
+                id,
+                outcome.trimmed_events,
+                outcome.bytes_saved / 1024 / 1024
+            ),
+            Err(e) => log::warn!("[session] repair failed for {}: {} (loading as-is)", id, e),
+        }
+    }
+
+    Ok(storage::events::list_bus_events_tail(&id, turns))
+}
+
 #[tauri::command]
 pub fn restore_trimmed_tool_output(
     run_id: String,
