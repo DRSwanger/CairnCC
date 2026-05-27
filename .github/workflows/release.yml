@@ -61,18 +61,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-8
-          releaseName: "CairnCC v__VERSION__-8"
+          tagName: v__VERSION__-9
+          releaseName: "CairnCC v__VERSION__-9"
           releaseBody: |
-            ## v0.1.72-8 — Tail-load: long sessions open in O(last 15 turns)
+            ## v0.1.72-9 — Stopped sessions no longer disappear from the sidebar
 
-            - **Cold-open of long sessions is now turn-bounded.** Previously, opening a stopped chat with thousands of events did a full disk-replay: backend deserialized every line, IPC shipped the whole array, and the frontend reducer chewed through it before the UI could paint. For sessions like the Rift CNC dialog or the CairnCC dev chat itself, that was multi-second latency every time the IDB snapshot wasn't already warm.
+            - **`list_runs` no longer hides empty stopped sessions.** Reported by Christine (macOS): clicking End Session on an older chat removed it from the history bar entirely — gone even under "Show more". Root cause: `storage/runs.rs::list_runs` dropped any meta whose `msg_count == 0`, status wasn't Running/Pending, and `started_at` was more than an hour old. End Session flips status Running → Stopped, so any chat whose events.jsonl didn't contain a `user_message` / `message_complete` substring (e.g. greeting-only tabs, or older sessions whose event types pre-date the current substring scan) vanished the moment it was stopped. Filter removed entirely — any meta without `deleted_at` now lists.
 
-              New backend command `get_bus_events_tail(turns=15)` walks back from EOF to the 15th-most-recent `user_message` and ships only that slice, plus a must-keep prefix (`session_init` for store metadata, last pre-window `usage_update` for cumulative totals). Slicing on user-message boundaries means tool_start/tool_end pairs are never split, so the reducer's tool index stays intact. The store tracks `hasOlder` / `oldestLoadedSeq` watermarks so a future "load older" affordance (Phase 2) can fetch back a range on scroll-up.
-
-              Partial loads do NOT write IDB snapshots — caching a truncated state would mask the missing older events on the next cold load. Short sessions (≤15 turns) still take the full-replay + snapshot-write path and behave identically to before. Snapshot-hit, in-memory cache, and live catchup paths are all unchanged.
-
-            Carries -7 (continuation-stream wrong-bubble fix), -6 (await tick before scrollHeight pin), -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
+            Carries -8 (turn-bounded tail-load), -7 (continuation-stream wrong-bubble fix), -6 (await tick before scrollHeight pin), -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true

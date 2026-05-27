@@ -364,20 +364,6 @@ pub fn list_runs() -> Vec<TaskRun> {
                     let events_path = entry.path().join("events.jsonl");
                     let (last_activity, msg_count, last_preview) = summarize_events(&events_path);
 
-                    // Skip runs with no events that aren't running/pending
-                    if msg_count == 0
-                        && !matches!(meta.status, RunStatus::Running | RunStatus::Pending)
-                    {
-                        // Still include if recent (within last hour)
-                        if let Ok(started) = chrono::DateTime::parse_from_rfc3339(&meta.started_at)
-                        {
-                            let age = chrono::Utc::now().signed_duration_since(started);
-                            if age.num_hours() > 1 {
-                                continue;
-                            }
-                        }
-                    }
-
                     runs.push(meta.to_task_run(last_activity, Some(msg_count), last_preview));
                 }
             }
