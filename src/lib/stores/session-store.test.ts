@@ -1767,8 +1767,11 @@ describe("SessionStore reducer", () => {
       expect(classifyError("", "").category).toBe("unknown");
     });
 
-    it("classifies frontend 60s timeout as server_issue, not auth_issue", () => {
-      const c = classifyError(undefined, "No response after 60s — still waiting for API.");
+    it("classifies frontend soft response timeout as server_issue, not auth_issue", () => {
+      const c = classifyError(
+        undefined,
+        "Still working — this request is taking longer than usual.",
+      );
       expect(c.category).toBe("server_issue");
       expect(c.canRetry).toBe(true);
       expect(c.settingsLink).toBe("");

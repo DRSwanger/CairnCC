@@ -4891,8 +4891,10 @@
       <!-- Classified error card -->
       {#if store.error && !forkOverlay}
         {@const classified = classifyError(store.run?.result_subtype, store.error)}
-        {@const catIcon =
-          classified.category === "context_limit"
+        {@const softTimeout = store.isTimeoutWarning}
+        {@const catIcon = softTimeout
+          ? "⏳"
+          : classified.category === "context_limit"
             ? "⚠"
             : classified.category === "auth_issue"
               ? "🔑"
@@ -4907,23 +4909,40 @@
                       : "❌"}
         <div class="absolute bottom-14 left-3 right-3 z-10">
           <div
-            class="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm backdrop-blur-sm animate-fade-in"
+            class="rounded-lg border px-4 py-3 text-sm backdrop-blur-sm animate-fade-in {softTimeout
+              ? 'border-border bg-muted/60'
+              : 'border-destructive/30 bg-destructive/10'}"
           >
             <div class="flex items-start gap-2">
               <span class="shrink-0 text-base leading-none mt-0.5">{catIcon}</span>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-1">
-                  <span class="text-[10px] font-medium uppercase tracking-wider text-destructive/70"
-                    >{t(`error_category_${classified.category}`)}</span
+                  <span
+                    class="text-[10px] font-medium uppercase tracking-wider {softTimeout
+                      ? 'text-muted-foreground'
+                      : 'text-destructive/70'}"
+                    >{softTimeout
+                      ? t("error_category_still_working")
+                      : t(`error_category_${classified.category}`)}</span
                   >
                 </div>
-                <p class="text-destructive text-xs leading-relaxed break-words">{store.error}</p>
-                <p class="text-destructive/60 text-[10px] mt-1">
-                  {t(`error_guidance_${classified.category}`)}
+                <p
+                  class="text-xs leading-relaxed break-words {softTimeout
+                    ? 'text-foreground'
+                    : 'text-destructive'}"
+                >
+                  {store.error}
                 </p>
+                {#if !softTimeout}
+                  <p class="text-destructive/60 text-[10px] mt-1">
+                    {t(`error_guidance_${classified.category}`)}
+                  </p>
+                {/if}
               </div>
               <button
-                class="shrink-0 text-destructive/50 hover:text-destructive text-xs"
+                class="shrink-0 text-xs {softTimeout
+                  ? 'text-muted-foreground hover:text-foreground'
+                  : 'text-destructive/50 hover:text-destructive'}"
                 onclick={() => (store.error = "")}>{t("common_dismiss")}</button
               >
             </div>

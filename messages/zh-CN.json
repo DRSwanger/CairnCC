@@ -1153,6 +1153,7 @@
   "error_category_session_timeout": "会话超时",
   "error_category_tool_issue": "工具问题",
   "error_category_unknown": "错误",
+  "error_category_still_working": "处理中",
 
   "error_guidance_context_limit": "对话上下文过大。尝试分叉以使用摘要重新开始。",
   "error_guidance_budget_limit": "已达预算限制。在设置中调整 max_budget_usd 以继续。",

@@ -61,14 +61,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-9
-          releaseName: "CairnCC v__VERSION__-9"
+          tagName: v__VERSION__-10
+          releaseName: "CairnCC v__VERSION__-10"
           releaseBody: |
-            ## v0.1.72-9 — Stopped sessions no longer disappear from the sidebar
+            ## v0.1.72-10 — Gentler "still working" notice for slow turns
 
-            - **`list_runs` no longer hides empty stopped sessions.** Reported by Christine (macOS): clicking End Session on an older chat removed it from the history bar entirely — gone even under "Show more". Root cause: `storage/runs.rs::list_runs` dropped any meta whose `msg_count == 0`, status wasn't Running/Pending, and `started_at` was more than an hour old. End Session flips status Running → Stopped, so any chat whose events.jsonl didn't contain a `user_message` / `message_complete` substring (e.g. greeting-only tabs, or older sessions whose event types pre-date the current substring scan) vanished the moment it was stopped. Filter removed entirely — any meta without `deleted_at` now lists.
+            - **60s → 120s response timeout, and the notice no longer looks like an error.** Dallas reported the red "SERVER ISSUE / No response after 60s" banner firing during legitimately beefy requests (Stewing... still active, query eventually completes fine) — felt like a failure when it was just patience. Fix: bumped `_RESPONSE_TIMEOUT_MS` from 60s to 120s, reworded to "Still working — this request is taking longer than usual.", and added a new `isTimeoutWarning` flag on the store so the chat banner renders with muted/neutral styling (⏳ icon, `border-border bg-muted/60`, no destructive red, no guidance subtext, no retry/fork buttons) instead of the destructive error card. Real failures still look like real failures.
 
-            Carries -8 (turn-bounded tail-load), -7 (continuation-stream wrong-bubble fix), -6 (await tick before scrollHeight pin), -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
+            Carries -9 (list_runs no longer hides empty stopped sessions), -8 (turn-bounded tail-load), -7 (continuation-stream wrong-bubble fix), -6 (await tick before scrollHeight pin), -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true

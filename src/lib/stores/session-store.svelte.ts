@@ -459,9 +459,10 @@ export class SessionStore {
 
   // Response timeout: warn if no content after sending a message
   private _responseTimer: ReturnType<typeof setTimeout> | null = null;
-  private static readonly _RESPONSE_TIMEOUT_MS = 60_000;
-  /** True when current error was set by the response timeout (cleared when content arrives). */
-  private _isTimeoutError = false;
+  private static readonly _RESPONSE_TIMEOUT_MS = 120_000;
+  /** True when current error was set by the response timeout (cleared when content arrives).
+   *  Public so the UI can render a gentle "still working" notice instead of a destructive error card. */
+  isTimeoutWarning = $state(false);
 
   /** Set phase with dev-mode transition guard. */
   private _setPhase(to: SessionPhase): void {
@@ -522,9 +523,9 @@ export class SessionStore {
         !this.streamingText &&
         !this.thinkingText
       ) {
-        this._isTimeoutError = true;
-        this.error = "No response after 60s — still waiting for API.";
-        dbgWarn("store", "response timeout: no content after 60s");
+        this.isTimeoutWarning = true;
+        this.error = "Still working — this request is taking longer than usual.";
+        dbgWarn("store", "response timeout: no content after 120s");
       }
     }, SessionStore._RESPONSE_TIMEOUT_MS);
   }
@@ -534,14 +535,15 @@ export class SessionStore {
       clearTimeout(this._responseTimer);
       this._responseTimer = null;
     }
+    this.isTimeoutWarning = false;
   }
 
   /** Clear response timeout error (only if it was set by the timeout, not a real error). */
   private _clearTimeoutError(): void {
     this._clearResponseTimeout();
-    if (this._isTimeoutError) {
+    if (this.isTimeoutWarning) {
       this.error = "";
-      this._isTimeoutError = false;
+      this.isTimeoutWarning = false;
     }
   }
 

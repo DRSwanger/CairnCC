@@ -182,7 +182,7 @@ export function classifyError(subtype?: string, errorMsg?: string): ClassifiedEr
   if (/session timeout|hard timeout|process killed/i.test(msg)) {
     return { category: "session_timeout", canRetry: true, canFork: false, settingsLink: "" };
   }
-  if (/rate.?limit|overloaded|timeout|network|connection|60s/i.test(msg)) {
+  if (/rate.?limit|overloaded|timeout|network|connection|still working/i.test(msg)) {
     return { category: "server_issue", canRetry: true, canFork: false, settingsLink: "" };
   }
 
