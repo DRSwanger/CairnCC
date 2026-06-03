@@ -61,14 +61,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          tagName: v__VERSION__-10
-          releaseName: "CairnCC v__VERSION__-10"
+          tagName: v__VERSION__-11
+          releaseName: "CairnCC v__VERSION__-11"
           releaseBody: |
-            ## v0.1.72-10 — Gentler "still working" notice for slow turns
+            ## v0.1.72-11 — Out-of-order assistant bubble fix (multi-bubble turns + thinking/tool windows)
 
-            - **60s → 120s response timeout, and the notice no longer looks like an error.** Dallas reported the red "SERVER ISSUE / No response after 60s" banner firing during legitimately beefy requests (Stewing... still active, query eventually completes fine) — felt like a failure when it was just patience. Fix: bumped `_RESPONSE_TIMEOUT_MS` from 60s to 120s, reworded to "Still working — this request is taking longer than usual.", and added a new `isTimeoutWarning` flag on the store so the chat banner renders with muted/neutral styling (⏳ icon, `border-border bg-muted/60`, no destructive red, no guidance subtext, no retry/fork buttons) instead of the destructive error card. Real failures still look like real failures.
+            - **Assistant bubbles no longer land BELOW a user message typed mid-turn.** Reported: a response bubble keeps showing up out of order. Root cause: the "preceding stream pending" guard on the optimistic user entry was only set when `streamingText` was non-empty — it missed the **thinking phase**, the **tool-use phase**, and the **gap between bubbles in a multi-bubble turn**. In those windows the user message landed without the flag, and the next `message_complete` appended at the end instead of splicing in front. A secondary bug: even when the flag was set, the splice cleared it after the first bubble, so multi-bubble turns silently mis-ordered every bubble after the first.
 
-            Carries -9 (list_runs no longer hides empty stopped sessions), -8 (turn-bounded tail-load), -7 (continuation-stream wrong-bubble fix), -6 (await tick before scrollHeight pin), -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
+              Fix in `session-store.svelte.ts`:
+              1. Flag the optimistic user whenever `streamingText` OR `thinkingText` is non-empty OR `phase ∈ ACTIVE_PHASES` (`spawning`/`running`) — catches all in-progress assistant turn windows.
+              2. Stop deleting the flag on splice. All `message_completes` during the turn now splice before the user.
+              3. New `_clearPrecedingStreamPending(ctx)` helper called from the `run_state` reducer on idle/terminal transitions — flag clears once the turn ends, so the next turn's bubbles append normally.
+
+              Regression tests: multi-bubble turn keeps user pinned at end of all assistant bubbles; idle transition clears the flag and the next turn appends normally.
+
+            Carries -10 (gentler still-working notice + 120s timeout), -9 (list_runs no longer hides empty stopped sessions), -8 (turn-bounded tail-load), -7 (continuation-stream wrong-bubble fix), -6 (await tick before scrollHeight pin), -5 (drift re-pin + dup-user-bubble idempotency), -4 (scroll-animation suppression), -3 (session-switch race), and v0.1.72 session-log repair unchanged.
           releaseDraft: true
           prerelease: true
           includeUpdaterJson: true

@@ -291,6 +291,73 @@ describe("SessionStore reducer", () => {
     });
   });
 
+  describe("out-of-order bubble guard", () => {
+    /** Helper: assert visible order of user/assistant entries by content. */
+    function visibleOrder(s: typeof store): string[] {
+      return s.timeline
+        .filter((e: TimelineEntry) => e.kind === "user" || e.kind === "assistant")
+        .map((e: TimelineEntry) => (e as { content: string }).content);
+    }
+
+    it("splices subsequent message_completes BEFORE the pending user in a multi-bubble turn", () => {
+      store.run = makeRun("run-mb");
+      store.phase = "running";
+      // Optimistic user typed mid-turn — flag set
+      // @ts-expect-error private
+      store._pushOptimisticUser("typed mid-turn", [], true);
+      // First assistant bubble of the turn
+      store.applyEvent({
+        type: "message_complete",
+        run_id: "run-mb",
+        message_id: "msg-A",
+        text: "first bubble",
+      } as unknown as BusEvent);
+      // Second assistant bubble of the SAME turn (multi-bubble)
+      store.applyEvent({
+        type: "message_complete",
+        run_id: "run-mb",
+        message_id: "msg-B",
+        text: "second bubble",
+      } as unknown as BusEvent);
+      // Both should land BEFORE the user, preserving conversation order
+      expect(visibleOrder(store)).toEqual(["first bubble", "second bubble", "typed mid-turn"]);
+    });
+
+    it("clears precedingStreamPending on idle so next turn appends normally", () => {
+      store.run = makeRun("run-idle");
+      store.phase = "running";
+      // @ts-expect-error private
+      store._pushOptimisticUser("u1", [], true);
+      store.applyEvent({
+        type: "message_complete",
+        run_id: "run-idle",
+        message_id: "m1",
+        text: "a1",
+      } as unknown as BusEvent);
+      // Turn ends
+      store.applyEvent({
+        type: "run_state",
+        run_id: "run-idle",
+        state: "idle",
+        error: null,
+        exit_code: null,
+      } as unknown as BusEvent);
+      // Flag should be cleared
+      const u1 = store.timeline.find(
+        (e: TimelineEntry) => e.kind === "user" && (e as { content: string }).content === "u1",
+      );
+      expect((u1 as { precedingStreamPending?: boolean }).precedingStreamPending).toBeFalsy();
+      // Next turn's assistant bubble appends AFTER u1, not splicing in front
+      store.applyEvent({
+        type: "message_complete",
+        run_id: "run-idle",
+        message_id: "m2",
+        text: "a2-next-turn",
+      } as unknown as BusEvent);
+      expect(visibleOrder(store)).toEqual(["a1", "u1", "a2-next-turn"]);
+    });
+  });
+
   describe("live-event buffering during loadRun replay", () => {
     // Repro for the "switch into a session while another is thinking → recent
     // chats render out of order with holes" bug. Root cause: chunked replay

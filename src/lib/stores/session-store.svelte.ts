@@ -830,6 +830,21 @@ export class SessionStore {
     });
   }
 
+  /** Clear precedingStreamPending on any user entry. Called when the assistant
+   *  turn finishes (phase → idle/completed/failed/stopped) so subsequent
+   *  message_completes from the next turn append normally instead of splicing. */
+  private _clearPrecedingStreamPending(ctx: ReduceCtx | null): void {
+    const tl = ctx ? ctx.tl : this.timeline;
+    if (!tl.some((e) => e.kind === "user" && e.precedingStreamPending)) return;
+    const cleared = tl.map((e) =>
+      e.kind === "user" && e.precedingStreamPending
+        ? { ...e, precedingStreamPending: false }
+        : e,
+    );
+    if (ctx) ctx.tl = cleared;
+    else this.timeline = cleared;
+  }
+
   /** Append a hook event entry and update tool index if applicable.
    *  Index uses first-match semantics — only set if not already present. */
   private _pushHookEntry(ctx: ReduceCtx | null, heEntry: HookEvent): void {
@@ -2156,11 +2171,15 @@ export class SessionStore {
         // Optimistic user message — matches the pattern in startSession().
         // Content-based dedup in _reduce(user_message) prevents double display
         // when the backend's UserMessage bus event arrives.
-        // If the previous turn is still streaming (streamingText not yet flushed
-        // to a timeline entry by message_complete), tag the optimistic user so
-        // the imminent message_complete splices in BEFORE it — keeps order:
-        // [..., prev_user, prev_asst, new_user] instead of inverted.
-        const precedingStreamPending = this.streamingText.length > 0;
+        // If the previous turn is still in progress (streaming text, mid-thinking,
+        // mid-tool, or just between bubbles of a multi-bubble turn), tag the
+        // optimistic user so subsequent message_completes splice in BEFORE it.
+        // Keeps order: [..., prev_user, prev_asst..., new_user] instead of inverted.
+        // Flag is cleared when phase transitions out of an active turn.
+        const precedingStreamPending =
+          this.streamingText.length > 0 ||
+          this.thinkingText.length > 0 ||
+          ACTIVE_PHASES.includes(this.phase);
         this._pushOptimisticUser(text, attachments, precedingStreamPending);
         try {
           await api.sendSessionMessage(this.run.id, text, mapAttachments(attachments) ?? undefined);
@@ -3053,17 +3072,17 @@ export class SessionStore {
           (e) => e.kind === "user" && e.precedingStreamPending,
         );
         if (pendingUserIdx >= 0) {
-          const pending = tl[pendingUserIdx] as Extract<TimelineEntry, { kind: "user" }>;
-          const cleaned: TimelineEntry = { ...pending };
-          delete (cleaned as { precedingStreamPending?: boolean }).precedingStreamPending;
+          // Keep precedingStreamPending set on the user entry — multi-bubble
+          // turns emit multiple message_completes during a single turn; each
+          // must splice before the pending user. Flag is cleared on phase
+          // transition out of an active turn (idle/completed/failed/stopped).
           if (ctx) {
-            ctx.tl = [...tl.slice(0, pendingUserIdx), entry, cleaned, ...tl.slice(pendingUserIdx + 1)];
+            ctx.tl = [...tl.slice(0, pendingUserIdx), entry, ...tl.slice(pendingUserIdx)];
           } else {
             this.timeline = [
               ...this.timeline.slice(0, pendingUserIdx),
               entry,
-              cleaned,
-              ...this.timeline.slice(pendingUserIdx + 1),
+              ...this.timeline.slice(pendingUserIdx),
             ];
           }
           break;
@@ -3375,6 +3394,9 @@ export class SessionStore {
           } else if (ev.state === "idle") {
             if (ctx) ctx.phase = "idle";
             else this._setPhase("idle");
+            // Turn complete — clear any preceding-stream-pending flags so the
+            // next turn's message_completes append normally.
+            this._clearPrecedingStreamPending(ctx);
           } else {
             // completed / failed / stopped
             const termPhase = ev.state as SessionPhase;
@@ -3392,6 +3414,7 @@ export class SessionStore {
                   .catch((e) => dbgWarn("store", "getRun after terminal state failed:", e));
               }
             }
+            this._clearPrecedingStreamPending(ctx);
           }
           // Sync run.status for non-terminal states so status bar reflects reality
           // (terminal states update run via api.getRun above)
